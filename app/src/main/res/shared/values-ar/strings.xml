@@ -1452,4 +1452,10 @@
     <string name="side_chat_width_reset_toast">تمت إعادة عرض الدردشة الجانبية إلى الافتراضي</string>
     <string name="setting_fullscreen_sensor_rotation">التدوير في ملء الشاشة</string>
     <string name="setting_fullscreen_sensor_rotation_desc">السماح بقلب الشاشة في وضع ملء الشاشة حتى عند إيقاف التدوير التلقائي للنظام</string>
+
+    <!-- Dual Update Source -->
+    <string name="setting_update_source">مصدر التحديثات</string>
+    <string name="update_source_fork">النسخة المتفرعة (szanko02)</string>
+    <string name="update_source_upstream">المصدر الأصلي (xacnio)</string>
+    <string name="whats_new_empty">لم يتم نشر أي إصدارات على مصدر التحديثات هذا بعد.</string>
 </resources>

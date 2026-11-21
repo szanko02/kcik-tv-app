@@ -1452,4 +1452,10 @@
     <string name="side_chat_width_reset_toast">Side chat width reset to default</string>
     <string name="setting_fullscreen_sensor_rotation">Rotate in Fullscreen</string>
     <string name="setting_fullscreen_sensor_rotation_desc">Allow flipping the screen in fullscreen even when system auto-rotate is off</string>
+
+    <!-- Dual Update Source -->
+    <string name="setting_update_source">Update Source</string>
+    <string name="update_source_fork">Fork (szanko02)</string>
+    <string name="update_source_upstream">Upstream (xacnio)</string>
+    <string name="whats_new_empty">No releases published on this update source yet.</string>
 </resources>

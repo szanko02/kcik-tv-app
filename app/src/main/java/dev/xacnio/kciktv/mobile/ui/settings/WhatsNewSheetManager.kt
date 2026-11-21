@@ -28,6 +28,7 @@ import dev.xacnio.kciktv.mobile.MobilePlayerActivity
 import dev.xacnio.kciktv.R
 import dev.xacnio.kciktv.shared.data.model.GithubRelease
 import dev.xacnio.kciktv.shared.data.repository.UpdateRepository
+import dev.xacnio.kciktv.shared.data.repository.UpdateSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -50,8 +51,9 @@ class WhatsNewSheetManager(
 
         if (isAutoPopup) {
             // Check content before showing dialog
+            val source = UpdateSource.fromKey(activity.prefs.updateSource)
             CoroutineScope(Dispatchers.IO).launch {
-                val result = repository.getAllReleases()
+                val result = repository.getAllReleases(source)
                 withContext(Dispatchers.Main) {
                     if (result.isSuccess) {
                         val currentVer = dev.xacnio.kciktv.BuildConfig.VERSION_NAME
@@ -161,8 +163,9 @@ class WhatsNewSheetManager(
         } else {
             // Need to fetch data (Manual mode)
             progressBar.visibility = View.VISIBLE
+            val source = UpdateSource.fromKey(activity.prefs.updateSource)
             CoroutineScope(Dispatchers.IO).launch {
-                val result = repository.getAllReleases()
+                val result = repository.getAllReleases(source)
                 withContext(Dispatchers.Main) {
                     if (result.isSuccess) {
                         var releases = result.getOrNull() ?: emptyList()
@@ -182,7 +185,11 @@ class WhatsNewSheetManager(
                             releases = releases.drop(startIndex)
                         }
                         
-                        val html = generateHtml(releases)
+                        val html = if (releases.isEmpty()) {
+                            generateEmptyHtml(activity.getString(R.string.whats_new_empty))
+                        } else {
+                            generateHtml(releases)
+                        }
                         webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
                     } else {
                         val errorHtml = "<html><body style='background:#0f0f0f;color:white;display:flex;justify-content:center;align-items:center;height:100%'>Failed to load releases.</body></html>"
@@ -220,6 +227,43 @@ class WhatsNewSheetManager(
                 return true
             }
         }
+    }
+
+    private fun generateEmptyHtml(message: String): String {
+        val escaped = android.text.TextUtils.htmlEncode(message)
+        return """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <style>
+                    body {
+                        background-color: transparent;
+                        color: #b0b0b0;
+                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                        margin: 0;
+                        padding: 24px;
+                        min-height: 60vh;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        text-align: center;
+                    }
+                    .empty-card {
+                        background: #1a1a1a;
+                        border: 1px solid #2c2c2e;
+                        border-radius: 12px;
+                        padding: 20px 24px;
+                        font-size: 15px;
+                        line-height: 1.5;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="empty-card">$escaped</div>
+            </body>
+            </html>
+        """.trimIndent()
     }
 
     private fun generateHtml(releases: List<GithubRelease>): String {

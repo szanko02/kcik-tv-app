@@ -28,10 +28,11 @@ import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import dev.xacnio.kciktv.BuildConfig
 import dev.xacnio.kciktv.mobile.MobilePlayerActivity
-import dev.xacnio.kciktv.tv.PlayerActivity
 import dev.xacnio.kciktv.R
 import dev.xacnio.kciktv.shared.data.prefs.AppPreferences
+import dev.xacnio.kciktv.shared.data.repository.UpdateReleaseSelector
 import dev.xacnio.kciktv.shared.data.repository.UpdateRepository
+import dev.xacnio.kciktv.shared.data.repository.UpdateSource
 import dev.xacnio.kciktv.databinding.ActivityMobilePlayerBinding
 import dev.xacnio.kciktv.shared.util.SupportedLanguages
 import kotlinx.coroutines.Dispatchers
@@ -202,21 +203,20 @@ class SettingsPanelManager(
     
     private fun showAppSettings() {
         showDetailSheet(activity.getString(R.string.settings_category_app)) { container ->
-            // Switch to TV UI
-            addSettingItem(container, R.drawable.ic_tv,
-                activity.getString(R.string.switch_to_tv_ui), null) {
-                prefs.uiMode = "tv"
-                val intent = Intent(activity, PlayerActivity::class.java)
-                activity.startActivity(intent)
-                activity.finish()
-            }
-      
             // Auto-update Toggle
             addToggleSetting(container, R.drawable.ic_update,
                 activity.getString(R.string.setting_auto_update),
                 activity.getString(R.string.setting_auto_update_desc),
                 prefs.autoUpdateEnabled) { isEnabled ->
                 prefs.autoUpdateEnabled = isEnabled
+            }
+
+            // Update Source
+            val updateSource = UpdateSource.fromKey(prefs.updateSource)
+            addSettingItem(container, R.drawable.ic_settings,
+                activity.getString(R.string.setting_update_source),
+                getUpdateSourceDisplayName(updateSource)) {
+                showUpdateSourceDialog()
             }
 
             // Update Channel
@@ -247,7 +247,7 @@ class SettingsPanelManager(
             // Privacy Policy
             addSettingItem(container, R.drawable.ic_security,
                 activity.getString(R.string.privacy_policy), null) {
-                val policyUrl = "https://github.com/xacnio/kcik-tv-app/blob/master/privacy_policy.md"
+                val policyUrl = "https://github.com/szanko02/kcik-tv-app#readme"
                 dev.xacnio.kciktv.mobile.InternalBrowserSheet.newInstance(policyUrl).show(activity.supportFragmentManager, "PrivacyPolicy")
                 hideSettingsPanel()
             }
@@ -1217,6 +1217,34 @@ class SettingsPanelManager(
             .show()
     }
     
+    private fun getUpdateSourceDisplayName(source: UpdateSource): String {
+        return when (source) {
+            UpdateSource.FORK -> activity.getString(R.string.update_source_fork)
+            UpdateSource.UPSTREAM -> activity.getString(R.string.update_source_upstream)
+        }
+    }
+
+    private fun showUpdateSourceDialog() {
+        val options = arrayOf(
+            "${activity.getString(R.string.update_source_fork)} (szanko02/kcik-tv-app)",
+            "${activity.getString(R.string.update_source_upstream)} (xacnio/kcik-tv-app)"
+        )
+        val values = arrayOf(UpdateSource.FORK.key, UpdateSource.UPSTREAM.key)
+        val currentIndex = if (UpdateSource.fromKey(prefs.updateSource) == UpdateSource.UPSTREAM) 1 else 0
+
+        AlertDialog.Builder(activity)
+            .setTitle(R.string.setting_update_source)
+            .setSingleChoiceItems(options, currentIndex) { dialog, which ->
+                prefs.updateSource = values[which]
+                dialog.dismiss()
+                // Refresh detail sheet
+                detailDialog?.dismiss()
+                showAppSettings()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
     private fun showUpdateChannelDialog() {
         val options = arrayOf(
             activity.getString(R.string.stable),
@@ -1274,17 +1302,19 @@ class SettingsPanelManager(
         if (!isSilent) {
             Toast.makeText(activity, R.string.checking_updates, Toast.LENGTH_SHORT).show()
         }
+
+        val source = UpdateSource.fromKey(prefs.updateSource)
         
         activity.lifecycleScope.launch {
             try {
-                updateRepository.getLatestRelease(prefs.updateChannel).onSuccess { release ->
+                updateRepository.getLatestRelease(prefs.updateChannel, source).onSuccess { release ->
                     activity.runOnUiThread {
                         if (release != null) {
                             val currentVersion = BuildConfig.VERSION_NAME
-                            val newVersion = release.tagName.replace("v", "")
+                            val newVersion = UpdateReleaseSelector.normalizeVersion(release.tagName)
                             
-                            if (newVersion != currentVersion) {
-                                showModernUpdateDialog(release, currentVersion, newVersion)
+                            if (UpdateReleaseSelector.isNewerRelease(currentVersion, release.tagName)) {
+                                showModernUpdateDialog(release, currentVersion, newVersion, source)
                             } else if (!isSilent) {
                                 Toast.makeText(activity, R.string.no_updates, Toast.LENGTH_SHORT).show()
                             }
@@ -1309,7 +1339,12 @@ class SettingsPanelManager(
         }
     }
     
-    private fun showModernUpdateDialog(release: dev.xacnio.kciktv.shared.data.model.GithubRelease, currentVersion: String, newVersion: String) {
+    private fun showModernUpdateDialog(
+        release: dev.xacnio.kciktv.shared.data.model.GithubRelease,
+        currentVersion: String,
+        newVersion: String,
+        source: UpdateSource
+    ) {
         val dialogView = LayoutInflater.from(activity).inflate(R.layout.dialog_update, null)
         
         val dialog = AlertDialog.Builder(activity, R.style.TransparentAlertDialog)
@@ -1331,7 +1366,7 @@ class SettingsPanelManager(
         
         // Set content
         titleView.text = activity.getString(R.string.update_available_title)
-        versionView.text = activity.getString(R.string.update_version_format, currentVersion, newVersion)
+        versionView.text = "${activity.getString(R.string.update_version_format, currentVersion, newVersion)} · ${getUpdateSourceDisplayName(source)}"
         
         // Parse and format changelog (markdown body from GitHub)
         val changelog = release.body.trim()

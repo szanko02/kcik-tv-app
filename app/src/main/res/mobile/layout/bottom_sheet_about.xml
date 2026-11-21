@@ -158,40 +158,4 @@
             app:tint="#555555" />
     </LinearLayout>
 
-    <!-- Coffee -->
-    <LinearLayout
-        android:id="@+id/btnCoffee"
-        android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:background="@drawable/bg_item_ripple"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingHorizontal="20dp"
-        android:clickable="true"
-        android:focusable="true">
-
-        <TextView
-            android:layout_width="28dp"
-            android:layout_height="wrap_content"
-            android:gravity="center"
-            android:text="☕"
-            android:textColor="#FFFFFF"
-            android:textSize="20sp" />
-
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
-            android:layout_weight="1"
-            android:text="@string/about_coffee_label"
-            android:textColor="#FFFFFF"
-            android:textSize="16sp" />
-
-        <ImageView
-            android:layout_width="24dp"
-            android:layout_height="24dp"
-            android:src="@drawable/ic_chevron_right"
-            app:tint="#555555" />
-    </LinearLayout>
-
 </LinearLayout>

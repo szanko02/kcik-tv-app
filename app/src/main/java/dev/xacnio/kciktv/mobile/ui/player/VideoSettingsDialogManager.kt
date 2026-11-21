@@ -184,7 +184,7 @@ class VideoSettingsDialogManager(
 
         view.findViewById<View>(R.id.videoSettingRefresh).setOnClickListener {
             dismissPanel()
-            activity.playCurrentChannel()
+            activity.refreshCurrentPlayback()
         }
 
         view.findViewById<View>(R.id.videoSettingStats).setOnClickListener {

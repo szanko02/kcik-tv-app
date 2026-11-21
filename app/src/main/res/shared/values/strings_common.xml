@@ -3,9 +3,9 @@
     <!-- App -->
     <string name="app_name">KCIKTV</string>
     <string name="app_name_caps">KCIKTV</string>
-    <string name="developer_name">Alperen Çetin (xacnio)</string>
-    <string name="url_repo">https://github.com/xacnio/kcik-tv-app</string>
-    <string name="url_github">https://github.com/xacnio</string>
+    <string name="developer_name">szanko02 (fork of xacnio)</string>
+    <string name="url_repo">https://github.com/szanko02/kcik-tv-app</string>
+    <string name="url_github">https://github.com/szanko02</string>
     <string name="url_coffee">https://www.buymeacoffee.com/xacnio</string>
 
     <!-- Player Stats -->

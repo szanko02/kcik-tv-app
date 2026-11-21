@@ -8,17 +8,13 @@
  */
 package dev.xacnio.kciktv.shared
 
-import android.app.UiModeManager
-import android.content.Context
 import android.content.Intent
-import android.content.res.Configuration
 import android.util.Log
 import android.os.Bundle
 import androidx.fragment.app.FragmentActivity
 import android.view.View
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import dev.xacnio.kciktv.mobile.MobilePlayerActivity
-import dev.xacnio.kciktv.tv.PlayerActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -29,9 +25,7 @@ import dev.xacnio.kciktv.shared.data.util.PreloadCache
 import dev.xacnio.kciktv.shared.data.api.RetrofitClient
 import kotlinx.coroutines.async
 /**
- * LauncherActivity - Routes users to appropriate UI based on device type.
- * - Android TV → PlayerActivity (Landscape, D-pad optimized)
- * - Mobile Phone/Tablet → MobilePlayerActivity (Portrait, Touch optimized)
+ * LauncherActivity - Preloads initial data and routes users to MobilePlayerActivity.
  */
 class LauncherActivity : FragmentActivity() {
     @Suppress("DEPRECATION")
@@ -48,14 +42,8 @@ class LauncherActivity : FragmentActivity() {
 
             val prefs = AppPreferences(this)
             dev.xacnio.kciktv.shared.data.api.RetrofitClient.refreshProxy(prefs)
-            val uiMode = prefs.uiMode
-            val targetActivity = when (uiMode) {
-                "tv" -> PlayerActivity::class.java
-                "mobile" -> MobilePlayerActivity::class.java
-                else -> if (isTvDevice()) PlayerActivity::class.java else MobilePlayerActivity::class.java
-            }
-            
-            val newIntent = Intent(this, targetActivity)
+
+            val newIntent = Intent(this, MobilePlayerActivity::class.java)
             newIntent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)
             
             startActivity(newIntent)
@@ -227,28 +215,12 @@ class LauncherActivity : FragmentActivity() {
 
     @Suppress("DEPRECATION")
     private suspend fun performFinalTransition() {
-        val prefs = AppPreferences(this)
-        val uiMode = prefs.uiMode
-        val targetActivity = when (uiMode) {
-            "tv" -> PlayerActivity::class.java
-            "mobile" -> MobilePlayerActivity::class.java
-            else -> if (isTvDevice()) PlayerActivity::class.java else MobilePlayerActivity::class.java
-        }
-        
-        startActivity(Intent(this, targetActivity).apply {
+        startActivity(Intent(this, MobilePlayerActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         })
         
         overridePendingTransition(0, 0)
         finish()
         overridePendingTransition(0, 0)
-    }
-
-    /**
-     * Check if running on Android TV
-     */
-    private fun isTvDevice(): Boolean {
-        val uiModeManager = getSystemService(Context.UI_MODE_SERVICE) as UiModeManager
-        return uiModeManager.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION
     }
 }

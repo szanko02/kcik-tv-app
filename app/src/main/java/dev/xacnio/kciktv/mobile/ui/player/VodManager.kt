@@ -78,6 +78,7 @@ class VodManager(
     // Accessed by MobilePlayerActivity for Clip creation
     var currentVideo: dev.xacnio.kciktv.shared.data.model.ChannelVideo? = null
     var currentClip: dev.xacnio.kciktv.shared.data.model.ChannelClip? = null
+    private var pendingPlaybackListener: Player.Listener? = null
 
     data class PlaybackState(
         val mode: PlaybackMode,
@@ -184,6 +185,8 @@ class VodManager(
     }
 
     fun stopVodChatReplay() {
+        pendingPlaybackListener?.let { activity.ivsPlayer?.removeListener(it) }
+        pendingPlaybackListener = null
         vodProgressHandler.removeCallbacks(vodProgressRunnable)
         vodSimulationHandler.removeCallbacks(vodSimulationRunnable)
         vodFetchJob?.cancel()
@@ -398,7 +401,12 @@ class VodManager(
         return dev.xacnio.kciktv.shared.util.DateParseUtils.parseIsoDate(isoString)
     }
 
-    fun playVideo(video: dev.xacnio.kciktv.shared.data.model.ChannelVideo, channelData: Any, startPositionMs: Long = 0L) {
+    fun playVideo(
+        video: dev.xacnio.kciktv.shared.data.model.ChannelVideo,
+        channelData: Any,
+        startPositionMs: Long = 0L,
+        playbackRate: Float = 1.0f
+    ) {
         val channel: ChannelItem
         val fullChannel: dev.xacnio.kciktv.shared.data.model.ChannelDetailResponse?
 
@@ -477,7 +485,7 @@ class VodManager(
         val playbackUrl = video.source
 
         if (playbackUrl != null) {
-            loadDirectUrl(playbackUrl, startPositionMs)
+            loadDirectUrl(playbackUrl, startPositionMs, playbackRate)
         } else {
             Toast.makeText(activity, activity.getString(R.string.video_url_not_found), Toast.LENGTH_SHORT).show()
         }
@@ -638,7 +646,11 @@ class VodManager(
         }
     }
 
-    fun playClip(clip: dev.xacnio.kciktv.shared.data.model.ChannelClip, channelData: Any?) {
+    fun playClip(
+        clip: dev.xacnio.kciktv.shared.data.model.ChannelClip,
+        channelData: Any?,
+        playbackRate: Float = 1.0f
+    ) {
         val channel: ChannelItem
         val fullChannel: dev.xacnio.kciktv.shared.data.model.ChannelDetailResponse?
 
@@ -748,7 +760,7 @@ class VodManager(
                     
                     val streamUrl = clipDetails?.videoUrl ?: clipDetails?.clipUrl ?: clip.url
                     if (streamUrl != null) {
-                        loadDirectUrl(streamUrl)
+                        loadDirectUrl(streamUrl, playbackRate = playbackRate)
                         binding.root.post {
                             binding.infoChannelName.text =
                                 clipDetails?.channel?.username ?: channel.username
@@ -782,7 +794,7 @@ class VodManager(
                 withContext(Dispatchers.Main) {
                     val playbackUrl = clip.url
                     if (playbackUrl != null) {
-                        loadDirectUrl(playbackUrl)
+                        loadDirectUrl(playbackUrl, playbackRate = playbackRate)
                         binding.root.post {
                             binding.infoChannelName.text = channel.username
                             binding.infoStreamTitle.text = clip.title
@@ -799,18 +811,109 @@ class VodManager(
         }
     }
 
-    fun loadDirectUrl(url: String, startPositionMs: Long = 0L) {
-        activity.playerManager.resetPlayer()
-        activity.ivsPlayer?.load(android.net.Uri.parse(url))
-        activity.ivsPlayer?.play()
-        
-        if (startPositionMs > 0) {
-            vodProgressHandler.postDelayed({
-                try {
-                    activity.ivsPlayer?.seekTo(startPositionMs)
-                } catch(e: Exception) {}
-            }, 1000)
+    fun refreshCurrentPlayback(): Boolean {
+        val video = currentVideo
+        val clip = currentClip
+        val channel = activity.currentChannel
+        val decision = PlaybackRefreshPolicy.resolve(
+            isVodMode = currentPlaybackMode == PlaybackMode.VOD,
+            isClipMode = currentPlaybackMode == PlaybackMode.CLIP,
+            hasCurrentVideo = video != null,
+            hasCurrentClip = clip != null,
+            currentPositionMs = activity.ivsPlayer?.position ?: 0L,
+            currentPlaybackRate = activity.ivsPlayer?.playbackRate ?: 1.0f
+        )
+        return when (decision.target) {
+            RefreshTarget.VOD -> {
+                if (video != null && channel != null) {
+                    playVideo(video, channel, decision.resumePositionMs, decision.playbackRate)
+                    true
+                } else {
+                    false
+                }
+            }
+            RefreshTarget.CLIP -> {
+                if (clip != null && channel != null) {
+                    playClip(clip, channel, decision.playbackRate)
+                    true
+                } else {
+                    false
+                }
+            }
+            RefreshTarget.LIVE -> false
         }
+    }
+
+    fun loadDirectUrl(url: String, startPositionMs: Long = 0L, playbackRate: Float = 1.0f) {
+        pendingPlaybackListener?.let { activity.ivsPlayer?.removeListener(it) }
+        pendingPlaybackListener = null
+
+        activity.playerManager.resetPlayer()
+
+        activity.isErrorStateActive = false
+        binding.errorOverlay.visibility = View.GONE
+        binding.errorDetailsButton.visibility = View.GONE
+        binding.offlineBanner.visibility = View.GONE
+        binding.retryButton.visibility = View.GONE
+        if (!activity.playerManager.isAudioOnlyActive) {
+            binding.playerView.visibility = View.VISIBLE
+        }
+
+        val safeRate = if (playbackRate.isFinite()) playbackRate.coerceIn(0.25f, 3.0f) else 1.0f
+        val needsSeek = startPositionMs > 0L
+        val needsRate = safeRate != 1.0f
+        if (needsSeek || needsRate) {
+            var seekApplied = !needsSeek
+            val listener = object : Player.Listener() {
+                override fun onStateChanged(state: Player.State) {
+                    if (state == Player.State.READY || state == Player.State.PLAYING) {
+                        activity.runOnUiThread {
+                            val player = activity.ivsPlayer ?: return@runOnUiThread
+                            if (!seekApplied) {
+                                try {
+                                    player.seekTo(startPositionMs)
+                                    seekApplied = true
+                                } catch (_: Exception) {}
+                            }
+                            if (needsRate && player.playbackRate != safeRate) {
+                                try {
+                                    player.playbackRate = safeRate
+                                } catch (_: Exception) {}
+                            }
+                            if (state == Player.State.PLAYING && seekApplied) {
+                                player.removeListener(this)
+                                if (pendingPlaybackListener === this) {
+                                    pendingPlaybackListener = null
+                                }
+                            }
+                        }
+                    }
+                }
+                override fun onCue(cue: com.amazonaws.ivs.player.Cue) {}
+                override fun onDurationChanged(duration: Long) {}
+                override fun onError(exception: com.amazonaws.ivs.player.PlayerException) {
+                    activity.ivsPlayer?.removeListener(this)
+                    if (pendingPlaybackListener === this) {
+                        pendingPlaybackListener = null
+                    }
+                }
+                override fun onMetadata(type: String, data: java.nio.ByteBuffer) {}
+                override fun onQualityChanged(quality: com.amazonaws.ivs.player.Quality) {}
+                override fun onRebuffering() {}
+                override fun onSeekCompleted(position: Long) {}
+                override fun onVideoSizeChanged(width: Int, height: Int) {}
+            }
+            pendingPlaybackListener = listener
+            activity.ivsPlayer?.addListener(listener)
+        }
+
+        activity.ivsPlayer?.load(android.net.Uri.parse(url))
+        if (needsRate) {
+            try {
+                activity.ivsPlayer?.playbackRate = safeRate
+            } catch (_: Exception) {}
+        }
+        activity.ivsPlayer?.play()
 
         // Don't show seekbar in theatre mode
         if (!activity.fullscreenToggleManager.isTheatreMode) {
