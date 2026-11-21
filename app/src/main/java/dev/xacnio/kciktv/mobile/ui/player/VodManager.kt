@@ -24,6 +24,7 @@ import dev.xacnio.kciktv.shared.data.model.ChatMessage
 import dev.xacnio.kciktv.shared.data.model.ChannelClip
 import dev.xacnio.kciktv.shared.data.repository.ChannelRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import dev.xacnio.kciktv.R
@@ -70,12 +71,9 @@ class VodManager(
     // VOD/Clip Chat Replay
     private var vodChatStartTime: String? = null
     private var vodChannelId: Long? = null
-    private var lastVodChatFetchPosition: Long = 0
     private var vodChatStartTimeMillis: Long = 0L
-    private val vodChatFetchedIds = mutableSetOf<String>()
-    private val vodChatBuckets =
-        java.util.concurrent.ConcurrentHashMap<Long, MutableList<ChatMessage>>()
-    private var lastProcessedSecond: Long = -1L
+    /** Main-thread state machine for 5s-page chat replay (see VodChatReplayBuffer). */
+    private val replayBuffer = VodChatReplayBuffer()
     
     // Accessed by MobilePlayerActivity for Clip creation
     var currentVideo: dev.xacnio.kciktv.shared.data.model.ChannelVideo? = null
@@ -119,22 +117,10 @@ class VodManager(
         return true
     }
 
-    // Buffer tracking - how far ahead we've fetched (in absolute milliseconds)
-    private var vodChatBufferedUntilMs: Long = 0L
-    private val BUFFER_AHEAD_MS = 60_000L  // Buffer 1 minute ahead
-    private var isVodFetching = false
+    // Single in-flight page fetch (chained 5s pages); always cancelled on seek/stop
     private var vodFetchJob: kotlinx.coroutines.Job? = null
-
-    // Seek detection - track last known position to detect jumps
-    private var lastKnownPositionMs: Long = 0L
-
-    private val vodChatHandler = Handler(Looper.getMainLooper())
-    private val vodChatRunnable = object : Runnable {
-        override fun run() {
-            checkAndFetchVodChat()
-            vodChatHandler.postDelayed(this, 2000)  // Check every 2 seconds
-        }
-    }
+    private val VOD_TICK_MS = VodChatReplayBuffer.DISPLAY_CADENCE_MS
+    private val VOD_CHAIN_DELAY_MS = 100L
 
     private val vodProgressHandler = Handler(Looper.getMainLooper())
     private val vodProgressRunnable = object : Runnable {
@@ -150,11 +136,11 @@ class VodManager(
     private val vodSimulationHandler = Handler(Looper.getMainLooper())
     private val vodSimulationRunnable = object : Runnable {
         override fun run() {
-            // Skip chat simulation in mini player mode (chat is not visible)
+            // Skip chat replay UI updates in mini player mode (chat is not visible)
             if (!activity.miniPlayerManager.isMiniPlayerMode) {
-                simulateVodChat()
+                runVodChatTick()
             }
-            vodSimulationHandler.postDelayed(this, 200)
+            vodSimulationHandler.postDelayed(this, VOD_TICK_MS)
         }
     }
 
@@ -169,52 +155,43 @@ class VodManager(
         // IMPORTANT: Stop live chat WebSocket first
         activity.stopChatWebSocket()
 
+        vodFetchJob?.cancel()
+        vodFetchJob = null
+        vodSimulationHandler.removeCallbacks(vodSimulationRunnable)
+
+        if (channelId <= 0L || startTimeMillis <= 0L) {
+            Log.e(TAG, "VOD Chat: invalid replay params channelId=$channelId startTimeMillis=$startTimeMillis")
+            replayBuffer.stop()
+            return
+        }
+
         vodChannelId = channelId
         vodChatStartTimeMillis = startTimeMillis
         vodChatStartTime = dev.xacnio.kciktv.shared.util.DateParseUtils.toIsoString(startTimeMillis)
 
-        lastVodChatFetchPosition = 0
-        vodChatBufferedUntilMs = vodChatStartTimeMillis + initialOffsetMs // Apply offset for seek
-        vodChatFetchedIds.clear()
-        vodChatShownIds.clear()
-        vodChatBuckets.clear()
-        lastProcessedSecond = -1L
-        isVodFetching = false
-        lastKnownPositionMs = 0L
+        replayBuffer.start(channelId, startTimeMillis, initialOffsetMs)
 
         Log.d(
             TAG,
-            "VOD Chat: Starting replay - channelId=$channelId, startTimeMillis=$vodChatStartTimeMillis"
+            "VOD Chat: Starting replay - channelId=$channelId, startTimeMillis=$vodChatStartTimeMillis, offset=$initialOffsetMs"
         )
 
-        // Clear chat and start fetching
+        // Clear chat and start the single 250ms replay loop
         activity.chatUiManager.chatAdapter.clearMessages()
-        vodChatHandler.removeCallbacks(vodChatRunnable)
-        vodSimulationHandler.removeCallbacks(vodSimulationRunnable)
-
-        // Start buffer check loop
-        vodChatHandler.postDelayed(vodChatRunnable, 500)
-
-        // Start simulation loop (frequent updates)
-        vodSimulationHandler.postDelayed(vodSimulationRunnable, 200)
+        vodSimulationHandler.postDelayed(vodSimulationRunnable, VOD_TICK_MS)
 
         activity.binding.chatContainer.visibility = View.VISIBLE
     }
 
     fun stopVodChatReplay() {
-        vodChatHandler.removeCallbacks(vodChatRunnable)
         vodProgressHandler.removeCallbacks(vodProgressRunnable)
         vodSimulationHandler.removeCallbacks(vodSimulationRunnable)
+        vodFetchJob?.cancel()
+        vodFetchJob = null
+        replayBuffer.stop()
         vodChatStartTime = null
         vodChannelId = null
-        lastVodChatFetchPosition = 0
-        vodChatBufferedUntilMs = 0L
-        vodChatFetchedIds.clear()
-        vodChatShownIds.clear()
-        vodChatBuckets.clear()
-        lastProcessedSecond = -1L
-        isVodFetching = false
-        lastKnownPositionMs = 0L
+        vodChatStartTimeMillis = 0L
         saveWatchProgress()
         currentVideo = null
         
@@ -224,261 +201,48 @@ class VodManager(
         activity.chatUiManager.setVodMode(false)
     }
 
-    /**
-     * Check if we need to fetch more chat and trigger fetch if needed
-     */
-    private fun checkAndFetchVodChat() {
-        val player = activity.ivsPlayer
-        if (player == null) {
-            Log.d(TAG, "VOD Chat Check: Player is null")
-            return
+    /** Called by the seekbar while the user drags (true) and on release (false). */
+    fun setSeekBarSliding(sliding: Boolean) {
+        replayBuffer.setSliding(sliding)
+        if (sliding) {
+            vodFetchJob?.cancel()
+            vodFetchJob = null
+        } else if (replayBuffer.isActive) {
+            // Reset chat and start buffering at the release position right away
+            runVodChatTick()
         }
-        if (vodChatStartTimeMillis == 0L) {
-            Log.d(TAG, "VOD Chat Check: startTimeMillis is 0")
-            return
-        }
+    }
+
+    /** Called for discrete user seeks (forward/rewind buttons). */
+    fun onUserSeekRequested(targetPositionMs: Long) {
+        if (!replayBuffer.isActive) return
+        vodFetchJob?.cancel()
+        vodFetchJob = null
+        activity.chatUiManager.chatAdapter.clearMessages()
+        replayBuffer.onExplicitSeek(targetPositionMs)
+        runVodChatTick()
+    }
+
+    /** One replay tick on the Main thread: seek detection, emission and fetch scheduling. */
+    private fun runVodChatTick() {
+        val player = activity.ivsPlayer ?: return
+        if (!replayBuffer.isActive) return
 
         val playerState = player.state
-        Log.d(TAG, "VOD Chat Check: playerState=$playerState")
-
-        // If player is paused, don't fetch
-        if (playerState == com.amazonaws.ivs.player.Player.State.IDLE ||
-            playerState == com.amazonaws.ivs.player.Player.State.ENDED
-        ) {
-            Log.d(TAG, "VOD Chat Check: Player paused/ended, skipping")
-            return
-        }
-
+        val isActive = playerState != Player.State.IDLE && playerState != Player.State.ENDED
         val currentPositionMs = player.position
-        if (currentPositionMs <= 0) {
-            Log.d(TAG, "VOD Chat Check: Position is 0 or negative: $currentPositionMs")
-            return
-        }
 
-        val currentReplayTimeMs = vodChatStartTimeMillis + currentPositionMs
-        val targetBufferTimeMs = currentReplayTimeMs + BUFFER_AHEAD_MS
+        val result = replayBuffer.onPlaybackTick(currentPositionMs, isActive)
 
-        Log.d(
-            TAG,
-            "VOD Chat Check: position=$currentPositionMs, bufferedUntil=$vodChatBufferedUntilMs, target=$targetBufferTimeMs, isFetching=$isVodFetching"
-        )
-
-        // If we haven't buffered enough ahead, start fetching
-        if (vodChatBufferedUntilMs < targetBufferTimeMs && !isVodFetching) {
-            Log.d(TAG, "VOD Chat Check: Starting fetch...")
-            fetchVodChatMessagesUntil(targetBufferTimeMs)
-        }
-    }
-
-    /**
-     * Fetch chat messages until we have buffered up to targetTimeMs
-     */
-    private fun fetchVodChatMessagesUntil(targetTimeMs: Long) {
-        val channelId = vodChannelId ?: return
-        if (isVodFetching) return
-
-        isVodFetching = true
-
-        vodFetchJob = lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                val sdf =
-                    java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US)
-                sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
-
-                // Track next fetch time
-                var nextFetchMillis = vodChatBufferedUntilMs
-
-                // Fetch loop
-                while (vodChatBufferedUntilMs < targetTimeMs) {
-
-                    val nextFetchIso = sdf.format(java.util.Date(nextFetchMillis))
-                    Log.d(TAG, "VOD Chat Fetch: channelId=$channelId, startTime=$nextFetchIso")
-
-                    val result = repository.getChatHistoryForVod(channelId, nextFetchIso)
-                    var fetchContinued = false
-
-                    result.onSuccess { chatResult ->
-                        val messages = chatResult.messages
-                        val cursor = chatResult.cursor
-
-                        // Check for duplicate start (stuck loop prevention)
-                        val firstMsg = messages.firstOrNull()
-                        val isDuplicateStart =
-                            firstMsg != null && vodChatFetchedIds.contains(firstMsg.id)
-
-                        if (isDuplicateStart) {
-                            Log.w(TAG, "VOD Chat: Duplicate start message detected. Advancing +1s.")
-                            nextFetchMillis += 1000
-                            fetchContinued = true
-                        } else {
-                            val newMessages = messages.filter { !vodChatFetchedIds.contains(it.id) }
-
-                            if (newMessages.isNotEmpty()) {
-                                // Add messages to buckets
-                                val debugBuckets = mutableMapOf<Long, Int>()
-
-                                newMessages.forEachIndexed { _, msg ->
-                                    vodChatFetchedIds.add(msg.id)
-
-                                    val offsetSeconds =
-                                        (msg.createdAt - vodChatStartTimeMillis) / 1000
-                                    val bucketSec = if (offsetSeconds < 0) 0L else offsetSeconds
-
-                                    val randomMs = (0..200).random().toLong()
-                                    val baseTime = (msg.createdAt / 1000) * 1000
-                                    val randomizedMsg = msg.copy(createdAt = baseTime + randomMs)
-
-                                    vodChatBuckets.computeIfAbsent(bucketSec) {
-                                        java.util.concurrent.CopyOnWriteArrayList()
-                                    }.add(randomizedMsg)
-
-                                    debugBuckets[bucketSec] = (debugBuckets[bucketSec] ?: 0) + 1
-                                }
-
-                                // Log Dump
-                                debugBuckets.toSortedMap().forEach { (sec, count) ->
-                                    val timeStr = formatDuration(sec * 1000)
-                                    // Get first few random msgs from bucket for verification
-                                    val sample = vodChatBuckets[sec]?.take(3)
-                                        ?.map { "${it.createdAt}(${it.content})" }
-                                    Log.d(
-                                        TAG,
-                                        "VOD Dump: Bucket $sec ($timeStr) -> Added $count msgs. Samples: $sample"
-                                    )
-                                }
-
-                                val max = newMessages.maxOf { it.createdAt }
-                                // add 1 second
-                                if (max > vodChatBufferedUntilMs) {
-                                    vodChatBufferedUntilMs = max
-                                }
-                            } else {
-                                // Gap handling from cursor
-                                cursor?.toLongOrNull()?.let { micros ->
-                                    val millis = micros / 1000
-                                    if (millis > vodChatBufferedUntilMs) vodChatBufferedUntilMs =
-                                        millis
-                                }
-                            }
-
-                            // Update next time based on latest message (createdAt + 1s)
-                            val latestMsgTime = messages.maxOfOrNull { it.createdAt }
-
-                            if (latestMsgTime != null) {
-                                nextFetchMillis = latestMsgTime + 1000
-                                fetchContinued = true
-                            } else if (cursor != null) {
-                                // Fallback to cursor if no messages
-                                val micros = cursor.toLongOrNull()
-                                if (micros != null) {
-                                    val millis = micros / 1000
-                                    nextFetchMillis = millis + 1000
-                                    fetchContinued = true
-                                }
-                            }
-                        }
-                    }.onFailure { e ->
-                        Log.e(TAG, "VOD Chat: Error fetching history: ${e.message}", e)
-                    }
-
-                    if (!fetchContinued) break
-
-                    kotlinx.coroutines.delay(100)
-                }
-
-            } catch (e: Exception) {
-                Log.e(TAG, "VOD Chat: Fetch loop error: ${e.message}")
-            } finally {
-                isVodFetching = false
-            }
-        }
-    }
-
-    // Track which messages have been shown (separate from fetched IDs)
-    private val vodChatShownIds = mutableSetOf<String>()
-
-    private fun simulateVodChat() {
-        val player = activity.ivsPlayer ?: return
-        if (vodChatStartTimeMillis == 0L) return
-
-        val currentPositionMs = player.position
-        if (currentPositionMs < 0) return
-
-        val currentVideoSecond = currentPositionMs / 1000
-        val currentReplayTimeMs = vodChatStartTimeMillis + currentPositionMs
-
-        // Detect seek
-        val positionDiff = kotlin.math.abs(currentPositionMs - lastKnownPositionMs)
-        if (positionDiff > 2000 && lastKnownPositionMs > 0) {
-            Log.d(TAG, "VOD Chat: Seek detected! Resetting state.")
-
-            // Cancel ongoing fetch immediately to stop old loop
+        if (result.didSeekReset) {
+            Log.d(TAG, "VOD Chat: Seek reset at ${currentPositionMs}ms")
             vodFetchJob?.cancel()
-            isVodFetching = false
-
+            vodFetchJob = null
             activity.chatUiManager.chatAdapter.clearMessages()
-            vodChatShownIds.clear()
-
-            // Reset buffer if needed
-            if (currentReplayTimeMs < vodChatBufferedUntilMs - BUFFER_AHEAD_MS || currentReplayTimeMs > vodChatBufferedUntilMs) {
-                vodChatBufferedUntilMs = currentReplayTimeMs
-                vodChatFetchedIds.clear()
-                vodChatBuckets.clear()
-            }
-        }
-        lastKnownPositionMs = currentPositionMs
-
-        // Efficient Window: Scan -5s to +2s
-        // Enough to catch message boundaries without scanning too much
-        val startScan = (currentVideoSecond - 5).coerceAtLeast(0)
-        val endScan = currentVideoSecond + 2
-
-        // Log scanning occasionally
-        if (currentVideoSecond % 5 == 0L) {
-            Log.d(
-                TAG,
-                "VOD Sim: Scanning buckets $startScan..$endScan. ReplayTime=$currentReplayTimeMs"
-            )
         }
 
-        val messagesToShow = mutableListOf<ChatMessage>()
-        var skippedFuture = 0
-        var skippedShown = 0
-
-        for (sec in startScan..endScan) {
-            val bucket = vodChatBuckets[sec]
-            bucket?.forEach { msg ->
-                // Show message only if its time has passed
-                if (msg.createdAt <= currentReplayTimeMs) {
-                    if (!vodChatShownIds.contains(msg.id)) {
-                        messagesToShow.add(msg)
-                    } else {
-                        skippedShown++
-                    }
-                } else {
-                    skippedFuture++
-                    // Log sample future message occasionally
-                    if (skippedFuture == 1 && currentVideoSecond % 5 == 0L) {
-                        val diff = msg.createdAt - currentReplayTimeMs
-                        Log.d(TAG, "VOD Sim: Future msg ${msg.id} in bucket $sec. Diff=${diff}ms")
-                    }
-                }
-            }
-        }
-
-        if (messagesToShow.isNotEmpty()) {
-            messagesToShow.sortBy { it.createdAt }
-
-            Log.d(
-                TAG,
-                "VOD Sim: Adding ${messagesToShow.size} messages to UI. (Future=$skippedFuture, Shown=$skippedShown)"
-            )
-
-            messagesToShow.forEach { msg ->
-                vodChatShownIds.add(msg.id)
-            }
-
-            activity.chatUiManager.chatAdapter.addMessages(messagesToShow)
+        if (result.messagesToEmit.isNotEmpty()) {
+            activity.chatUiManager.chatAdapter.addMessages(result.messagesToEmit)
             if (activity.chatUiManager.isChatAutoScrollEnabled) {
                 val itemCnt = activity.chatUiManager.chatAdapter.itemCount
                 if (itemCnt > 0) {
@@ -486,6 +250,51 @@ class VodManager(
                 }
             }
         }
+
+        result.nextFetch?.let { launchVodFetch(it) }
+    }
+
+    /**
+     * Fetches one 5s page on IO, applies it on Main, and chains follow-up pages (100ms apart)
+     * while the buffer is below its burst target. Stale generations are discarded by the buffer.
+     */
+    private fun launchVodFetch(initial: VodChatReplayBuffer.FetchRequest) {
+        vodFetchJob?.cancel()
+        vodFetchJob = lifecycleScope.launch(Dispatchers.Main) {
+            var request: VodChatReplayBuffer.FetchRequest? = initial
+            while (isActive) {
+                val req = request ?: break
+                val startIso = utcIso(req.pageStartMs)
+                val result = try {
+                    withContext(Dispatchers.IO) {
+                        repository.getChatHistoryForVod(req.channelId, startIso)
+                    }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Result.failure(e)
+                }
+                if (!isActive) break
+
+                request = result.fold(
+                    onSuccess = { chat ->
+                        replayBuffer.onFetchSuccess(req, chat.messages)
+                    },
+                    onFailure = { e ->
+                        val delayMs = replayBuffer.onFetchFailure(req)
+                        Log.w(TAG, "VOD Chat: page $startIso failed (${e.message}); retry in ${delayMs}ms")
+                        null
+                    }
+                )
+                if (request != null) kotlinx.coroutines.delay(VOD_CHAIN_DELAY_MS)
+            }
+        }
+    }
+
+    private fun utcIso(epochMs: Long): String {
+        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
+        sdf.timeZone = TimeZone.getTimeZone("UTC")
+        return sdf.format(Date(epochMs))
     }
 
     private var lastSaveTime = 0L
@@ -754,10 +563,10 @@ class VodManager(
                 withContext(Dispatchers.Main) {
                     activity.chatUiManager.setVodMode(true)
                     
-                    if (finalStartTime > 0) {
+                    if (finalStartTime > 0 && finalChatroomId > 0) {
                         startVodChatReplay(finalChatroomId, finalStartTime, startPositionMs)
                     } else {
-                        Log.e(TAG, "playVideo: Could not determine start time")
+                        Log.e(TAG, "playVideo: Could not determine start time (start=$finalStartTime, channel=$finalChatroomId)")
                     }
                 }
             }

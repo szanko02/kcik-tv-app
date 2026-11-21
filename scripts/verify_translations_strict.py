@@ -4,7 +4,7 @@ import re
 import sys
 
 # Configuration
-RES_DIR = r"d:\Coding\Github\Xacnio\kick-tv\app\src\main\res\shared"
+RES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app", "src", "main", "res", "shared")
 BASE_FILE = os.path.join(RES_DIR, "values", "strings.xml")
 
 def parse_line_structure(line):

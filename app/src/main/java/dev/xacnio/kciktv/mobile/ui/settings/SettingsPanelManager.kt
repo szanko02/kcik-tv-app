@@ -150,6 +150,15 @@ class SettingsPanelManager(
                 prefs.backgroundAudioEnabled) { isEnabled ->
                 prefs.backgroundAudioEnabled = isEnabled
             }
+
+            // Fullscreen Sensor Rotation Toggle
+            addToggleSetting(container, R.drawable.ic_fullscreen,
+                activity.getString(R.string.setting_fullscreen_sensor_rotation),
+                activity.getString(R.string.setting_fullscreen_sensor_rotation_desc),
+                prefs.fullscreenSensorRotation) { isEnabled ->
+                prefs.fullscreenSensorRotation = isEnabled
+                activity.fullscreenToggleManager.applyFullscreenOrientationSetting()
+            }
         }
     }
     

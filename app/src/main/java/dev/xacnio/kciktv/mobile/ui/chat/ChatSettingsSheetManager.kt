@@ -36,6 +36,7 @@ import dev.xacnio.kciktv.R
 import dev.xacnio.kciktv.shared.data.model.ChatIdentityBadge
 import dev.xacnio.kciktv.shared.data.model.UserLevelData
 import dev.xacnio.kciktv.shared.data.prefs.AppPreferences
+import dev.xacnio.kciktv.shared.ui.adapter.ChatSizingMath
 
 import kotlinx.coroutines.CoroutineScope
 import dev.xacnio.kciktv.shared.data.repository.ChannelRepository
@@ -288,19 +289,42 @@ class ChatSettingsSheetManager(
         val textValueMessageSize = view.findViewById<TextView>(R.id.textValueMessageSize)
         val seekBarEmoteSize = view.findViewById<SeekBar>(R.id.seekBarEmoteSize)
         val textValueEmoteSize = view.findViewById<TextView>(R.id.textValueEmoteSize)
+        val seekBarMessageScale = view.findViewById<SeekBar>(R.id.seekBarMessageScale)
+        val textValueMessageScale = view.findViewById<TextView>(R.id.textValueMessageScale)
+        val seekBarMessageSpacing = view.findViewById<SeekBar>(R.id.seekBarMessageSpacing)
+        val textValueMessageSpacing = view.findViewById<TextView>(R.id.textValueMessageSpacing)
+        val seekBarSideChatWidth = view.findViewById<SeekBar>(R.id.seekBarSideChatWidth)
+        val textValueSideChatWidth = view.findViewById<TextView>(R.id.textValueSideChatWidth)
         val switchPinnedGifts = view.findViewById<SwitchCompat>(R.id.switchPinnedGifts)
         val switchEmoteCombo = view.findViewById<SwitchCompat>(R.id.switchEmoteCombo)
         val switchFloatingEmotes = view.findViewById<SwitchCompat>(R.id.switchFloatingEmotes)
+        val switchChatPinchResize = view.findViewById<SwitchCompat>(R.id.switchChatPinchResize)
+        val switchSideChatHandle = view.findViewById<SwitchCompat>(R.id.switchSideChatHandle)
 
-        listOf(switchTimestamps, switchSeconds, switchPinnedGifts, switchEmoteCombo, switchFloatingEmotes).forEach { switch ->
+        listOf(
+            switchTimestamps,
+            switchSeconds,
+            switchPinnedGifts,
+            switchEmoteCombo,
+            switchFloatingEmotes,
+            switchChatPinchResize,
+            switchSideChatHandle
+        ).forEach { switch ->
             switch.trackTintList = themeColorStateList
             switch.thumbTintList = thumbColorStateList
         }
 
-        seekBarMessageSize.progressTintList = android.content.res.ColorStateList.valueOf(themeColor)
-        seekBarMessageSize.thumbTintList = android.content.res.ColorStateList.valueOf(themeColor)
-        seekBarEmoteSize.progressTintList = android.content.res.ColorStateList.valueOf(themeColor)
-        seekBarEmoteSize.thumbTintList = android.content.res.ColorStateList.valueOf(themeColor)
+        val themeColorStateListSingle = android.content.res.ColorStateList.valueOf(themeColor)
+        listOf(
+            seekBarMessageSize,
+            seekBarEmoteSize,
+            seekBarMessageScale,
+            seekBarMessageSpacing,
+            seekBarSideChatWidth
+        ).forEach { seekBar ->
+            seekBar.progressTintList = themeColorStateListSingle
+            seekBar.thumbTintList = themeColorStateListSingle
+        }
 
         // Message Size Slider (10sp to 30sp)
         val minSize = 10
@@ -338,6 +362,69 @@ class ChatSettingsSheetManager(
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 prefs.chatEmoteSize = currentEmoteScale
                 chatUiManager.chatAdapter.setChatEmoteSize(currentEmoteScale)
+            }
+        })
+
+        // Message Scale Slider (50% to 200%, step 5%)
+        var currentMessageScale = ChatSizingMath.clampScale(prefs.chatMessageScale)
+        seekBarMessageScale.max = 30
+        seekBarMessageScale.progress = ((currentMessageScale - ChatSizingMath.MIN_SCALE) / ChatSizingMath.SCALE_STEP).coerceIn(0, 30)
+        textValueMessageScale.text = "${currentMessageScale}%"
+
+        seekBarMessageScale.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                val scale = ChatSizingMath.MIN_SCALE + progress * ChatSizingMath.SCALE_STEP
+                textValueMessageScale.text = "${scale}%"
+                currentMessageScale = scale
+                if (fromUser) chatUiManager.chatAdapter.setChatMessageScale(scale)
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                prefs.chatMessageScale = currentMessageScale
+                chatUiManager.chatAdapter.setChatMessageScale(currentMessageScale)
+            }
+        })
+
+        // Message Spacing Slider (0dp to 16dp)
+        var currentMessageSpacing = ChatSizingMath.clampSpacingDp(prefs.chatMessageSpacingDp)
+        seekBarMessageSpacing.max = AppPreferences.CHAT_SPACING_MAX
+        seekBarMessageSpacing.progress = currentMessageSpacing.coerceIn(0, AppPreferences.CHAT_SPACING_MAX)
+        textValueMessageSpacing.text = "${currentMessageSpacing}dp"
+
+        seekBarMessageSpacing.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                textValueMessageSpacing.text = "${progress}dp"
+                currentMessageSpacing = progress
+                if (fromUser) chatUiManager.chatAdapter.setChatMessageSpacing(progress)
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                prefs.chatMessageSpacingDp = currentMessageSpacing
+                chatUiManager.chatAdapter.setChatMessageSpacing(currentMessageSpacing)
+            }
+        })
+
+        // Side Chat Width Slider (15% to 70%)
+        var currentSideChatWidth = prefs.sideChatWidthPercent.coerceIn(
+            AppPreferences.SIDE_CHAT_WIDTH_MIN,
+            AppPreferences.SIDE_CHAT_WIDTH_MAX
+        )
+        seekBarSideChatWidth.max = 55
+        seekBarSideChatWidth.progress = (currentSideChatWidth - AppPreferences.SIDE_CHAT_WIDTH_MIN).coerceIn(0, 55)
+        textValueSideChatWidth.text = "${currentSideChatWidth}%"
+
+        seekBarSideChatWidth.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                val pct = AppPreferences.SIDE_CHAT_WIDTH_MIN + progress
+                textValueSideChatWidth.text = "${pct}%"
+                currentSideChatWidth = pct
+                if (fromUser) {
+                    activity.fullscreenToggleManager.applySideChatWidthPercent(pct, persist = false)
+                }
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                activity.fullscreenToggleManager.applySideChatWidthPercent(currentSideChatWidth, persist = true)
             }
         })
 
@@ -397,6 +484,19 @@ class ChatSettingsSheetManager(
         switchFloatingEmotes.setOnCheckedChangeListener { _, isChecked ->
             prefs.floatingEmotesEnabled = isChecked
             if (!isChecked) activity.floatingEmoteManager.clear()
+        }
+
+        // Pinch to Resize Chat
+        switchChatPinchResize.isChecked = prefs.chatPinchToResizeEnabled
+        switchChatPinchResize.setOnCheckedChangeListener { _, isChecked ->
+            prefs.chatPinchToResizeEnabled = isChecked
+        }
+
+        // Side Chat Resize Handle
+        switchSideChatHandle.isChecked = prefs.sideChatResizeHandleEnabled
+        switchSideChatHandle.setOnCheckedChangeListener { _, isChecked ->
+            prefs.sideChatResizeHandleEnabled = isChecked
+            activity.fullscreenToggleManager.updateSideChatHandleVisibility()
         }
 
         // Low Battery Mode (master) is wired in setupBatterySettings() on the Battery page.

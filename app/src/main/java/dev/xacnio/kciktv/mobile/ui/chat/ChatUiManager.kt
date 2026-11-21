@@ -92,6 +92,8 @@ class ChatUiManager(
         ).apply {
             setChatTextSize(prefs.chatTextSize)
             setChatEmoteSize(prefs.chatEmoteSize)
+            setChatMessageScale(prefs.chatMessageScale)
+            setChatMessageSpacing(prefs.chatMessageSpacingDp)
             setShowTimestamps(prefs.chatShowTimestamps)
             setShowSeconds(prefs.chatShowSeconds)
             setCurrentUser(prefs.username)

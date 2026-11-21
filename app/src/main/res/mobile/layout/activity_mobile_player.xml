@@ -2709,6 +2709,44 @@
             <!-- actionBar and chatContainer will be reparented here in landscape on tablets -->
         </LinearLayout>
 
+        <!-- Side Chat Resize Divider Handle & Live Width Badge -->
+        <FrameLayout
+            android:id="@+id/sideChatDividerHandle"
+            android:layout_width="22dp"
+            android:layout_height="0dp"
+            android:visibility="gone"
+            android:elevation="190dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="#22000000"
+            android:translationX="11dp"
+            app:layout_constraintEnd_toStartOf="@id/sideChatContainer"
+            app:layout_constraintTop_toTopOf="@id/sideChatContainer"
+            app:layout_constraintBottom_toBottomOf="@id/sideChatContainer">
+
+            <View
+                android:id="@+id/sideChatDividerPill"
+                android:layout_width="4dp"
+                android:layout_height="52dp"
+                android:layout_gravity="center" />
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/sideChatWidthBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            android:elevation="195dp"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="4dp"
+            android:layout_marginEnd="16dp"
+            app:layout_constraintEnd_toStartOf="@id/sideChatContainer"
+            app:layout_constraintTop_toTopOf="@id/sideChatContainer"
+            app:layout_constraintBottom_toBottomOf="@id/sideChatContainer" />
+
     </androidx.constraintlayout.widget.ConstraintLayout>
     <!-- End of Player Screen Container -->
 

@@ -1439,4 +1439,17 @@
     <string name="active_chatters_sort_level">Seviye</string>
     <string name="active_chatters_sort_recent">Son görülme</string>
     <string name="active_chatters_sort_direction">Sıralamayı ters çevir</string>
+
+    <!-- ReTwitch & VOD Chat Improvements -->
+    <string name="chat_message_scale">Mesaj Boyutu</string>
+    <string name="chat_message_spacing">Mesaj Aralığı</string>
+    <string name="chat_pinch_to_resize">Sohbeti Yeniden Boyutlandırmak için Sıkıştır</string>
+    <string name="chat_pinch_to_resize_subtitle">Mesaj boyutunu değiştirmek için sohbette iki parmak kullanın</string>
+    <string name="chat_pinch_scale_toast">Sohbet ölçeği: %d%%</string>
+    <string name="side_chat_width">Yan Sohbet Genişliği</string>
+    <string name="side_chat_resize_handle">Yan Sohbet Boyutlandırma Tutacağı</string>
+    <string name="side_chat_resize_handle_subtitle">Yatay modda yan sohbet kenarında sürüklenebilir bir ayırıcı göster</string>
+    <string name="side_chat_width_reset_toast">Yan sohbet genişliği varsayılana sıfırlandı</string>
+    <string name="setting_fullscreen_sensor_rotation">Tam Ekranda Döndür</string>
+    <string name="setting_fullscreen_sensor_rotation_desc">Sistem otomatik döndürme kapalıyken bile tam ekranda ekranı çevirmeye izin ver</string>
 </resources>

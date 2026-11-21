@@ -27,7 +27,7 @@ class FullscreenManager(private val activity: MobilePlayerActivity) {
     fun enterFullscreen() {
         isFullscreen = true
         // Use sensor landscape to allow 180 degree rotation in fullscreen
-        activity.requestedOrientation = if (activity.isRotationAllowed()) {
+        activity.requestedOrientation = if (activity.prefs.fullscreenSensorRotation || activity.isRotationAllowed()) {
             ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         } else {
             ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE

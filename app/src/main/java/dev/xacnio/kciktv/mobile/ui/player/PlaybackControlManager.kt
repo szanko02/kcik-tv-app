@@ -67,6 +67,14 @@ class PlaybackControlManager(
         // Rewind Button
         binding.rewindButton.setOnClickListener {
             activity.handleRewindRequest()
+            if (activity.isVodPlaying) {
+                // Let the player apply the rewind, then re-anchor chat replay to the new position
+                mainHandler.post {
+                    activity.playerManager.ivsPlayer?.let { p ->
+                        activity.vodManager.onUserSeekRequested(p.position)
+                    }
+                }
+            }
         }
 
         // Forward 10s (only works in VOD mode)
@@ -76,6 +84,9 @@ class PlaybackControlManager(
                 if (duration > 0) {
                     val newPos = (player.position + 10000).coerceAtMost(duration)
                     player.seekTo(newPos)
+                    if (activity.isVodPlaying) {
+                        activity.vodManager.onUserSeekRequested(newPos)
+                    }
                     showSeekAnimation(+10)
                     updateSeekBarProgress()
                 }
@@ -171,8 +182,14 @@ class PlaybackControlManager(
             override fun onStartTrackingTouch(seekBar: SeekBar?) {
                 mainHandler.removeCallbacks(activity.hideOverlayRunnable)
                 stopProgressUpdater()
+                if (activity.isVodPlaying) {
+                    activity.vodManager.setSeekBarSliding(true)
+                }
             }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                if (activity.isVodPlaying) {
+                    activity.vodManager.setSeekBarSliding(false)
+                }
                 // If in Live mode and DVR is available, trigger DVR switch on release
                 val isVodMode = (activity.currentStreamUrl == activity.dvrPlaybackUrl && activity.dvrPlaybackUrl != null) || activity.isVodPlaying
                 if (!isVodMode && activity.dvrPlaybackUrl != null && !activity.isVodPlaying) {
