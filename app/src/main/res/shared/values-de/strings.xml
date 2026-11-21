@@ -1439,4 +1439,17 @@
     <string name="active_chatters_sort_level">Level</string>
     <string name="active_chatters_sort_recent">Zuletzt gesehen</string>
     <string name="active_chatters_sort_direction">Sortierung umkehren</string>
+
+    <!-- ReTwitch & VOD Chat Improvements -->
+    <string name="chat_message_scale">Nachrichtengröße</string>
+    <string name="chat_message_spacing">Nachrichtenabstand</string>
+    <string name="chat_pinch_to_resize">Zum Ändern der Chatgröße zusammenziehen</string>
+    <string name="chat_pinch_to_resize_subtitle">Mit zwei Fingern im Chat die Nachrichtengröße ändern</string>
+    <string name="chat_pinch_scale_toast">Chatgröße: %d%%</string>
+    <string name="side_chat_width">Breite des seitlichen Chats</string>
+    <string name="side_chat_resize_handle">Größenanpassungsgriff für seitlichen Chat</string>
+    <string name="side_chat_resize_handle_subtitle">Zeigt im Querformat eine verschiebbare Trennlinie am Rand des seitlichen Chats</string>
+    <string name="side_chat_width_reset_toast">Breite des seitlichen Chats auf Standard zurückgesetzt</string>
+    <string name="setting_fullscreen_sensor_rotation">Im Vollbild drehen</string>
+    <string name="setting_fullscreen_sensor_rotation_desc">Bildschirm im Vollbild auch drehen, wenn die automatische Drehung des Systems aus ist</string>
 </resources>

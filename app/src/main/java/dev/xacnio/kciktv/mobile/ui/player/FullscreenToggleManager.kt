@@ -132,6 +132,187 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
     private var originalChatIndex: Int = -1
     private var originalChatParams: android.view.ViewGroup.LayoutParams? = null
 
+    // Side Chat Resize Handle State
+    private var isDividerSetup = false
+    private var isDraggingDivider = false
+    private var lastHandleTapMs = 0L
+    private var lastDraggedPercent = -1
+    private var pillDrawable: android.graphics.drawable.GradientDrawable? = null
+    private var badgeDrawable: android.graphics.drawable.GradientDrawable? = null
+
+    private fun effectiveRootWidth(rootWidth: Int = binding.root.width): Int {
+        if (rootWidth > 0) return rootWidth
+        val dm = activity.resources.displayMetrics
+        return kotlin.math.max(dm.widthPixels, dm.heightPixels)
+    }
+
+    private fun computeSideChatWidthPx(rootWidth: Int): Int {
+        return SideChatWidthUtils.widthPxForPercent(
+            effectiveRootWidth(rootWidth),
+            prefs.sideChatWidthPercent
+        )
+    }
+
+    private fun ensureSideChatDividerSetup() {
+        if (isDividerSetup) return
+        isDividerSetup = true
+
+        val density = activity.resources.displayMetrics.density
+        pillDrawable = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = 2f * density
+            setColor(Color.parseColor("#CCFFFFFF"))
+        }
+        binding.sideChatDividerPill.background = pillDrawable
+
+        badgeDrawable = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = 8f * density
+            setColor(Color.parseColor("#CC121212"))
+            setStroke((1f * density).toInt().coerceAtLeast(1), Color.parseColor("#53FC18"))
+        }
+        binding.sideChatWidthBadge.background = badgeDrawable
+
+        val touchSlop = android.view.ViewConfiguration.get(activity).scaledTouchSlop
+        val parentLoc = IntArray(2)
+        var downX = 0f
+        var moved = false
+        var isDoubleTap = false
+
+        binding.sideChatDividerHandle.setOnTouchListener { v, event ->
+            when (event.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    v.parent?.requestDisallowInterceptTouchEvent(true)
+                    downX = event.rawX
+                    moved = false
+                    lastDraggedPercent = -1
+                    val now = android.os.SystemClock.uptimeMillis()
+                    isDoubleTap = (now - lastHandleTapMs) < 300L
+                    lastHandleTapMs = now
+                    isDraggingDivider = true
+                    pillDrawable?.setColor(Color.parseColor("#53FC18"))
+                    v.alpha = 1.0f
+                    true
+                }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    if (!moved && kotlin.math.abs(event.rawX - downX) >= touchSlop) {
+                        moved = true
+                    }
+                    if (moved) {
+                        val parentView = binding.playerScreenContainer
+                        parentView.getLocationOnScreen(parentLoc)
+                        val parentW = parentView.width
+                        val percent = SideChatWidthUtils.percentForTouchX(event.rawX, parentLoc[0], parentW)
+                        lastDraggedPercent = percent
+                        applySideChatWidthPercent(percent, persist = false)
+                        binding.sideChatWidthBadge.text = "$percent%"
+                        binding.sideChatWidthBadge.visibility = View.VISIBLE
+                    }
+                    true
+                }
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                    isDraggingDivider = false
+                    v.parent?.requestDisallowInterceptTouchEvent(false)
+                    pillDrawable?.setColor(Color.parseColor("#CCFFFFFF"))
+                    binding.sideChatWidthBadge.visibility = View.GONE
+                    if (moved && lastDraggedPercent > 0) {
+                        prefs.sideChatWidthPercent = lastDraggedPercent
+                    } else if (event.actionMasked == android.view.MotionEvent.ACTION_UP && isDoubleTap) {
+                        lastHandleTapMs = 0L
+                        applySideChatWidthPercent(
+                            dev.xacnio.kciktv.shared.data.prefs.AppPreferences.SIDE_CHAT_WIDTH_DEFAULT,
+                            persist = true
+                        )
+                        Toast.makeText(activity, R.string.side_chat_width_reset_toast, Toast.LENGTH_SHORT).show()
+                    }
+                    lastDraggedPercent = -1
+                    updateSideChatHandleVisibility()
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    private fun hideSideChatDivider() {
+        isDraggingDivider = false
+        lastDraggedPercent = -1
+        binding.sideChatDividerHandle.visibility = View.GONE
+        binding.sideChatWidthBadge.visibility = View.GONE
+    }
+
+    fun applySideChatWidthPercent(percent: Int, persist: Boolean = false) {
+        val clamped = SideChatWidthUtils.clampPercent(percent)
+        if (persist) {
+            prefs.sideChatWidthPercent = clamped
+        }
+        if (!isSideChatVisible) return
+
+        val rootWidth = effectiveRootWidth()
+        val newChatWidth = SideChatWidthUtils.widthPxForPercent(rootWidth, clamped)
+
+        val chatParams = binding.sideChatContainer.layoutParams
+        if (chatParams.width != newChatWidth) {
+            chatParams.width = newChatWidth
+            binding.sideChatContainer.layoutParams = chatParams
+        }
+
+        val isTablet = activity.isTabletOrLargeWindow()
+        val videoParams = binding.videoContainer.layoutParams as ConstraintLayout.LayoutParams
+        if (isTablet) {
+            videoParams.width = (rootWidth - newChatWidth).coerceAtLeast(1)
+            videoParams.dimensionRatio = "H,16:9"
+            videoParams.height = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT
+        } else {
+            videoParams.width = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT
+            videoParams.dimensionRatio = null
+            videoParams.height = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT
+        }
+        videoParams.endToStart = R.id.sideChatContainer
+        videoParams.endToEnd = ConstraintLayout.LayoutParams.UNSET
+        binding.videoContainer.layoutParams = videoParams
+    }
+
+    fun updateSideChatHandleVisibility(overlayVisible: Boolean? = null) {
+        ensureSideChatDividerSetup()
+        val shouldShow = isSideChatVisible && prefs.sideChatResizeHandleEnabled
+        binding.sideChatDividerHandle.visibility = if (shouldShow) View.VISIBLE else View.GONE
+        if (!shouldShow) {
+            binding.sideChatWidthBadge.visibility = View.GONE
+            return
+        }
+        if (isDraggingDivider) {
+            binding.sideChatDividerHandle.alpha = 1.0f
+            pillDrawable?.setColor(Color.parseColor("#53FC18"))
+            val displayPercent = if (lastDraggedPercent > 0) lastDraggedPercent else prefs.sideChatWidthPercent
+            binding.sideChatWidthBadge.text = "$displayPercent%"
+            binding.sideChatWidthBadge.visibility = View.VISIBLE
+        } else {
+            val emphasized = overlayVisible == true || (overlayVisible == null && binding.videoOverlay.visibility == View.VISIBLE)
+            binding.sideChatDividerHandle.alpha = if (emphasized) 1.0f else 0.28f
+            pillDrawable?.setColor(Color.parseColor("#CCFFFFFF"))
+            binding.sideChatWidthBadge.visibility = View.GONE
+        }
+    }
+
+    internal fun resolveFullscreenOrientation(): Int {
+        return if (prefs.fullscreenSensorRotation || activity.isRotationAllowed()) {
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        }
+    }
+
+    fun applyFullscreenOrientationSetting() {
+        if (!activity.isFullscreen || isTheatreMode) return
+        val isTablet = activity.isTabletOrLargeWindow()
+        if (isTablet && activity.isRotationAllowed()) {
+            activity.setAllowedOrientation()
+        } else {
+            activity.requestedOrientation = resolveFullscreenOrientation()
+        }
+    }
+
     // For Tablet Split View - tracking if ActionBar was moved to side
     private var isActionBarReparentedToSide = false
 
@@ -256,6 +437,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
      *                    Used during playChannel to ensure absolutely clean state.
      */
     internal fun cleanupSideChat(forceReset: Boolean = false) {
+        hideSideChatDivider()
         // Use early return guard for normal calls, but skip it if forcing reset
         if (!forceReset && !isSideChatVisible && binding.sideChatContainer.visibility != View.VISIBLE) return
         
@@ -1545,25 +1727,18 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             runFullscreenLayoutTransition(entering = true)
         }
 
-        // For phones: allow 180° landscape flip if system auto-rotate is ON
-        // For tablets: allow full sensor rotation
+        // For phones: allow 180° landscape flip if fullscreenSensorRotation or system auto-rotate is ON
+        // For tablets: allow full sensor rotation when system auto-rotate is ON, or 180° landscape flip when fullscreenSensorRotation is ON
         if (isTablet) {
-            activity.setAllowedOrientation() // Tablets use full sensor
-        } else {
-            // Check if system auto-rotate is enabled
-            val autoRotateEnabled = android.provider.Settings.System.getInt(
-                activity.contentResolver,
-                android.provider.Settings.System.ACCELEROMETER_ROTATION,
-                0
-            ) == 1
-            
-            if (autoRotateEnabled) {
-                // Allow flipping between landscape left and landscape right
+            if (activity.isRotationAllowed()) {
+                activity.setAllowedOrientation() // Tablets use full sensor
+            } else if (prefs.fullscreenSensorRotation) {
                 activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
             } else {
-                // Lock to current landscape
-                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                activity.setAllowedOrientation()
             }
+        } else {
+            activity.requestedOrientation = resolveFullscreenOrientation()
         }
         // FULLSCREEN is handled by WindowInsetsControllerCompat below
 
@@ -1600,6 +1775,8 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         // In fullscreen mode, hide side chat if visible (tablet landscape)
         if (isSideChatVisible) {
             cleanupSideChat()
+        } else {
+            hideSideChatDivider()
         }
     }
 
@@ -1613,6 +1790,8 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             exitTheatreMode()
             return
         }
+
+        hideSideChatDivider()
 
         val isTablet = activity.resources.configuration.smallestScreenWidthDp >= 720
         
@@ -1732,10 +1911,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         if (isSideChatVisible || !isLandscape || isTheatreMode) return
         
         val displayMetrics = activity.resources.displayMetrics
-        var rootWidth = checkWidth
-
-        // If dimensions are zero (stale after rotate) use display metrics as a reliable fallback
-        if (rootWidth == 0) rootWidth = displayMetrics.widthPixels
+        val rootWidth = effectiveRootWidth(checkWidth)
         
         val chat = binding.chatContainer
         val isTablet = activity.isTabletOrLargeWindow()
@@ -1813,14 +1989,11 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         }
         
         isSideChatVisible = true
-        
-        // Use wider chat for tablets
-        val chatWidth = if (isTablet) {
-            (400 * displayMetrics.density).toInt()
-        } else {
-            (350 * displayMetrics.density).toInt()
-        }
-        
+        ensureSideChatDividerSetup()
+
+        val chatWidth = computeSideChatWidthPx(rootWidth)
+        val dividerHalfPx = 11f * displayMetrics.density
+
         // Initial setup for chat
         binding.sideChatContainer.layoutParams.width = chatWidth
         
@@ -1850,19 +2023,22 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
 
         if (skipAnimation) {
             binding.sideChatContainer.translationX = 0f
+            binding.sideChatDividerHandle.translationX = dividerHalfPx
             // Use constraints for skipped animation
             if (isTablet) {
-                videoParams.width = rootWidth - chatWidth
+                videoParams.width = (rootWidth - chatWidth).coerceAtLeast(1)
             } else {
                 videoParams.width = 0 // MATCH_CONSTRAINT
             }
             videoParams.endToStart = R.id.sideChatContainer
             videoParams.endToEnd = ConstraintLayout.LayoutParams.UNSET
             binding.videoContainer.layoutParams = videoParams
+            updateSideChatHandleVisibility()
             return
         }
 
         binding.sideChatContainer.translationX = chatWidth.toFloat()
+        binding.sideChatDividerHandle.translationX = chatWidth.toFloat() + dividerHalfPx
         
         // Create synchronized animator
         val animator = android.animation.ValueAnimator.ofFloat(0f, 1f)
@@ -1891,14 +2067,16 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             // 2. Update Chat Translation
             val translation = chatWidth * (1 - fraction)
             binding.sideChatContainer.translationX = translation
+            binding.sideChatDividerHandle.translationX = translation + dividerHalfPx
         }
         
         animator.addListener(object : android.animation.AnimatorListenerAdapter() {
             override fun onAnimationEnd(animation: android.animation.Animator) {
+                binding.sideChatDividerHandle.translationX = dividerHalfPx
                 // Finalize constraints to ensure child views (InfoPanel) resize correctly
                 val vParams = binding.videoContainer.layoutParams as ConstraintLayout.LayoutParams
                 if (isTablet) {
-                    vParams.width = rootWidth - chatWidth
+                    vParams.width = (rootWidth - chatWidth).coerceAtLeast(1)
                 } else {
                     vParams.width = 0 // MATCH_CONSTRAINT
                 }
@@ -1911,10 +2089,12 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
                 }
                 
                 binding.videoContainer.layoutParams = vParams
+                updateSideChatHandleVisibility()
             }
         })
         
         animator.start()
+        updateSideChatHandleVisibility()
         
         // Force chat padding to 0 for phones to avoid gaps from overlay
         if (!isTablet) {
@@ -1928,17 +2108,16 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
      */
     fun hideSideChat() {
         if (!isSideChatVisible) return
-        
+        hideSideChatDivider()
+
         val chat = binding.chatContainer
-        val isTablet = activity.resources.getBoolean(R.bool.is_tablet)
+        val isTablet = activity.isTabletOrLargeWindow()
         
         // Calculate dimensions
-        val displayMetrics = activity.resources.displayMetrics
-        var rootWidth = binding.root.width
-        if (rootWidth == 0) rootWidth = displayMetrics.widthPixels
+        val rootWidth = effectiveRootWidth()
 
         val chatWidth = binding.sideChatContainer.width.takeIf { it > 0 }
-            ?: (350 * displayMetrics.density).toInt()
+            ?: computeSideChatWidthPx(rootWidth)
             
         val currentVideoWidth = binding.videoContainer.width
         
@@ -2044,6 +2223,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         savedResizeMode = binding.playerView.resizeMode
 
         // 2. Hide Common Overlays
+        hideSideChatDivider()
         binding.videoOverlay.visibility = View.GONE
         binding.playPauseOverlay.visibility = View.GONE
         binding.actionBar.visibility = View.GONE
@@ -2188,7 +2368,8 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
      */
     fun updateSideChatOverlayState(isOverlayVisible: Boolean) {
         if (!isSideChatVisible) return
-        val isTablet = activity.resources.getBoolean(R.bool.is_tablet)
+        updateSideChatHandleVisibility(overlayVisible = isOverlayVisible)
+        val isTablet = activity.isTabletOrLargeWindow()
         if (isTablet) return 
         
         // Only apply this logic in Landscape mode (Fullscreen on phone)

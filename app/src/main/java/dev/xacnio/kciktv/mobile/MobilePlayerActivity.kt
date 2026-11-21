@@ -267,6 +267,7 @@ class MobilePlayerActivity : FragmentActivity() {
     internal val isFullscreen: Boolean
         get() = if (::fullscreenManager.isInitialized) fullscreenManager.isFullscreen else false
     internal lateinit var chatUiManager: dev.xacnio.kciktv.mobile.ui.chat.ChatUiManager
+    internal val chatPinchResizeHelper by lazy { dev.xacnio.kciktv.mobile.ui.chat.ChatPinchResizeHelper(this) }
     internal lateinit var clipManager: dev.xacnio.kciktv.mobile.ui.clip.ClipManager
     internal lateinit var channelProfileManager: dev.xacnio.kciktv.mobile.ui.channel.ChannelProfileManager
     internal lateinit var followingManager: FollowingManager
@@ -565,6 +566,12 @@ class MobilePlayerActivity : FragmentActivity() {
      * Otherwise sets to portrait for phones, user preference for tablets.
      */
     internal fun setAllowedOrientation() {
+        if (isFullscreen && ::fullscreenToggleManager.isInitialized &&
+            !fullscreenToggleManager.isTheatreMode && prefs.fullscreenSensorRotation
+        ) {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            return
+        }
         if (isRotationAllowed()) {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER
         } else {
@@ -2071,6 +2078,14 @@ class MobilePlayerActivity : FragmentActivity() {
             } catch (e: Exception) {
                 // Ignore touch calculation errors
             }
+        }
+
+        if (::binding.isInitialized && ::chatUiManager.isInitialized &&
+            chatPinchResizeHelper.onDispatchTouchEvent(ev) { cancelEvent ->
+                super.dispatchTouchEvent(cancelEvent)
+            }
+        ) {
+            return true
         }
 
         return super.dispatchTouchEvent(ev)

@@ -29,7 +29,17 @@ class AppPreferences(private val context: Context) {
     // create their own AppPreferences instance; if the cache were per-instance, a write from
     // LoginActivity (e.g. saveAuth) would not invalidate MobilePlayerActivity's cached ABSENT
     // sentinel, leaving the UI stuck showing "Log in" after a successful login.
-    private companion object {
+    companion object {
+        const val SIDE_CHAT_WIDTH_MIN = 15
+        const val SIDE_CHAT_WIDTH_MAX = 70
+        const val SIDE_CHAT_WIDTH_DEFAULT = 35
+        const val CHAT_SCALE_MIN = 50
+        const val CHAT_SCALE_MAX = 200
+        const val CHAT_SCALE_DEFAULT = 100
+        const val CHAT_SPACING_MIN = 0
+        const val CHAT_SPACING_MAX = 16
+        const val CHAT_SPACING_DEFAULT = 4
+
         private val decryptCache = java.util.concurrent.ConcurrentHashMap<String, String>()
         private const val ABSENT = "__kick_tv_absent__"
     }
@@ -909,4 +919,28 @@ class AppPreferences(private val context: Context) {
     var proxyPassword: String?
         get() = getStringSafe("proxy_password", null)
         set(value) = putStringSafe("proxy_password", value)
+
+    var sideChatWidthPercent: Int
+        get() = prefs.getInt("side_chat_width_percent", SIDE_CHAT_WIDTH_DEFAULT).coerceIn(SIDE_CHAT_WIDTH_MIN, SIDE_CHAT_WIDTH_MAX)
+        set(value) = prefs.edit().putInt("side_chat_width_percent", value.coerceIn(SIDE_CHAT_WIDTH_MIN, SIDE_CHAT_WIDTH_MAX)).apply()
+
+    var sideChatResizeHandleEnabled: Boolean
+        get() = prefs.getBoolean("side_chat_resize_handle_enabled", true)
+        set(value) = prefs.edit().putBoolean("side_chat_resize_handle_enabled", value).apply()
+
+    var chatMessageScale: Int
+        get() = prefs.getInt("chat_message_scale", CHAT_SCALE_DEFAULT).coerceIn(CHAT_SCALE_MIN, CHAT_SCALE_MAX)
+        set(value) = prefs.edit().putInt("chat_message_scale", value.coerceIn(CHAT_SCALE_MIN, CHAT_SCALE_MAX)).apply()
+
+    var chatMessageSpacingDp: Int
+        get() = prefs.getInt("chat_message_spacing_dp", CHAT_SPACING_DEFAULT).coerceIn(CHAT_SPACING_MIN, CHAT_SPACING_MAX)
+        set(value) = prefs.edit().putInt("chat_message_spacing_dp", value.coerceIn(CHAT_SPACING_MIN, CHAT_SPACING_MAX)).apply()
+
+    var chatPinchToResizeEnabled: Boolean
+        get() = prefs.getBoolean("chat_pinch_to_resize_enabled", true)
+        set(value) = prefs.edit().putBoolean("chat_pinch_to_resize_enabled", value).apply()
+
+    var fullscreenSensorRotation: Boolean
+        get() = prefs.getBoolean("fullscreen_sensor_rotation", true)
+        set(value) = prefs.edit().putBoolean("fullscreen_sensor_rotation", value).apply()
 }

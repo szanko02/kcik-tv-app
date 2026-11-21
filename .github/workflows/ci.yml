@@ -1,15 +1,21 @@
-name: CI - Pull Request Check
+name: CI
 
 on:
-  pull_request:
-    branches:
-      - master
-      - develop
+  push:
+    branches: [master]
     paths-ignore:
       - '**.md'
       - 'docs/**'
       - '.gitignore'
       - 'LICENSE'
+  pull_request:
+    branches: [master, develop]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -49,13 +55,13 @@ jobs:
           cp app/google-services.json.example app/google-services.json
           echo "Using mock google-services.json for CI build"
 
-      - name: Build Debug APK
-        run: gradle assembleDebug
+      - name: Unit Tests & Build Debug APK
+        run: gradle testDebugUnitTest assembleDebug
 
       - name: Upload Build Artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: debug-apk-pr-${{ github.event.pull_request.number }}
+          name: KCIKTV-debug-apk
           path: app/build/outputs/apk/debug/*.apk
-          retention-days: 7
+          retention-days: 14

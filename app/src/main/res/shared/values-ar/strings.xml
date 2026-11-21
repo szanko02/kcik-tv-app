@@ -1439,4 +1439,17 @@
     <string name="active_chatters_sort_level">المستوى</string>
     <string name="active_chatters_sort_recent">آخر ظهور</string>
     <string name="active_chatters_sort_direction">عكس الترتيب</string>
+
+    <!-- ReTwitch & VOD Chat Improvements -->
+    <string name="chat_message_scale">حجم الرسائل</string>
+    <string name="chat_message_spacing">تباعد الرسائل</string>
+    <string name="chat_pinch_to_resize">القرص لتغيير حجم الدردشة</string>
+    <string name="chat_pinch_to_resize_subtitle">استخدم إصبعين في الدردشة لتغيير حجم الرسائل</string>
+    <string name="chat_pinch_scale_toast">حجم الدردشة: %d%%</string>
+    <string name="side_chat_width">عرض الدردشة الجانبية</string>
+    <string name="side_chat_resize_handle">مقبض تغيير حجم الدردشة الجانبية</string>
+    <string name="side_chat_resize_handle_subtitle">إظهار فاصل قابل للسحب على حافة الدردشة الجانبية في الوضع الأفقي</string>
+    <string name="side_chat_width_reset_toast">تمت إعادة عرض الدردشة الجانبية إلى الافتراضي</string>
+    <string name="setting_fullscreen_sensor_rotation">التدوير في ملء الشاشة</string>
+    <string name="setting_fullscreen_sensor_rotation_desc">السماح بقلب الشاشة في وضع ملء الشاشة حتى عند إيقاف التدوير التلقائي للنظام</string>
 </resources>

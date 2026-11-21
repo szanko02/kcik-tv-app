@@ -236,6 +236,8 @@ class ChatAdapter(
     private var showSeconds: Boolean = true
     private var textSize: Float = 14f
     private var emoteScale: Float = 1.8f
+    private var messageScalePercent: Int = ChatSizingMath.DEFAULT_SCALE
+    private var messageSpacingDp: Int = ChatSizingMath.DEFAULT_SPACING_DP
     private var lastLinkClickTime: Long = 0
     
     private var currentUsername: String? = null
@@ -338,6 +340,35 @@ class ChatAdapter(
         this.emoteScale = scale
         if (old != scale) {
             notifyDataSetChanged()
+        }
+    }
+
+    private fun effectiveTextSize(): Float =
+        ChatSizingMath.effectiveTextSizeSp(textSize, messageScalePercent)
+
+    fun setChatMessageScale(scalePercent: Int) {
+        val clamped = ChatSizingMath.clampScale(scalePercent)
+        if (this.messageScalePercent != clamped) {
+            this.messageScalePercent = clamped
+            notifyDataSetChanged()
+        }
+    }
+
+    fun setChatMessageSpacing(spacingDp: Int) {
+        val clamped = ChatSizingMath.clampSpacingDp(spacingDp)
+        if (this.messageSpacingDp != clamped) {
+            this.messageSpacingDp = clamped
+            notifyDataSetChanged()
+        }
+    }
+
+    private fun applyRowSpacing(itemView: View, textView: TextView? = null) {
+        val density = itemView.resources.displayMetrics.density
+        val vPad = Math.round(messageSpacingDp * density)
+        itemView.setPadding(itemView.paddingLeft, vPad, itemView.paddingRight, vPad)
+        if (textView != null) {
+            val tvPad = Math.round(ChatSizingMath.messageTextVerticalPaddingDp(messageSpacingDp) * density)
+            textView.setPadding(textView.paddingLeft, tvPad, textView.paddingRight, tvPad)
         }
     }
 
@@ -633,6 +664,7 @@ class ChatAdapter(
 
 
     private fun bindGiftMessage(holder: GiftViewHolder, message: ChatMessage) {
+        applyRowSpacing(holder.itemView, null)
         val data = message.giftData ?: return
         
         // Parse user color
@@ -691,20 +723,20 @@ class ChatAdapter(
         builder.setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), usernameEnd, builder.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
         
         holder.giftHeaderText.text = builder
-        holder.giftHeaderText.textSize = textSize
+        holder.giftHeaderText.textSize = effectiveTextSize()
         
         // Message Content
         if (isSmallGift) {
             holder.giftMessageText.visibility = View.GONE
         } else {
             holder.giftMessageText.text = message.content
-            holder.giftMessageText.textSize = textSize
+            holder.giftMessageText.textSize = effectiveTextSize()
             holder.giftMessageText.visibility = if (message.content.isNullOrEmpty()) View.GONE else View.VISIBLE
         }
         
         // Amount (formatted with thousands separator)
         holder.amountText.text = java.text.NumberFormat.getIntegerInstance().format(amount).replace(",", ".")
-        holder.amountText.textSize = textSize * 0.9f
+        holder.amountText.textSize = effectiveTextSize() * 0.9f
         
         // Gift Image
         val giftId = data.gift?.giftId
@@ -721,6 +753,7 @@ class ChatAdapter(
     }
 
     private fun bindRewardMessage(holder: RewardViewHolder, message: ChatMessage) {
+        applyRowSpacing(holder.itemView, null)
         val data = message.rewardData ?: return
         
         val username = data.username ?: "User"
@@ -744,11 +777,11 @@ class ChatAdapter(
         builder.append(" " + holder.itemView.context.getString(R.string.chat_reward_used))
         
         holder.rewardHeader.text = builder
-        holder.rewardHeader.textSize = textSize
+        holder.rewardHeader.textSize = effectiveTextSize()
         holder.rewardHeader.movementMethod = android.text.method.LinkMovementMethod.getInstance()
 
         holder.rewardTitle.text = data.rewardTitle ?: ""
-        holder.rewardTitle.textSize = textSize
+        holder.rewardTitle.textSize = effectiveTextSize()
         
         if (!data.userInput.isNullOrBlank()) {
             val input = data.userInput
@@ -788,7 +821,7 @@ class ChatAdapter(
             }
             
             holder.rewardInput.text = spannable
-            holder.rewardInput.textSize = textSize
+            holder.rewardInput.textSize = effectiveTextSize()
             holder.rewardInput.movementMethod = android.text.method.LinkMovementMethod.getInstance()
             holder.rewardInput.visibility = View.VISIBLE
         } else {
@@ -798,7 +831,7 @@ class ChatAdapter(
         val cost = data.rewardCost ?: 0
         if (cost > 0) {
             holder.rewardCost.text = "-${cost}"
-            holder.rewardCost.textSize = textSize * 0.85f
+            holder.rewardCost.textSize = effectiveTextSize() * 0.85f
             holder.rewardCost.visibility = View.VISIBLE
             (holder.rewardCost.parent as? View)?.visibility = View.VISIBLE
         } else {
@@ -816,6 +849,7 @@ class ChatAdapter(
     }
 
     private fun bindCelebrationMessage(holder: CelebrationViewHolder, message: ChatMessage) {
+        applyRowSpacing(holder.itemView, null)
         val data = message.celebrationData ?: return
         val context = holder.itemView.context
         
@@ -913,7 +947,7 @@ class ChatAdapter(
         message: ChatMessage
     ) {
         messageText.text = null
-        messageText.textSize = textSize
+        messageText.textSize = effectiveTextSize()
         
         val context = messageText.context
         val badgeSize = (messageText.textSize * 1.2).toInt()
@@ -1193,6 +1227,7 @@ class ChatAdapter(
     }
 
     private fun bindDivider(holder: DividerViewHolder, message: ChatMessage) {
+        applyRowSpacing(holder.itemView, null)
         holder.dividerText.text = message.content
     }
 
@@ -1207,6 +1242,7 @@ class ChatAdapter(
     }
 
     private fun bindInfoMessage(holder: InfoViewHolder, message: ChatMessage) {
+        applyRowSpacing(holder.itemView, null)
         val content = message.content
         val htmlRes = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
             android.text.Html.fromHtml(content, android.text.Html.FROM_HTML_MODE_COMPACT)
@@ -1241,11 +1277,12 @@ class ChatAdapter(
         }
         
         holder.infoMessageText.text = spannable
-        holder.infoMessageText.textSize = textSize
+        holder.infoMessageText.textSize = effectiveTextSize()
         holder.infoMessageText.movementMethod = android.text.method.LinkMovementMethod.getInstance()
     }
 
     private fun bindSystemMessage(holder: SystemViewHolder, message: ChatMessage) {
+        applyRowSpacing(holder.itemView, null)
         val content = message.content
         val htmlRes = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
             android.text.Html.fromHtml(content, android.text.Html.FROM_HTML_MODE_COMPACT)
@@ -1342,12 +1379,12 @@ class ChatAdapter(
         }
         
         holder.systemMessageText.text = spannable
-        holder.systemMessageText.textSize = textSize
+        holder.systemMessageText.textSize = effectiveTextSize()
         holder.systemMessageText.movementMethod = android.text.method.LinkMovementMethod.getInstance()
         
         // Scale icon based on text size
         val density = holder.itemView.resources.displayMetrics.density
-        val iconSize = (textSize * density * 1.2f).toInt()
+        val iconSize = (effectiveTextSize() * density * 1.2f).toInt()
         holder.systemMessageIcon.layoutParams.width = iconSize
         holder.systemMessageIcon.layoutParams.height = iconSize
         
@@ -1426,11 +1463,12 @@ class ChatAdapter(
     }
 
     private fun bindChatMessage(holder: ChatViewHolder, message: ChatMessage) {
+        applyRowSpacing(holder.itemView, holder.messageText)
         
         // ABSOLUTELY CRITICAL: Clear text and spans immediately to stop any 
         // lingering drawing operations before we clear the Glide targets.
         holder.messageText.text = null
-        holder.messageText.textSize = textSize 
+        holder.messageText.textSize = effectiveTextSize() 
         
         // Ensure TextView can receive clicks and long clicks
         holder.messageText.isClickable = true
