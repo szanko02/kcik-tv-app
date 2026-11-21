@@ -1,0 +1,938 @@
+/**
+ * File: PlayerManager.kt
+ *
+ * Description: Core manager for the Amazon IVS Player instance.
+ * It handles player initialization, listener registration, state changes (Idle, Buffering, Playing),
+ * error handling, quality selection logic, and audio effect processing (DynamicsProcessing).
+ *
+ * Author: Xacnio
+ *
+ */
+package dev.xacnio.kciktv.mobile.ui.player
+
+import android.animation.ObjectAnimator
+import android.content.Context
+import android.media.audiofx.DynamicsProcessing
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
+import android.view.Surface
+import android.view.SurfaceView
+import android.view.View
+import android.view.ViewGroup
+import android.view.WindowManager
+import androidx.constraintlayout.widget.ConstraintLayout
+import com.amazonaws.ivs.player.Player
+import com.amazonaws.ivs.player.Quality
+import dev.xacnio.kciktv.mobile.MobilePlayerActivity
+import dev.xacnio.kciktv.R
+import dev.xacnio.kciktv.shared.data.prefs.AppPreferences
+import dev.xacnio.kciktv.databinding.ActivityMobilePlayerBinding
+import java.nio.ByteBuffer
+import dev.xacnio.kciktv.shared.data.model.ChannelItem
+import androidx.core.net.toUri
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import com.bumptech.glide.Glide
+import dev.xacnio.kciktv.shared.data.repository.ChannelRepository
+import androidx.lifecycle.LifecycleCoroutineScope
+import dev.xacnio.kciktv.mobile.BlerpBottomSheetFragment
+import android.net.Uri
+
+class PlayerManager(
+    private val activity: MobilePlayerActivity,
+    private val binding: ActivityMobilePlayerBinding,
+    private val prefs: AppPreferences,
+    private val repository: ChannelRepository,
+    private val lifecycleScope: LifecycleCoroutineScope
+) {
+    private val TAG = "PlayerManager"
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    var ivsPlayer: Player? = null
+    var manualMaxQuality: Quality? = null
+    var userSelectedQualityLimit: Quality? = null
+    var forcedQualityLimit: String? = null
+    var shouldSeekToLiveEdge = false
+    var externalListener: Player.Listener? = null
+    // Audio Processing - Only EQ works with IVS Player
+    private var audioProcessor: DynamicsProcessing? = null
+    private var activeSessionId = 0
+    
+    // Track loading operations so they can be cancelled
+    private var loadStreamJob: Job? = null
+
+    // True from resetPlayer() until PLAYING. Re-attaching the listener replays a stale IDLE from
+    // the pause() just before it — this guard stops that from clearing the loading cover early.
+    private var isLoadingNewChannel = false
+
+    private var bufferingSpinnerAnimator: ObjectAnimator? = null
+
+    fun startBufferingSpinner() {
+        if (bufferingSpinnerAnimator != null) return
+        binding.bufferingLogo.visibility = View.VISIBLE
+        // Force white regardless of theme/inflater tint quirks — the drawable's own fill is brand green.
+        androidx.core.widget.ImageViewCompat.setImageTintList(
+            binding.bufferingLogo, android.content.res.ColorStateList.valueOf(android.graphics.Color.WHITE)
+        )
+        bufferingSpinnerAnimator = ObjectAnimator.ofPropertyValuesHolder(
+            binding.bufferingLogo,
+            android.animation.PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.15f),
+            android.animation.PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, 1.15f)
+        ).apply {
+            duration = 900L
+            repeatCount = android.animation.ValueAnimator.INFINITE
+            repeatMode = android.animation.ValueAnimator.REVERSE
+            interpolator = android.view.animation.AccelerateDecelerateInterpolator()
+            start()
+        }
+    }
+
+    fun stopBufferingSpinner() {
+        bufferingSpinnerAnimator?.cancel()
+        bufferingSpinnerAnimator = null
+        binding.bufferingLogo.visibility = View.GONE
+        binding.bufferingLogo.scaleX = 1f
+        binding.bufferingLogo.scaleY = 1f
+    }
+
+    private val playerListener = object : Player.Listener() {
+        override fun onStateChanged(state: Player.State) {
+            activity.runOnUiThread {
+                when (state) {
+                    Player.State.PLAYING -> {
+                        isLoadingNewChannel = false
+                        activity.hideLoading()
+                        stopBufferingSpinner()
+                        activity.isErrorStateActive = false
+                        // Audio-only keeps the player view hidden behind the placeholder — don't
+                        // let a PLAYING transition (rebuffer recovery, resume, etc.) undo that.
+                        if (!isAudioOnlyActive) binding.playerView.visibility = View.VISIBLE
+                        binding.offlineBanner.visibility = View.GONE
+                        binding.errorOverlay.visibility = View.GONE
+                        binding.errorDetailsButton.visibility = View.GONE
+                        binding.playPauseButton.setImageResource(R.drawable.ic_pause)
+
+                        // Keep screen on while playing
+                        activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+                        // Cap the display refresh to the stream's frame rate (full player only;
+                        // released in mini-player mode). fps may not be known yet here —
+                        // onQualityChanged re-applies once it is.
+                        applyPlaybackRefreshForCurrentState()
+
+                        // Check mobile data quality limit
+                        checkAndApplyQualityLimit()
+                        // Now that the manifest is loaded and qualities are known, make sure
+                        // audio-only is actually pinned to a real (or synthetic) target — the
+                        // best-effort pin issued in resetPlayer() may have referenced a quality
+                        // name that doesn't exist on this channel's manifest.
+                        reapplyAudioOnlyIfNeeded()
+
+                        // Update background audio & MediaSession
+                        activity.playbackNotificationManager.setBackgroundAudioEnabled(true)
+                        activity.updateMediaSessionState()
+
+                        // Apply audio processing (EQ and/or noise reduction)
+                        if (!CustomEqDialogManager(activity, prefs).allEqSettingsFlat() || prefs.noiseReductionLevel > 0) {
+                            updateAudioProcessing()
+                        }
+
+                        // If we just loaded DVR, seek to live edge
+                        if (shouldSeekToLiveEdge) {
+                            ivsPlayer?.let { player ->
+                                val duration = player.duration
+                                if (duration > 0) {
+                                    val targetPosition = (duration - 10000).coerceAtLeast(0)
+                                    Log.d(TAG, "Seeking to 10s before live edge: $targetPosition ms")
+                                    player.seekTo(targetPosition)
+                                    shouldSeekToLiveEdge = false
+
+                                    mainHandler.postDelayed({
+                                        activity.updateSeekBarProgress()
+                                    }, 200)
+                                }
+                            }
+                        }
+                    }
+                    Player.State.BUFFERING -> {
+                        hideInternalSpinners(binding.playerView)
+                        binding.playerView.visibility = View.VISIBLE
+                        binding.loadingIndicator.visibility = View.GONE
+                        // loadingOverlay is owned by showLoading()/hideLoading() only — clearing it
+                        // here exposed the previous channel's last frame during a fresh switch.
+                        startBufferingSpinner()
+                    }
+                    Player.State.IDLE -> {
+                        // Ignore a stale IDLE replayed by re-attaching the listener in resetPlayer().
+                        if (!isLoadingNewChannel) {
+                            activity.hideLoading()
+                            stopBufferingSpinner()
+                        }
+                        binding.playPauseButton.setImageResource(R.drawable.ic_play_arrow)
+                        activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                        // Drop the frame rate hint so the system can return to its
+                        // normal refresh policy for UI (scroll feels smoother at high Hz).
+                        applyDisplayFrameRate(0f)
+                    }
+                    Player.State.ENDED -> {
+                        activity.hideLoading()
+                        stopBufferingSpinner()
+                        binding.playPauseButton.setImageResource(R.drawable.ic_play_arrow)
+                        applyDisplayFrameRate(0f)
+                    }
+                    else -> {}
+                }
+                
+                // Update PIP params so setAutoEnterEnabled reflects current state
+                activity.updatePiPUi()
+            }
+        }
+
+        override fun onError(exception: com.amazonaws.ivs.player.PlayerException) {
+            activity.runOnUiThread {
+                isLoadingNewChannel = false
+                Log.e(TAG, "Player Error: ${exception.message} (${exception.code})")
+
+                // Log analytics event (anonymous - just error type/code)
+                activity.analytics.logError("player_error_${exception.code}")
+
+                if (exception.code == 404 || exception.message?.contains("Failed to load playlist", ignoreCase = true) == true) {
+                    val channel = activity.currentChannel
+                    showOfflineState(channel?.offlineBannerUrl, null, channel?.getEffectiveOfflineBannerUrl())
+                } else {
+                    val fullMessage = activity.getString(R.string.error_format, exception.message)
+                    binding.errorOverlay.visibility = View.VISIBLE
+                    binding.errorText.text = fullMessage
+                    binding.retryButton.visibility = View.VISIBLE
+                    binding.loadingIndicator.visibility = View.GONE
+                    binding.playerView.visibility = View.INVISIBLE
+                    activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+                    // errorText is capped at 2 lines — offer the full message via a dialog instead.
+                    binding.errorDetailsButton.visibility = View.VISIBLE
+                    binding.errorDetailsButton.setOnClickListener {
+                        androidx.appcompat.app.AlertDialog.Builder(activity)
+                            .setTitle(R.string.error_view_details)
+                            .setMessage(fullMessage)
+                            .setPositiveButton(android.R.string.ok, null)
+                            .show()
+                    }
+                }
+            }
+        }
+
+        override fun onQualityChanged(quality: Quality) {
+            activity.runOnUiThread {
+                // Re-evaluate the refresh policy for the new stream frame rate. Respects
+                // mini-player mode, so a quality change while minimised stays at the panel's
+                // full refresh rate instead of dropping back to the 60/30 Hz cap.
+                if (ivsPlayer?.state == Player.State.PLAYING || ivsPlayer?.state == Player.State.BUFFERING) {
+                    applyPlaybackRefreshForCurrentState()
+                }
+            }
+        }
+        override fun onCue(cue: com.amazonaws.ivs.player.Cue) {}
+        override fun onDurationChanged(duration: Long) {}
+        override fun onMetadata(type: String, data: ByteBuffer) {}
+        override fun onRebuffering() {}
+        override fun onSeekCompleted(position: Long) {}
+        override fun onVideoSizeChanged(width: Int, height: Int) {
+            if (width <= 0 || height <= 0) return
+            activity.runOnUiThread {
+                activity.fullscreenToggleManager.updateVideoSize(width, height)
+                
+                // Auto-enter Theatre Mode for Portrait (Only once per session)
+                if (!activity.fullscreenToggleManager.hasAutoEnteredTheatreMode) {
+                    val isPortrait = height > width
+                    if (isPortrait && !activity.fullscreenToggleManager.isTheatreMode) {
+                         activity.fullscreenToggleManager.hasAutoEnteredTheatreMode = true
+                         activity.fullscreenToggleManager.enterTheatreMode()
+                    }
+                }
+            }
+        }
+    }
+
+    fun setupPlayer() {
+        binding.playerView.controlsEnabled = false
+        resetPlayer()
+    }
+
+    /**
+     * Walks the IVS PlayerView (a FrameLayout) for its inner SurfaceView so we can hint
+     * the display compositor about the expected frame rate. This lets 120 Hz panels drop
+     * to 60 Hz during video playback — the panel itself draws ~30–40 % less power and the
+     * GPU compositor work scales down proportionally. Hint is only valid from Android S
+     * (API 31); on older platforms the call is a no-op.
+     *
+     * Pass 0f to clear the hint when leaving playback so the display can return to its
+     * normal refresh policy (UI/scroll benefits from the higher rate).
+     */
+    private fun findPlayerSurface(view: View): Surface? {
+        if (view is SurfaceView) {
+            val s = view.holder?.surface
+            if (s?.isValid == true) return s
+        }
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                findPlayerSurface(view.getChildAt(i))?.let { return it }
+            }
+        }
+        return null
+    }
+
+    /**
+     * Picks the display refresh cap for a stream running at [fps]. Never below the content
+     * rate — capping a 60 fps stream to 30 Hz judders. Battery saver may use 30 Hz only for
+     * genuinely <=30 fps content, where it costs nothing. 0/unknown defaults to 60 Hz.
+     */
+    /**
+     * Release the playback refresh-rate cap — e.g. in mini-player mode, where the high-refresh
+     * home feed scroll is what's on screen, so the panel should run at its full rate again.
+     */
+    fun releasePlaybackRefreshCap() = applyDisplayFrameRate(0f)
+
+    /** Re-apply the content-matched refresh cap for the current stream (e.g. back to full player). */
+    fun reapplyPlaybackRefreshCap() {
+        val state = ivsPlayer?.state
+        if (state == Player.State.PLAYING || state == Player.State.BUFFERING) {
+            applyPlaybackRefreshForCurrentState()
+        }
+    }
+
+    /**
+     * Applies the refresh policy for the current state: released (system default, high Hz) while
+     * in mini-player mode — the home feed is what's on screen there — otherwise capped to the
+     * stream's frame rate. Centralised so a quality change in mini-player mode can't re-pin the cap.
+     */
+    private fun applyPlaybackRefreshForCurrentState() {
+        val mini = try { activity.miniPlayerManager.isMiniPlayerMode } catch (e: Exception) { false }
+        applyDisplayFrameRate(if (mini) 0f else refreshRateForFps(ivsPlayer?.quality?.framerate ?: 0f))
+    }
+
+    private fun refreshRateForFps(fps: Float): Float = when {
+        fps >= 50f -> 60f
+        fps >= 1f -> if (prefs.lowBatteryModeEnabled && prefs.batterySaverLimitQuality) 30f else 60f
+        else -> 60f
+    }
+
+    private fun applyDisplayFrameRate(rate: Float) {
+        // 1) Surface-level hint (API 31+): tells the compositor the video's content rate so a
+        // 120 Hz panel can seamlessly drop to a matching mode. ONLY_IF_SEAMLESS avoids a black
+        // flicker, but is silently ignored by panels that can't switch seamlessly.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                findPlayerSurface(binding.playerView)?.setFrameRate(
+                    rate,
+                    Surface.FRAME_RATE_COMPATIBILITY_DEFAULT,
+                    Surface.CHANGE_FRAME_RATE_ONLY_IF_SEAMLESS
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "setFrameRate hint failed: ${e.message}")
+            }
+        }
+
+        // 2) Window-level cap: the surface hint above is ignored by many adaptive displays
+        // (notably Samsung's 120 Hz panels, which stay high to keep UI smooth). Pinning the
+        // window to a real ~`rate` Hz display mode of the current resolution is the
+        // authoritative path that actually drops the screen refresh while watching.
+        applyWindowRefreshCap(rate)
+    }
+
+    /**
+     * Pins (rate > 0) or releases (rate <= 0) the activity window to a display mode at the
+     * current resolution whose refresh rate is closest to, but not above, [rate]. This forces
+     * the screen refresh down on devices that ignore the surface frame-rate hint.
+     */
+    private fun applyWindowRefreshCap(rate: Float) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        try {
+            val window = activity.window
+            val lp = window.attributes
+            if (rate <= 0f) {
+                if (lp.preferredDisplayModeId == 0 && lp.preferredRefreshRate == 0f) return
+                lp.preferredDisplayModeId = 0
+                lp.preferredRefreshRate = 0f
+                window.attributes = lp
+                return
+            }
+            val display = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) activity.display
+                else @Suppress("DEPRECATION") activity.windowManager.defaultDisplay
+            val current = display?.mode
+            val modes = display?.supportedModes
+            var modeId = 0
+            if (current != null && modes != null) {
+                val sameRes = modes.filter {
+                    it.physicalWidth == current.physicalWidth &&
+                        it.physicalHeight == current.physicalHeight
+                }
+                val target = sameRes.filter { it.refreshRate <= rate + 1f }
+                    .maxByOrNull { it.refreshRate }
+                    ?: sameRes.minByOrNull { it.refreshRate }
+                modeId = target?.modeId ?: 0
+            }
+            if (lp.preferredDisplayModeId == modeId && lp.preferredRefreshRate == rate) return
+            lp.preferredDisplayModeId = modeId
+            lp.preferredRefreshRate = rate
+            window.attributes = lp
+        } catch (e: Exception) {
+            Log.w(TAG, "applyWindowRefreshCap failed: ${e.message}")
+        }
+    }
+
+    fun resetPlayer() {
+        try {
+            forcedQualityLimit = null
+            manualMaxQuality = null
+            isLoadingNewChannel = true
+            // Not stopping the buffering spinner here — showLoading() already started it.
+
+            // Drop the display refresh-rate hint before tearing down — listener removal
+            // below means the IDLE state callback that would normally clear it won't
+            // fire, and we don't want a stale 60 Hz hint persisting across teardown.
+            applyDisplayFrameRate(0f)
+
+            ivsPlayer?.removeListener(playerListener)
+            ivsPlayer?.pause()
+
+            // Safe access - may not be initialized during onCreate
+            activity.isBackgroundAudioEnabled = false
+            androidx.core.app.NotificationManagerCompat.from(activity).cancel(101)
+
+            // Detach + re-add PlayerView on every reset — the old decoder keeps compositing to its
+            // Surface until something actually tears it down, which View.GONE alone doesn't do.
+            (binding.playerView.parent as? ViewGroup)?.removeView(binding.playerView)
+            binding.videoContainer.addView(binding.playerView, 0)
+            binding.playerView.visibility = View.INVISIBLE
+            binding.errorOverlay.visibility = View.GONE
+            binding.errorDetailsButton.visibility = View.GONE
+            binding.offlineBanner.visibility = View.GONE
+            binding.retryButton.visibility = View.GONE
+            activity.isErrorStateActive = false
+
+            ivsPlayer = binding.playerView.player
+            binding.playerView.controlsEnabled = false
+
+            // Audio-only has no video track, so it can't be reached by capping the ABR ladder —
+            // it must always be a hard pin, even while Dynamic Quality is on. This is a
+            // best-effort pin by quality *name* — the new channel's manifest isn't loaded yet,
+            // so it may not resolve to anything meaningful; reapplyAudioOnlyIfNeeded() corrects
+            // it once qualities are actually known (see onStateChanged: PLAYING).
+            val userLimit = userSelectedQualityLimit
+            val isAutoDesired = when {
+                isAudioOnlyActive -> false
+                userLimit == null -> true
+                else -> prefs.dynamicQualityEnabled
+            }
+            ivsPlayer?.isAutoQualityMode = isAutoDesired
+
+            userLimit?.let { if (!isAutoDesired) ivsPlayer?.quality = it }
+            updateAudioOnlyVisual(isAudioOnlyActive)
+
+            // Default buffer strategy: Low Latency for Live, High Buffer for VOD/Clip/DVR
+            val isLiveMode = activity.vodManager.currentPlaybackMode == dev.xacnio.kciktv.mobile.ui.player.VodManager.PlaybackMode.LIVE && activity.dvrPlaybackUrl == null
+            ivsPlayer?.setRebufferToLive(isLiveMode)
+            // IVS low-latency mode tightens the buffer and lets the decode pipeline run
+            // closer to wall-clock for live streams. The feed previews already enable
+            // this (StreamFeedManager.kt:361-375); enabling it on the main player too
+            // keeps the live experience consistent and slightly trims CPU work.
+            if (isLiveMode) ivsPlayer?.setLiveLowLatencyEnabled(true)
+            ivsPlayer?.setLooping(false)
+            
+            if (!isLiveMode) {
+                // Increase buffer size indirectly by disabling jump-to-live logic
+                Log.d(TAG, "High buffer mode enabled (VOD/DVR/Clip)")
+            }
+            ivsPlayer?.playbackRate = 1.0f
+            ivsPlayer?.addListener(playerListener)
+            externalListener?.let { ivsPlayer?.addListener(it) }
+            
+            ivsPlayer?.addListener(object : Player.Listener() {
+                override fun onStateChanged(state: Player.State) {
+                     if (state == Player.State.PLAYING) {
+                         binding.root.postDelayed({ updateAudioProcessing() }, 500)
+                         // Handle DVR seek if pending
+                         activity.liveDvrManager.onPlayerPlaying()
+                         
+                         // Start progress updater to refresh UI (seekbar, timers)
+                         activity.playbackControlManager.startProgressUpdater()
+                     }
+                }
+                override fun onCue(cue: com.amazonaws.ivs.player.Cue) {}
+                override fun onDurationChanged(duration: Long) {}
+                override fun onError(exception: com.amazonaws.ivs.player.PlayerException) {}
+                override fun onMetadata(type: String, data: ByteBuffer) {}
+                override fun onQualityChanged(quality: Quality) {}
+                override fun onRebuffering() {}
+                override fun onSeekCompleted(position: Long) {}
+                override fun onVideoSizeChanged(width: Int, height: Int) {}
+            })
+
+            checkAndApplyQualityLimit()
+            hideInternalSpinners(binding.playerView)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error resetting player", e)
+        }
+    }
+
+    fun checkAndApplyQualityLimit() {
+         val forced = forcedQualityLimit
+         val mobileLimitPref = prefs.mobileQualityLimit
+
+         val systemLimitHeight = when {
+             forced != null -> forced.replace("p", "").toIntOrNull()
+             isUsingMobileData() && mobileLimitPref != "none" -> mobileLimitPref.replace("p", "").toIntOrNull()
+             else -> null
+         }
+
+         // Battery saver caps to 720p regardless of network — even on WiFi a 1080p60
+         // stream pulls ~5-8 Mbps, while 720p halves that and drops decode CPU notably.
+         val batterySaverCap = if (prefs.lowBatteryModeEnabled && prefs.batterySaverLimitQuality) 720 else null
+
+         val userLimitHeight = userSelectedQualityLimit?.height
+         val combinedSystemLimit = when {
+             systemLimitHeight != null && batterySaverCap != null -> Math.min(systemLimitHeight, batterySaverCap)
+             systemLimitHeight != null -> systemLimitHeight
+             batterySaverCap != null -> batterySaverCap
+             else -> null
+         }
+         val effectiveLimitHeight = when {
+             combinedSystemLimit != null && userLimitHeight != null -> Math.min(combinedSystemLimit, userLimitHeight)
+             combinedSystemLimit != null -> combinedSystemLimit
+             userLimitHeight != null -> userLimitHeight
+             else -> null
+         }
+
+         if (effectiveLimitHeight == null) {
+             manualMaxQuality = null
+             ivsPlayer?.setAutoMaxQuality(null)
+             return
+         }
+
+         val availableQualities = ivsPlayer?.qualities ?: return
+         availableQualities
+             .filter { 
+                 // Use short edge for limit comparison to handle Portrait video (9:16) correctly
+                 // "360p" should mean 360 short edge (e.g. 640x360 or 360x640)
+                 // If we strictly checked height, 360x640 (Portrait) has height 640 > 360, so it would be filtered out!
+                 val shortEdge = Math.min(it.width, it.height)
+                 shortEdge <= effectiveLimitHeight 
+             }
+             .maxByOrNull { it.height } // Still pick the highest resolution available within that limit
+             ?.let { targetQuality ->
+                 if (targetQuality != manualMaxQuality || (ivsPlayer?.quality?.height ?: 0) > effectiveLimitHeight) {
+                      manualMaxQuality = targetQuality
+                      ivsPlayer?.setAutoMaxQuality(targetQuality)
+                      // Only switch mode if we are effectively exceeding the limit. Never while
+                      // audio-only is active: auto mode can never reach a video-less rendition on
+                      // its own, and the currently *playing* quality lags a just-issued pin by up
+                      // to a segment, so checking it here would otherwise bounce a fresh pin
+                      // straight back to auto before it has a chance to converge.
+                      if (!isAudioOnlyActive && ivsPlayer?.isAutoQualityMode == false && (ivsPlayer?.quality?.height ?: 0) > effectiveLimitHeight) {
+                           ivsPlayer?.isAutoQualityMode = true
+                      }
+                 }
+             }
+    }
+
+    /**
+     * The audio-only rendition has no video track, so the surface either freezes on the last
+     * decoded frame or shows nothing useful. Hide it behind a placeholder (channel avatar +
+     * label) instead so it's clear audio-only is intentional rather than the stream being stuck.
+     */
+    private var audioOnlyShrunk = false
+    var isAudioOnlyActive = false
+        private set
+
+    /**
+     * Not every channel's manifest carries a genuine no-video "audio_only" rendition. When one
+     * isn't present, fall back to a real quality instead. Measured across a sample channel's
+     * ladder, audio bitrate scales down with video bitrate here (unlike Twitch, where audio stays
+     * constant): 160p carried ~51 kbps AAC, 360p ~65 kbps, 480p ~163 kbps (matching the genuine
+     * audio-only track). The lowest tier's audio is noticeably degraded, so use one tier up —
+     * still a large bandwidth cut from full quality, but with clearly better audio than the floor.
+     */
+    fun resolveAudioOnlyQuality(): Quality? {
+        val qualities = ivsPlayer?.qualities ?: return null
+        qualities.firstOrNull { it.height <= 0 }?.let { return it }
+        val realQualities = qualities.filter { it.height > 0 }.sortedBy { it.height }
+        return realQualities.getOrNull(1) ?: realQualities.firstOrNull()
+    }
+
+    /**
+     * Re-pins audio-only once the current channel's qualities are actually known. The pin issued
+     * from resetPlayer() (before the manifest loads) is by quality *name*, carried over from
+     * whatever channel was playing before — that name may not exist here, in which case IVS falls
+     * back to some other quality on its own (observed: lowest real tier) rather than failing.
+     * This corrects it to a quality we deliberately picked.
+     */
+    fun reapplyAudioOnlyIfNeeded() {
+        if (!isAudioOnlyActive) return
+        val resolved = resolveAudioOnlyQuality() ?: return
+        if (ivsPlayer?.quality?.name != resolved.name) {
+            ivsPlayer?.isAutoQualityMode = false
+            ivsPlayer?.quality = resolved
+            userSelectedQualityLimit = resolved
+        }
+    }
+
+    fun updateAudioOnlyVisual(active: Boolean) {
+        isAudioOnlyActive = active
+        binding.playerView.visibility = if (active) View.INVISIBLE else View.VISIBLE
+        binding.audioOnlyPlaceholder.visibility = if (active) View.VISIBLE else View.GONE
+        if (active) {
+            Glide.with(activity)
+                .load(activity.currentChannel?.getEffectiveProfilePicUrl())
+                .circleCrop()
+                .into(binding.audioOnlyAvatar)
+        }
+
+        // Shrink the player to a compact strip so chat gets the freed-up space — but only in the
+        // default embedded layout. Fullscreen/theatre/mini-player/PiP each already own this
+        // container's sizing, so leave those alone rather than fighting their own logic.
+        val inDefaultLayout = !activity.fullscreenManager.isFullscreen &&
+            !activity.fullscreenToggleManager.isTheatreMode &&
+            !activity.miniPlayerManager.isMiniPlayerMode &&
+            !activity.isInPictureInPictureMode
+        val params = binding.videoContainer.layoutParams as? ConstraintLayout.LayoutParams
+        if (active && inDefaultLayout) {
+            if (params != null) {
+                params.dimensionRatio = "16:5"
+                binding.videoContainer.layoutParams = params
+                audioOnlyShrunk = true
+            }
+        } else if (audioOnlyShrunk) {
+            if (params != null) {
+                params.dimensionRatio = "16:9"
+                binding.videoContainer.layoutParams = params
+            }
+            audioOnlyShrunk = false
+        }
+    }
+
+    fun updateAudioProcessing() {
+        // PoC: when noise reduction is requested, install the ART hook that taps IVS's
+        // decoded PCM at AudioTrackRenderer.render(). Idempotent; independent of API level.
+        AudioNrTap.setPreset(prefs.noiseReductionLevel)
+        if (prefs.noiseReductionLevel > 0) {
+            AudioNrTap.install()
+            ivsPlayer?.let { AudioNrTap.logFormat(it) }
+        }
+
+        // DynamicsProcessing is only available on Android 9 (API 28) and above
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            return
+        }
+
+        val sessionId = ivsPlayer?.audioSessionId ?: 0
+        if (sessionId == 0) {
+            Log.w(TAG, "Cannot update audio processing: audioSessionId is 0")
+            return
+        }
+
+        // Power optimization: if EQ is fully flat, release any existing processor and skip.
+        // (Noise reduction runs via RNNoise on the decoded PCM, independent of DynamicsProcessing.)
+        if (CustomEqDialogManager(activity, prefs).allEqSettingsFlat()) {
+            if (audioProcessor != null) {
+                try {
+                    audioProcessor?.enabled = false
+                    audioProcessor?.release()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Audio flat-release failed", e)
+                }
+                audioProcessor = null
+                activeSessionId = 0
+            }
+            return
+        }
+
+        // Only release effects when Session ID changed (new player instance)
+        val needsReinit = activeSessionId != sessionId
+
+        if (needsReinit) {
+            Log.d(TAG, "Releasing audio effects: needsReinit=$needsReinit")
+            try {
+                audioProcessor?.enabled = false
+                audioProcessor?.release()
+                audioProcessor = null
+            } catch (e: Exception) {
+                Log.e(TAG, "Audio Cleanup Failed", e)
+            }
+            activeSessionId = sessionId
+        }
+        
+        try {
+            // DynamicsProcessing (EQ) - The only effect that works with IVS Player
+            if (audioProcessor == null) {
+                // PreEq(5 bands)=Custom EQ, MBC(4 bands)=Noise Reduction expander, Limiter=safety
+                val config = DynamicsProcessing.Config.Builder(
+                    DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
+                    1, true, 5, true, 4, false, 0, true
+                ).build()
+                audioProcessor = DynamicsProcessing(10000, sessionId, config)
+                audioProcessor?.enabled = true
+                Log.d(TAG, "DynamicsProcessing created for session $sessionId")
+            }
+            
+            // ALWAYS update EQ parameters - this runs every time regardless of other effects
+            audioProcessor?.let { processor ->
+                if (!processor.enabled) processor.enabled = true
+                
+                val limiter = DynamicsProcessing.Limiter(true, true, 0, 1f, 50f, 10f, -0.1f, 0f)
+                processor.setLimiterAllChannelsTo(limiter)
+                processor.setInputGainAllChannelsTo(prefs.eqPreAmpGain)
+                
+                val eq = DynamicsProcessing.Eq(true, true, 5)
+                eq.getBand(0).apply { cutoffFrequency = 60f; gain = prefs.eqBassGain }
+                eq.getBand(1).apply { cutoffFrequency = 230f; gain = prefs.eqLowMidGain }
+                eq.getBand(2).apply { cutoffFrequency = 910f; gain = prefs.eqMidGain }
+                eq.getBand(3).apply { cutoffFrequency = 4000f; gain = prefs.eqHighMidGain }
+                eq.getBand(4).apply { cutoffFrequency = 14000f; gain = prefs.eqTrebleGain }
+                processor.setPreEqAllChannelsTo(eq)
+
+                // Noise Reduction / Speech Focus runs on the MBC stage (independent of EQ)
+                applyNoiseReduction(processor)
+
+                Log.d(TAG, "EQ updated: PreAmp=${prefs.eqPreAmpGain}, Bass=${prefs.eqBassGain}, LowMid=${prefs.eqLowMidGain}, Mid=${prefs.eqMidGain}, HighMid=${prefs.eqHighMidGain}, Treble=${prefs.eqTrebleGain}, NR=${prefs.noiseReductionLevel}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Audio Init Failed", e)
+        }
+    }
+
+    /**
+     * Configures the 4-band Multi-Band Compressor as a downward expander / noise-gate to
+     * suppress steady background noise (rumble, hiss, ambient) and bring speech forward.
+     * Bands: 0=0-150Hz (rumble), 1=150-1kHz (body), 2=1-4kHz (speech, least touched),
+     * 3=4-20kHz (hiss). When level==0 all bands are neutral (transparent).
+     *
+     * MbcBand(enabled, cutoffFrequency, attackTime, releaseTime, ratio, threshold,
+     *         kneeWidth, noiseGateThreshold, expanderRatio, preGain, postGain)
+     */
+    private fun applyNoiseReduction(processor: DynamicsProcessing) {
+        // Noise reduction is now handled by RNNoise (AudioNrTap, on the decoded PCM),
+        // which is far more effective than a multi-band expander. Keep the MBC stage
+        // fully neutral so it never double-gates the already-denoised signal.
+        val cutoffs = floatArrayOf(150f, 1000f, 4000f, 20000f)
+        for (i in cutoffs.indices) {
+            val band = DynamicsProcessing.MbcBand(
+                true, cutoffs[i], 5f, 120f, 1f, 0f, 0f, -100f, 1f, 0f, 0f
+            )
+            processor.setMbcBandAllChannelsTo(i, band)
+        }
+    }
+
+    private fun isUsingMobileData(): Boolean {
+        return try {
+            val cm = activity.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val activeNetwork = cm.activeNetwork ?: return false
+            val caps = cm.getNetworkCapabilities(activeNetwork) ?: return false
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Cancels any ongoing stream loading operations.
+     * Call this before loading a new stream or when stopping the player.
+     */
+    fun cancelLoadingOperations() {
+        loadStreamJob?.cancel()
+        loadStreamJob = null
+    }
+    
+    fun loadStreamUrl(channel: ChannelItem) {
+        // Cancel any previous loading operation
+        cancelLoadingOperations()
+        
+        activity.isErrorStateActive = false
+        resetPlayer()
+        activity.vodManager.currentPlaybackMode = dev.xacnio.kciktv.mobile.ui.player.VodManager.PlaybackMode.LIVE
+        activity.dvrPlaybackUrl = null
+        
+        loadStreamJob = lifecycleScope.launch {
+            activity.currentBlerpUrl = null
+            activity.currentBlerpOwnerId = null
+            activity.currentBlerpPointsDisabled = false
+            activity.currentBlerpStandardMs = null
+            activity.updateBlerpManualRewardHint(false)
+            activity.stopBlerpEarnTicker()
+            activity.blerpCleanupHandler.removeCallbacks(activity.blerpCleanupRunnable)
+            activity.cachedBlerpFragment?.let { if (it.isAdded) it.dismissAllowingStateLoss() }
+            activity.cachedBlerpFragment = null
+            activity.runOnUiThread {
+                binding.blerpButtonContainer.visibility = View.GONE
+                binding.blerpPointsBadge.visibility = View.GONE
+            }
+
+            // Fetch Blerp info using new GraphQL API. Runs in its own child coroutine so this
+            // non-essential third-party lookup can't delay fetching the actual playback URL below.
+            launch {
+                repository.getBlerpInfo(channel.slug, prefs.savedBlerpCookies).onSuccess { blerpInfo ->
+                    if (blerpInfo != null) {
+                        activity.currentBlerpUrl = blerpInfo.url
+                        activity.currentBlerpOwnerId = blerpInfo.channelOwnerId
+                        activity.currentBlerpPointsDisabled = blerpInfo.channelPointsDisabled
+                        activity.currentBlerpStandardMs = blerpInfo.standardMs
+                        activity.runOnUiThread { binding.blerpButtonContainer.visibility = if (prefs.blerpEnabled) View.VISIBLE else View.GONE }
+                        activity.updateBlerpPointsBadge(blerpInfo.points)
+                        activity.updateBlerpManualRewardHint(blerpInfo.showManualButton)
+
+                        blerpInfo.channelOwnerId?.let { activity.startBlerpEarnTicker(it) }
+                    }
+                }
+            }
+
+            var apiPlaybackUrl: String? = null
+            try {
+                repository.getChannelDetails(channel.slug).onSuccess { details ->
+                    val isLive = details.livestream?.isLive == true
+                    apiPlaybackUrl = details.playbackUrl
+                    
+                    val lsId = details.livestream?.id
+                    if (lsId != null) {
+                        try {
+                            val videos = repository.getChannelVideos(channel.slug).getOrNull()
+                            val matched = videos?.find { it.id == lsId }
+                            Log.d(TAG, "Rewind matched video: ${matched?.uuid} (lsId: $lsId)")
+                            activity.dvrPlaybackUrl = matched?.source
+                            activity.dvrVideoUuid = matched?.video?.uuid ?: matched?.uuid
+                            if (activity.dvrPlaybackUrl != null) {
+                                activity.runOnUiThread {
+                                    // Trigger immediate UI update to show seekbar
+                                    activity.playbackControlManager.updateSeekBarProgress()
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Rewind check failed", e)
+                        }
+                    }
+                    
+                    activity.runOnUiThread {
+                        activity.isSubscriptionEnabled = details.subscriptionEnabled == true
+                        details.livestream?.startTime?.let { startTimeStr ->
+                            try {
+                                val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
+                                sdf.parse(startTimeStr)?.time?.let { startTime ->
+                                    activity.playbackStatusManager.streamCreatedAtMillis = startTime
+                                    activity.playbackStatusManager.startUptimeUpdater()
+                                    binding.streamTimeBadge.visibility = View.VISIBLE
+                                    binding.uptimeDivider.visibility = View.VISIBLE
+                                }
+                            } catch (e: Exception) { Log.e(TAG, "Error parsing start time", e) }
+                        }
+                        
+                        details.livestream?.id?.let { lsIdValue ->
+                            if (activity.currentLivestreamId != lsIdValue) {
+                                activity.currentLivestreamId = lsIdValue
+                                activity.viewerCountHandler.removeCallbacks(activity.viewerCountRunnable)
+                                activity.viewerCountHandler.post(activity.viewerCountRunnable)
+                            }
+                        }
+                        
+                        val tagsList = mutableListOf<String>()
+                        details.livestream?.langIso?.let { lang ->
+                            val loc = activity.getLocalizedLanguageName(lang)
+                            if (loc.isNotEmpty()) tagsList.add(loc)
+                        }
+                        details.livestream?.tags?.take(4)?.let { tagsList.addAll(it) }
+                        // Only start the marquee scroll if the overlay is actually on screen.
+                        // TextView marquee posts Choreographer frames every ~50ms regardless of
+                        // visibility, so leaving it on while the overlay is hidden burns CPU.
+                        val overlayVisible = binding.videoOverlay.visibility == View.VISIBLE
+                        if (tagsList.isNotEmpty()) {
+                            binding.infoTagsText.text = tagsList.joinToString(" • ")
+                            binding.infoTagsText.isSelected = overlayVisible
+                        }
+
+                        details.livestream?.sessionTitle?.let {
+                            if (it.isNotEmpty()) {
+                                binding.infoStreamTitle.text = it
+                                binding.infoStreamTitle.isSelected = overlayVisible
+                            }
+                        }
+                    }
+
+                    if (!isLive) {
+                        showOfflineState(details.offlineBannerImage?.url, details.offlineBannerImage?.src, channel.offlineBannerUrl, details.offlineBannerImage?.srcset)
+                    }
+                }
+            } catch (e: Exception) { Log.e(TAG, "Error fetching details", e) }
+
+            try {
+                val url = apiPlaybackUrl ?: repository.getStreamUrl(channel.slug).getOrNull() ?: channel.getStreamUrl()
+                if (url == null) {
+                    activity.runOnUiThread {
+                        if (dev.xacnio.kciktv.shared.data.mock.MockConfig.enabled) {
+                            showMockImageState(channel.thumbnailUrl ?: channel.offlineBannerUrl)
+                        } else {
+                            showOfflineState(channel.offlineBannerUrl, null, channel.getEffectiveOfflineBannerUrl())
+                        }
+                    }
+                } else {
+                    activity.runOnUiThread {
+                        activity.currentStreamUrl = url
+                        ivsPlayer?.load(url.toUri())
+                        ivsPlayer?.play()
+                    }
+                }
+            } catch (e: Exception) { Log.e(TAG, "Error loading stream", e) }
+        }
+    }
+
+    private fun showMockImageState(imageUrl: String?) {
+        activity.hideLoading()
+        val url = imageUrl ?: "https://picsum.photos/1280/720"
+        binding.offlineBanner.visibility = View.VISIBLE
+        Glide.with(activity).load(url).into(binding.offlineBanner)
+        binding.playerView.visibility = View.GONE
+        ivsPlayer?.pause()
+    }
+
+    fun showOfflineState(bannerUrl: String?, bannerSrc: String?, defaultBannerUrl: String?, bannerSrcset: String? = null) {
+        activity.runOnUiThread {
+            isLoadingNewChannel = false
+            activity.hideLoading()
+            activity.isErrorStateActive = true
+            activity.playbackStatusManager.stopUptimeUpdater()
+            activity.playbackStatusManager.streamCreatedAtMillis = null
+            binding.streamTimeBadge.visibility = View.GONE
+            binding.uptimeDivider.visibility = View.GONE
+            binding.errorText.text = activity.getString(R.string.stream_offline)
+            activity.showOverlay()
+            
+            var finalBanner = bannerUrl ?: bannerSrc
+            if (!bannerSrcset.isNullOrEmpty()) {
+                try {
+                    val sources = bannerSrcset.split(",")
+                    if (sources.isNotEmpty()) {
+                        val lastSource = sources.last().trim()
+                        val url = lastSource.split(" ").firstOrNull()
+                        if (!url.isNullOrEmpty()) finalBanner = url
+                    }
+                } catch (e: Exception) { Log.e(TAG, "Error parsing srcset", e) }
+            }
+            
+            val finalUrl = finalBanner ?: defaultBannerUrl ?: "https://kick.com/img/default-channel-banners/offline-banner.webp"
+            binding.offlineBanner.visibility = View.VISIBLE
+            Glide.with(activity).load(finalUrl).into(binding.offlineBanner)
+            binding.playerView.visibility = View.GONE
+            ivsPlayer?.pause()
+        }
+    }
+
+    private fun hideInternalSpinners(view: View) {
+        if (view is android.widget.ProgressBar) {
+            view.visibility = View.GONE
+        } else if (view is android.view.ViewGroup) {
+            for (i in 0 until view.childCount) {
+                hideInternalSpinners(view.getChildAt(i))
+            }
+        }
+    }
+}

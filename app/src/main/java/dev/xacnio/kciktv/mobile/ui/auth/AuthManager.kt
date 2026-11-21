@@ -1,0 +1,368 @@
+/**
+ * File: AuthManager.kt
+ *
+ * Description: Centralizes authentication logic, including handling login intent transitions and
+ * managing the logout process. It interfaces with the app preferences to maintain session state
+ * and coordinates with the UI to reflect authentication status.
+ *
+ * Author: Xacnio
+ *
+ */
+package dev.xacnio.kciktv.mobile.ui.auth
+
+import android.content.Intent
+import android.util.Log
+import android.view.View
+import android.webkit.CookieManager
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
+import androidx.lifecycle.LifecycleCoroutineScope
+import com.bumptech.glide.Glide
+import dev.xacnio.kciktv.mobile.LoginActivity
+import dev.xacnio.kciktv.mobile.MobilePlayerActivity
+import dev.xacnio.kciktv.R
+import dev.xacnio.kciktv.shared.data.api.RetrofitClient
+import dev.xacnio.kciktv.shared.data.prefs.AppPreferences
+import dev.xacnio.kciktv.databinding.ActivityMobilePlayerBinding
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.net.URLDecoder
+import dev.xacnio.kciktv.mobile.ui.chat.ChatStateManager
+import dev.xacnio.kciktv.shared.data.prefs.AppPreferences.StoredAccount
+import dev.xacnio.kciktv.shared.data.util.PreloadCache
+
+class AuthManager(
+    private val activity: MobilePlayerActivity,
+    private val binding: ActivityMobilePlayerBinding,
+    private val prefs: AppPreferences,
+    private val lifecycleScope: LifecycleCoroutineScope
+) {
+    private companion object {
+        const val TAG = "AuthManager"
+    }
+
+    fun handleLoginClick() {
+        activity.startActivity(Intent(activity, LoginActivity::class.java))
+    }
+
+    fun switchActiveAccount(userId: Long) {
+        prefs.commitActiveAccountToList()
+        val target = prefs.getAccounts().find { it.userId == userId } ?: return
+        if (prefs.activeAccountId == userId) return
+
+        prefs.applyAccount(target)
+
+        val cookieManager = CookieManager.getInstance()
+        cookieManager.removeAllCookies(null)
+        cookieManager.flush()
+
+        if (activity.isWebViewManagerReady) {
+            activity.webViewManager.resetForAuthStateChange()
+        }
+
+        // Reset old account's cached sender and moderator status immediately so messages sent
+        // during session rebind use the new account's username and correct slow mode behavior
+        activity.chatStateManager.currentUserSender = null
+        activity.chatUiManager.chatAdapter.setCurrentUser(prefs.username ?: "")
+        activity.isModeratorOrOwner = false
+        activity.isChannelOwner = false
+
+        activity.cachedUserLevel = null
+        activity.updateUserHeaderState()
+        activity.softRebindForAccountSwitch()
+        // Already handled the switch seamlessly; sync so onResume (e.g. after PiP) does not
+        // mistake this for an external login change and rebind the session from scratch.
+        activity.syncKnownAuthState()
+        // Fetch immediately so points update without waiting for getChatInfo to complete first
+        activity.fetchLoyaltyPoints()
+
+        // Invalidate account-specific caches so home and following screens reload fresh data
+        PreloadCache.followingStreams = null
+        PreloadCache.followingStreamsForTab = null
+        activity.homeDataLoaded = false
+        activity.followingDataLoaded = false
+
+        // If home or following screen is currently visible, reload it immediately
+        val isFollowingVisible = activity.binding.followingScreenContainer.root.visibility == android.view.View.VISIBLE
+        val isHomeVisible = activity.binding.homeScreenContainer.root.visibility == android.view.View.VISIBLE
+        if (isFollowingVisible) {
+            activity.followingManager.refreshForAccountSwitch()
+        }
+        if (isHomeVisible) {
+            activity.homeScreenManager.loadHomeScreenData()
+        }
+
+        Toast.makeText(activity, activity.getString(R.string.account_switched, target.username), Toast.LENGTH_SHORT).show()
+    }
+
+    fun showLogoutConfirmDialog() {
+        AlertDialog.Builder(activity)
+            .setTitle(R.string.logout_confirm_title)
+            .setMessage(R.string.logout_confirm_message)
+            .setPositiveButton(R.string.yes) { _, _ ->
+                performServerSideLogout()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun performServerSideLogout() {
+        val cookieManager = CookieManager.getInstance()
+        val initialCookies = cookieManager.getCookie("https://kick.com") ?: ""
+        
+        Toast.makeText(activity, activity.getString(R.string.logging_out_secure), Toast.LENGTH_SHORT).show()
+        
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val client = OkHttpClient.Builder()
+                    .followRedirects(true)
+                    .followSslRedirects(true)
+                    .build()
+                
+                val sanctumReq = Request.Builder()
+                    .url("https://kick.com/sanctum/csrf-cookie")
+                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
+                    .header("Accept", "application/json")
+                    .header("Cookie", initialCookies)
+                    .build()
+                    
+                val sanctumRes = client.newCall(sanctumReq).execute()
+                val setCookies = sanctumRes.headers("Set-Cookie")
+                sanctumRes.close()
+                
+                var currentCookies = initialCookies
+                for (sc in setCookies) {
+                    val raw = sc.substringBefore(";")
+                    if (currentCookies.isNotEmpty()) currentCookies += "; "
+                    currentCookies += raw
+                }
+                
+                var xsrfToken = ""
+                val parts = currentCookies.split(";")
+                for (part in parts) {
+                    val trimmed = part.trim()
+                    if (trimmed.startsWith("XSRF-TOKEN=")) {
+                        val encoded = trimmed.substring("XSRF-TOKEN=".length)
+                        xsrfToken = URLDecoder.decode(encoded, "UTF-8")
+                        break
+                    }
+                }
+                
+                if (xsrfToken.isNotEmpty()) {
+                    val logoutReq = Request.Builder()
+                        .url("https://kick.com/logout")
+                        .post(ByteArray(0).toRequestBody(null))
+                        .header("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
+                        .header("Accept", "application/json")
+                        .header("Cookie", currentCookies)
+                        .header("X-XSRF-TOKEN", xsrfToken)
+                        .header("Referer", "https://kick.com/")
+                        .build()
+                        
+                    val logoutRes = client.newCall(logoutReq).execute()
+                    logoutRes.close()
+                }
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Logout failed", e)
+            } finally {
+                withContext(Dispatchers.Main) {
+                    val loggedOutUserId = prefs.userId
+                    prefs.clearAuth()
+                    prefs.removeAccount(loggedOutUserId)
+                    cookieManager.removeAllCookies(null)
+                    cookieManager.flush()
+
+                    // The auth WebView's KPSDK was fingerprinted while logged in. Without a reset,
+                    // the next anonymous bridge call would still ship the logged-in KPSDK headers
+                    // and trigger 429 on kick.com. Force a reload. webViewManager is guaranteed
+                    // initialized here — the logout button only appears once the activity is set up.
+                    activity.webViewManager.resetForAuthStateChange()
+
+                    val remaining = prefs.getAccounts()
+                    if (remaining.isNotEmpty()) {
+                        val next = remaining.first()
+                        prefs.applyAccount(next)
+                        activity.webViewManager.resetForAuthStateChange()
+                        activity.cachedUserLevel = null
+                        Toast.makeText(activity, activity.getString(R.string.account_switched, next.username), Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(activity, R.string.logged_out, Toast.LENGTH_SHORT).show()
+                    }
+
+                    activity.updateChatLoginState()
+                    activity.updateUserHeaderState()
+                    activity.rebindCurrentChannelSession()
+                    // Just rebound; sync so the next onResume doesn't rebind a second time.
+                    activity.syncKnownAuthState()
+                }
+            }
+        }
+    }
+
+    /**
+     * Called when an API rejects the active account's token with 401 Unauthenticated
+     * (revoked/expired). Signs that account out *locally* — no server-side /logout call, it
+     * would 401 too — removes it, and switches to the next saved account if there is one.
+     * Notifies the user with a toast.
+     *
+     * [deadAuthHeader] is the Authorization header of the failed request; we only act if it
+     * still matches the active token, so a late stale 401 cannot sign out an account the user
+     * just switched into.
+     *
+     * A 401 from any other endpoint than the session check ([url]) may be endpoint-specific,
+     * so the token is verified with kick.com/api/v1/user first; its 401 comes back here.
+     */
+    fun handleUnauthorized(deadAuthHeader: String?, url: okhttp3.HttpUrl) {
+        val token = prefs.authToken
+        if (token.isNullOrEmpty()) return
+        if (deadAuthHeader != null && deadAuthHeader != "Bearer $token") return
+
+        if (!RetrofitClient.isSessionCheck(url)) {
+            Log.w(TAG, "401 from ${url.host}${url.encodedPath}, verifying session")
+            lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    RetrofitClient.authService.getUser("Bearer $token")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Session check failed: ${e.message}")
+                }
+            }
+            return
+        }
+
+        val deadUserId = prefs.userId
+        val cookieManager = CookieManager.getInstance()
+
+        prefs.clearAuth()
+        prefs.removeAccount(deadUserId)
+        cookieManager.removeAllCookies(null)
+        cookieManager.flush()
+        if (activity.isWebViewManagerReady) {
+            activity.webViewManager.resetForAuthStateChange()
+        }
+        activity.cachedUserLevel = null
+
+        val remaining = prefs.getAccounts()
+        if (remaining.isNotEmpty()) {
+            val next = remaining.first()
+            prefs.applyAccount(next)
+            if (activity.isWebViewManagerReady) {
+                activity.webViewManager.resetForAuthStateChange()
+            }
+            Toast.makeText(
+                activity,
+                "${activity.getString(R.string.session_expired)} · ${activity.getString(R.string.account_switched, next.username)}",
+                Toast.LENGTH_LONG
+            ).show()
+        } else {
+            Toast.makeText(
+                activity,
+                "${activity.getString(R.string.session_expired)} · ${activity.getString(R.string.logged_out)}",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+
+        activity.updateChatLoginState()
+        activity.updateUserHeaderState()
+        activity.rebindCurrentChannelSession()
+        // Mark handled so onResume's account-change check doesn't rebind a second time.
+        activity.syncKnownAuthState()
+    }
+
+    fun updateUserHeaderState() {
+        if (prefs.isLoggedIn) {
+            binding.mobileProfilePic.visibility = View.VISIBLE
+            binding.mobileDailyRewardBtn.visibility = View.VISIBLE
+            binding.mobileLoginBtn.visibility = View.GONE
+            binding.mobileSettingsBtn.visibility = View.GONE
+            
+            val effectivePic = if (prefs.profilePic.isNullOrEmpty()) {
+                val hash = (prefs.username ?: "Guest").hashCode()
+                val index = (if (hash < 0) -hash else hash) % 6 + 1
+                "https://kick.com/img/default-profile-pictures/default-avatar-$index.webp"
+            } else {
+                prefs.profilePic
+            }
+
+            Glide.with(activity)
+                .load(effectivePic)
+                .placeholder(R.drawable.default_avatar)
+                .error(R.drawable.default_avatar)
+                .circleCrop()
+                .into(binding.mobileProfilePic)
+        } else {
+            binding.mobileProfilePic.visibility = View.GONE
+            binding.mobileDailyRewardBtn.visibility = View.GONE
+            binding.mobileLoginBtn.visibility = View.VISIBLE
+            binding.mobileSettingsBtn.visibility = View.VISIBLE
+        }
+    }
+
+    fun updateChatLoginState() {
+        // Sync state from ChatStateManager
+        activity.isBannedFromCurrentChannel = activity.chatStateManager.isBannedFromCurrentChannel
+        activity.isPermanentBan = activity.chatStateManager.isPermanentBan
+        activity.timeoutExpirationMillis = activity.chatStateManager.timeoutExpirationMillis
+        
+        activity.chatUiManager.chatAdapter.isLoggedIn = prefs.isLoggedIn
+        
+        if (prefs.isLoggedIn) {
+            if (activity.isBannedFromCurrentChannel) {
+                binding.chatLoginOverlay.visibility = View.GONE
+                binding.chatBannedOverlay.visibility = View.VISIBLE
+                binding.chatInputContainer.visibility = View.GONE
+                
+                if (activity.isPermanentBan) {
+                    binding.chatBannedText.text = activity.getString(R.string.chat_banned_overlay)
+                } else {
+                    binding.chatBannedText.text = activity.getString(R.string.chat_timed_out_overlay)
+                    activity.chatInputStateManager.startTimeoutCountdown()
+                }
+
+                if (binding.emotePanelContainer.visibility == View.VISIBLE) {
+                    binding.emotePanelContainer.visibility = View.GONE
+                }
+            } else {
+                activity.chatInputStateManager.stopTimeoutCountdown()
+                binding.chatBannedOverlay.visibility = View.GONE
+                binding.chatLoginOverlay.visibility = View.GONE
+                binding.chatInputContainer.visibility = View.VISIBLE
+                binding.quickEmoteRecyclerView.visibility = View.VISIBLE
+                binding.loyaltyPointsButton.visibility = View.VISIBLE
+                binding.loyaltyStoreButton.visibility = if (activity.isSubscriptionEnabled) View.VISIBLE else View.GONE
+                (binding.chatSettingsButton.layoutParams as? android.view.ViewGroup.MarginLayoutParams)?.apply {
+                    marginStart = ((if (activity.isSubscriptionEnabled) 4 else 12) * activity.resources.displayMetrics.density).toInt()
+                    binding.chatSettingsButton.layoutParams = this
+                }
+                
+                activity.chatInputStateManager.updateInputState()
+                activity.chatUiManager.updateChatModeIndicators()
+                
+                activity.chatInputStateManager.startSlowModeCountdown()
+            }
+        } else {
+            activity.chatInputStateManager.stopAllCountdowns()
+            binding.chatLoginOverlay.visibility = View.VISIBLE
+            binding.chatBannedOverlay.visibility = View.GONE
+            binding.quickEmoteRecyclerView.visibility = View.GONE
+            binding.loyaltyPointsButton.visibility = View.GONE
+            binding.loyaltyStoreButton.visibility = View.GONE
+            (binding.chatSettingsButton.layoutParams as? android.view.ViewGroup.MarginLayoutParams)?.apply {
+                marginStart = (12 * activity.resources.displayMetrics.density).toInt()
+                binding.chatSettingsButton.layoutParams = this
+            }
+            // Keep container visible so settings button is shown
+            binding.chatInputContainer.visibility = View.VISIBLE
+            
+            // Hide Quick Emote Menu if not logged in
+            if (binding.emotePanelContainer.visibility == View.VISIBLE) {
+                binding.emotePanelContainer.visibility = View.GONE
+            }
+        }
+    }
+}

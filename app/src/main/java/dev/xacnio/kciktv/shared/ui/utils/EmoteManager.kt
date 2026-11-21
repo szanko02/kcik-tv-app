@@ -1,0 +1,902 @@
+/**
+ * File: EmoteManager.kt
+ *
+ * Description: Manages business logic, state, and UI interactions for Emote.
+ *
+ * Author: Xacnio
+ *
+ */
+package dev.xacnio.kciktv.shared.ui.utils
+
+import android.content.Context
+import android.graphics.*
+import android.graphics.drawable.Animatable
+import android.graphics.drawable.Drawable
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import android.view.View
+import com.bumptech.glide.Glide
+import com.bumptech.glide.load.engine.DiskCacheStrategy
+import com.bumptech.glide.load.resource.gif.GifDrawable
+import com.bumptech.glide.request.target.CustomTarget
+import com.bumptech.glide.request.target.Target
+import com.bumptech.glide.request.transition.Transition
+import com.bumptech.glide.signature.ObjectKey
+import com.github.penfeizhou.animation.apng.APNGDrawable
+import java.lang.ref.WeakReference
+import java.util.Collections
+import java.util.WeakHashMap
+import dev.xacnio.kciktv.shared.ui.adapter.ChatAdapter
+import dev.xacnio.kciktv.shared.util.Constants
+
+/**
+ * Ultimate emote synchronization manager (Buffer Guard V6).
+ * Fixes frozen emotes in TextViews by forcing view-level invalidation.
+ */
+object EmoteManager {
+    private const val EMOTE_BASE_URL = "https://files.kick.com/emotes/"
+    private val EMOTE_PATTERN = java.util.regex.Pattern.compile("\\[emote:(\\d+):([^\\]]+)\\]")
+    
+    // Default frame interval (33ms ≈ 30fps) used for badges and as the chat-emote
+    // default. Emotes are tiny, so 30fps is visually indistinguishable from 60 here while
+    // roughly halving the per-frame decode + draw + invalidation work.
+    private const val DEFAULT_FRAME_INTERVAL_MS = 33L
+    // Batch invalidation interval (matched to the default frame cap)
+    private const val INVALIDATION_BATCH_MS = 33L
+
+    /** Animation surface category, so per-surface settings can be applied independently. */
+    enum class Category { EMOTE, BADGE }
+
+    // --- Battery saver: per-surface animation settings (mirrored from AppPreferences) ---
+    // Whether animated chat emotes / subscriber badges play. When false the first decoded
+    // frame is shown statically. The quick-emote bar is gated separately in QuickEmoteAdapter.
+    @Volatile var chatEmotesAnimated: Boolean = true
+        private set
+    @Volatile var badgesAnimated: Boolean = true
+        private set
+    @Volatile var quickPanelEmotesAnimated: Boolean = true
+    // Frame interval for animated chat emotes, derived from the user's FPS choice (15/30/60).
+    @Volatile private var chatEmoteFrameIntervalMs: Long = DEFAULT_FRAME_INTERVAL_MS
+    
+    /**
+     * Broader Battery Saver flag (quality cap, slower timers). No longer gates emote/badge
+     * animation — that is governed solely by the per-surface settings above so the two are
+     * independent. Still read by other UI (e.g. ShimmerLayout) to drop optional effects.
+     * Wired from prefs.lowBatteryModeEnabled at startup.
+     */
+    @Volatile var lowBatteryMode: Boolean = false
+
+    /**
+     * Effective "disable shimmer (loading) animations" flag, read by ShimmerLayout.
+     * Mirrors prefs.lowBatteryModeEnabled && prefs.batterySaverDisableShimmer; set at
+     * startup and whenever the Battery Saver / shimmer toggles change.
+     */
+    @Volatile var shimmerDisabled: Boolean = false
+
+    /**
+     * When true, all shared emote master animations are stopped. Set while no chat
+     * surface is visible (screen off / app backgrounded): the per-emote decode +
+     * main-thread frame scheduling is the dominant background CPU cost, and nothing
+     * is on screen to animate. New entries created while paused start static and are
+     * woken by resumeAllAnimations(). Independent of [lowBatteryMode].
+     */
+    @Volatile var animationsPaused: Boolean = false
+        private set
+
+    private val emoteEntries = mutableMapOf<String, EmoteEntry>()
+    private val activeTargets = mutableMapOf<String, Target<*>>()
+
+    /**
+     * Emotes drawn at their own aspect ratio instead of squashed into a square — collectibles,
+     * which are card-shaped. See [setAspectRatioEmotes].
+     */
+    private val aspectRatioEmoteIds = Collections.synchronizedSet(mutableSetOf<String>())
+
+    /**
+     * Registers which emotes are card-shaped, by id — the channel's emote categories are the
+     * only place that says which are collectibles, so they push the ids here once loaded.
+     *
+     * @return true if the set changed, meaning stale-shaped cached entries were dropped and
+     *         anything already on screen must be rebound (emotes load in parallel with chat
+     *         history, so history routinely renders before this arrives).
+     */
+    fun setAspectRatioEmotes(ids: Set<String>): Boolean {
+        synchronized(aspectRatioEmoteIds) {
+            if (aspectRatioEmoteIds == ids) return false
+            // Drop any entry already cached with the wrong shape, so it rebuilds on next use.
+            // Cheap: this only fires when the set actually changes, i.e. on channel switch.
+            val changed = (aspectRatioEmoteIds - ids) + (ids - aspectRatioEmoteIds)
+            aspectRatioEmoteIds.clear()
+            aspectRatioEmoteIds.addAll(ids)
+            changed.forEach { emoteEntries.remove(it) }
+            return changed.isNotEmpty()
+        }
+    }
+
+    private fun preservesAspect(emoteId: String): Boolean =
+        synchronized(aspectRatioEmoteIds) { aspectRatioEmoteIds.contains(emoteId) }
+
+    /**
+     * Stops every shared emote animation. Call when no chat surface is visible
+     * (screen off / app backgrounded) — this halts the per-emote frame decode and
+     * the main-thread frame scheduling that otherwise keeps the UI thread busy in
+     * the background. Idempotent; pair with [resumeAllAnimations].
+     */
+    fun pauseAllAnimations() {
+        if (animationsPaused) return
+        animationsPaused = true
+        val snapshot = synchronized(emoteEntries) { emoteEntries.values.toList() }
+        for (entry in snapshot) entry.pauseMaster()
+    }
+
+    /** Restarts animations stopped by [pauseAllAnimations] (per-surface settings still apply). */
+    fun resumeAllAnimations() {
+        if (!animationsPaused) return
+        animationsPaused = false
+        val snapshot = synchronized(emoteEntries) { emoteEntries.values.toList() }
+        for (entry in snapshot) entry.ensureRunning()
+    }
+
+    /**
+     * Applies the battery-saver settings. The per-surface animation toggles only take
+     * effect while the Battery Saver master is ON; when it is OFF everything animates
+     * (the toggles are inert and shown disabled in the UI). FPS is independent and always
+     * applies. Reconciles existing entries, so it is safe to call at runtime.
+     */
+    fun applyBatterySettings(
+        masterEnabled: Boolean,
+        chatEmotes: Boolean,
+        badges: Boolean,
+        quickPanel: Boolean,
+        chatEmoteFps: Int
+    ) {
+        setChatEmoteFps(chatEmoteFps)
+        setChatEmotesAnimated(!masterEnabled || chatEmotes)
+        setBadgesAnimated(!masterEnabled || badges)
+        quickPanelEmotesAnimated = !masterEnabled || quickPanel
+    }
+
+    /** Toggles animated chat emotes, applying to existing entries immediately. */
+    fun setChatEmotesAnimated(enabled: Boolean) {
+        chatEmotesAnimated = enabled
+        forEachEntryOfCategory(Category.EMOTE) { if (enabled) it.ensureRunning() else it.pauseMaster() }
+    }
+
+    /** Toggles animated subscriber badges, applying to existing entries immediately. */
+    fun setBadgesAnimated(enabled: Boolean) {
+        badgesAnimated = enabled
+        if (enabled) {
+            // Drop badges that were loaded statically while disabled so they re-load as
+            // animated APNG on their next bind (a static BitmapDrawable can't animate).
+            synchronized(emoteEntries) {
+                val it = emoteEntries.entries.iterator()
+                while (it.hasNext()) {
+                    val e = it.next().value
+                    if (e.category == Category.BADGE && e.master !is android.graphics.drawable.Animatable) {
+                        it.remove()
+                    }
+                }
+            }
+            forEachEntryOfCategory(Category.BADGE) { it.ensureRunning() }
+        } else {
+            forEachEntryOfCategory(Category.BADGE) { it.pauseMaster() }
+        }
+    }
+
+    /** Updates the chat-emote FPS cap (15/30/60). Applies live — entries read it per frame. */
+    fun setChatEmoteFps(fps: Int) {
+        chatEmoteFrameIntervalMs = fpsToInterval(fps)
+    }
+
+    /** Public emote image URL, for surfaces that load their own (static) copy. */
+    fun emoteUrl(emoteId: String): String = "$EMOTE_BASE_URL$emoteId/fullsize"
+
+    private fun fpsToInterval(fps: Int): Long =
+        when (fps) {
+            60 -> 16L
+            15 -> 66L
+            else -> 33L // 30fps default
+        }
+
+    private inline fun forEachEntryOfCategory(category: Category, action: (EmoteEntry) -> Unit) {
+        val snapshot = synchronized(emoteEntries) { emoteEntries.values.toList() }
+        for (entry in snapshot) if (entry.category == category) action(entry)
+    }
+    
+    // Pending callbacks for emotes that are currently loading (original implementation for loadSynchronizedImage)
+    private val pendingCallbacks = mutableMapOf<String, MutableList<Pair<WeakReference<View>, (Drawable) -> Unit>>>()
+    
+    // Shared pending callbacks for synchronized emotes (receives EmoteEntry instead of Drawable)
+    private val sharedPendingCallbacks = mutableMapOf<String, MutableList<Pair<WeakReference<View>, (EmoteEntry) -> Unit>>>()
+
+    // Batched view invalidation — collects views and flushes every INVALIDATION_BATCH_MS
+    private val viewsToInvalidate = Collections.synchronizedSet(mutableSetOf<View>())
+    private val invalidationHandler = Handler(Looper.getMainLooper())
+    @Volatile private var invalidationScheduled = false
+    private val invalidationRunnable = Runnable {
+        invalidationScheduled = false
+        synchronized(viewsToInvalidate) {
+            val iterator = viewsToInvalidate.iterator()
+            while (iterator.hasNext()) {
+                iterator.next().invalidate()
+                iterator.remove()
+            }
+        }
+    }
+
+    private fun requestViewInvalidation(view: View) {
+        viewsToInvalidate.add(view)
+        if (!invalidationScheduled) {
+            invalidationScheduled = true
+            invalidationHandler.postDelayed(invalidationRunnable, INVALIDATION_BATCH_MS)
+        }
+    }
+
+    internal class EmoteEntry(
+        val id: String,
+        val master: Drawable,
+        val size: Int,
+        val category: Category = Category.EMOTE,
+        preserveAspect: Boolean = false
+    ) {
+        // Buffer is square by default; card-shaped collectibles keep their own aspect instead of
+        // being squashed. Height is the anchor — `size` becomes the art's height and width
+        // follows from its ratio, so a wide card doesn't shrink to fit a square.
+        val bufferWidth: Int
+        val bufferHeight: Int
+        val buffer: Bitmap
+        private val bufferCanvas: Canvas
+
+        init {
+            val artWidth = master.intrinsicWidth
+            val artHeight = master.intrinsicHeight
+            if (preserveAspect && artWidth > 0 && artHeight > 0) {
+                val scale = size.toFloat() / artHeight
+                bufferWidth = (artWidth * scale).toInt().coerceAtLeast(1)
+                bufferHeight = size
+            } else {
+                bufferWidth = size
+                bufferHeight = size
+            }
+            buffer = Bitmap.createBitmap(bufferWidth, bufferHeight, Bitmap.Config.ARGB_8888)
+            bufferCanvas = Canvas(buffer)
+        }
+        // Changed to Drawable to support both ProxyDrawable and ScalingProxyDrawable
+        val viewers = Collections.synchronizedSet(Collections.newSetFromMap(WeakHashMap<Drawable, Boolean>()))
+        private val mainHandler = Handler(Looper.getMainLooper())
+        @Volatile private var lastCaptureTime: Long = -1
+        // Track last invalidation dispatch time for throttling
+        @Volatile private var lastInvalidationTime: Long = 0
+
+        // Per-surface settings: badges use a fixed cap; chat emotes follow the user's FPS.
+        private fun frameIntervalMs(): Long =
+            if (category == Category.BADGE) DEFAULT_FRAME_INTERVAL_MS else chatEmoteFrameIntervalMs
+
+        private fun categoryAnimated(): Boolean =
+            if (category == Category.BADGE) badgesAnimated else chatEmotesAnimated
+
+        @androidx.annotation.Keep
+        private val callback = object : Drawable.Callback {
+            override fun invalidateDrawable(who: Drawable) {
+                // Throttle invalidation dispatches to avoid spamming views every GIF frame
+                val now = SystemClock.uptimeMillis()
+                if (now - lastInvalidationTime < frameIntervalMs()) return
+                lastInvalidationTime = now
+
+                // Only remove viewers whose view is garbage-collected (viewRef == null).
+                // Views that are temporarily off-screen (!isAttachedToWindow) are kept so
+                // the animation resumes automatically when the view re-attaches — no need
+                // to re-call loadSynchronizedEmote. pauseMaster only when ALL viewers are GC'd.
+                var hasAnyViewer = false
+                synchronized(viewers) {
+                    val iterator = viewers.iterator()
+                    while (iterator.hasNext()) {
+                        val proxy = iterator.next()
+                        if (proxy == null) {
+                            iterator.remove()
+                        } else {
+                            val v = when (proxy) {
+                                is ScalingProxyDrawable -> proxy.viewRef.get()
+                                is ProxyDrawable -> proxy.viewRef.get()
+                                else -> null
+                            }
+                            if (v == null) {
+                                iterator.remove()
+                            } else {
+                                hasAnyViewer = true
+                                if (v.isAttachedToWindow) {
+                                    when (proxy) {
+                                        is ScalingProxyDrawable -> proxy.triggerInvalidation()
+                                        is ProxyDrawable -> proxy.triggerInvalidation()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (!hasAnyViewer) {
+                    pauseMaster()
+                }
+            }
+
+            override fun scheduleDrawable(who: Drawable, what: Runnable, `when`: Long) {
+                mainHandler.removeCallbacks(what)
+                val delay = Math.max(0L, `when` - SystemClock.uptimeMillis())
+                // Enforce minimum frame delay for smooth pacing
+                val clampedDelay = Math.max(delay, frameIntervalMs())
+                mainHandler.postDelayed(what, clampedDelay)
+            }
+
+            override fun unscheduleDrawable(who: Drawable, what: Runnable) {
+                mainHandler.removeCallbacks(what)
+            }
+        }
+
+        init {
+            master.callback = callback
+            master.setBounds(0, 0, bufferWidth, bufferHeight)
+            // Animation is governed purely by the per-surface settings (categoryAnimated),
+            // independent of the broader Battery Saver mode — so users can keep emotes
+            // animated while Battery Saver trims quality/timers, or vice versa.
+            if (master is Animatable && !animationsPaused && categoryAnimated()) {
+                if (master is GifDrawable) {
+                    master.setLoopCount(GifDrawable.LOOP_FOREVER)
+                }
+                master.start()
+            }
+        }
+
+        /** Add a proxy and ensure master animation is running. */
+        fun attachViewer(proxy: Drawable) {
+            viewers.add(proxy)
+            ensureRunning()
+        }
+
+        /** Restart master animation if it was paused while idle. */
+        fun ensureRunning() {
+            if (animationsPaused || !categoryAnimated()) return
+            try {
+                val d = master
+                if (d is Animatable && !d.isRunning) {
+                    d.start()
+                }
+            } catch (_: Exception) { }
+        }
+
+        /** Stop master animation so the APNG/GIF decoder thread stops scheduling frames. */
+        fun pauseMaster() {
+            try {
+                val d = master
+                if (d is Animatable && d.isRunning) {
+                    d.stop()
+                }
+            } catch (_: Exception) { }
+        }
+
+        fun captureFrame() {
+            val currentTime = SystemClock.uptimeMillis()
+            // Only re-capture if at least the per-surface frame interval has passed
+            if (currentTime - lastCaptureTime < frameIntervalMs()) return
+            lastCaptureTime = currentTime
+            try {
+                buffer.eraseColor(Color.TRANSPARENT)
+                master.draw(bufferCanvas)
+            } catch (e: Exception) {
+                // This handles cases like "Buffer not large enough for pixels" if it throws
+                // or other rendering artifacts on specific Android versions
+                android.util.Log.e("EmoteManager", "Error capturing frame for $id: ${e.message}")
+            }
+        }
+    }
+
+    internal class ProxyDrawable(private val entry: EmoteEntry, view: View) : Drawable() {
+        private val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+        internal val viewRef = WeakReference(view)
+
+        fun triggerInvalidation() {
+            val view = viewRef.get() ?: return
+            if (!view.isAttachedToWindow) return
+            requestViewInvalidation(view)
+            invalidateSelf()
+        }
+
+        override fun draw(canvas: Canvas) {
+            entry.captureFrame()
+            // We draw the pre-captured buffer which is already at its target size
+            canvas.drawBitmap(entry.buffer, 0f, 0f, paint)
+        }
+
+        override fun getIntrinsicWidth(): Int = entry.bufferWidth
+        override fun getIntrinsicHeight(): Int = entry.bufferHeight
+
+        override fun setAlpha(alpha: Int) {
+            paint.alpha = alpha
+            invalidateSelf()
+        }
+
+        override fun setColorFilter(colorFilter: ColorFilter?) {
+            paint.colorFilter = colorFilter
+            invalidateSelf()
+        }
+
+        @Suppress("DEPRECATION")
+        override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+    }
+
+    /**
+     * ScalingProxyDrawable - Scales the shared master buffer to the target display size.
+     * This allows all emote instances to share the same animation frame regardless of display size.
+     */
+    internal class ScalingProxyDrawable(
+        private val entry: EmoteEntry,
+        view: View,
+        private val targetSize: Int
+    ) : Drawable() {
+        private val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+        internal val viewRef = WeakReference(view)
+        private val srcRect = Rect(0, 0, entry.bufferWidth, entry.bufferHeight)
+
+        // Scale by height, matching how the buffer was sized — width follows from the art's ratio.
+        private val fitScale = targetSize.toFloat() / entry.bufferHeight
+        private val drawnWidth = (entry.bufferWidth * fitScale).toInt().coerceAtLeast(1)
+        private val drawnHeight = targetSize
+        private val dstRect = RectF(0f, 0f, drawnWidth.toFloat(), drawnHeight.toFloat())
+
+        fun triggerInvalidation() {
+            val view = viewRef.get() ?: return
+            if (!view.isAttachedToWindow) return
+            requestViewInvalidation(view)
+            invalidateSelf()
+        }
+
+        override fun draw(canvas: Canvas) {
+            entry.captureFrame()
+            // Scale the master buffer to target size
+            canvas.drawBitmap(entry.buffer, srcRect, dstRect, paint)
+        }
+
+        override fun getIntrinsicWidth(): Int = drawnWidth
+        override fun getIntrinsicHeight(): Int = drawnHeight
+
+        override fun setAlpha(alpha: Int) {
+            paint.alpha = alpha
+            invalidateSelf()
+        }
+
+        override fun setColorFilter(colorFilter: ColorFilter?) {
+            paint.colorFilter = colorFilter
+            invalidateSelf()
+        }
+
+        @Suppress("DEPRECATION")
+        override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+    }
+
+    /**
+     * Loads an emote and returns a ProxyDrawable that shares animation state with all other instances.
+     * All emotes with the same ID share the same animation frame, regardless of display size.
+     */
+    fun loadSynchronizedEmote(
+        context: Context,
+        emoteId: String,
+        size: Int,
+        targetView: View,
+        onReady: (Drawable) -> Unit
+    ) {
+        // Use ONLY emoteId as key - this ensures all sizes share the same animation
+        val key = emoteId
+        
+        // Master size for shared buffer (use largest common size for quality)
+        val masterSize = 48
+        
+        // Bounds come from the proxy's own intrinsics rather than a square `size`, or a
+        // card-shaped emote would be stretched back out — chat spans size off these bounds.
+        // 1. Check if already loaded
+        val entry = emoteEntries[key]
+        if (entry != null) {
+            val proxy = ScalingProxyDrawable(entry, targetView, size)
+            entry.attachViewer(proxy)
+            proxy.setBounds(0, 0, proxy.intrinsicWidth, proxy.intrinsicHeight)
+            onReady(proxy)
+            return
+        }
+
+        // 2. Check if currently loading - add to shared pending queue
+        val pending = sharedPendingCallbacks[key]
+        if (pending != null) {
+            pending.add(Pair(WeakReference(targetView), { loadedEntry: EmoteEntry ->
+                val proxy = ScalingProxyDrawable(loadedEntry, targetView, size)
+                loadedEntry.attachViewer(proxy)
+                proxy.setBounds(0, 0, proxy.intrinsicWidth, proxy.intrinsicHeight)
+                onReady(proxy)
+            }))
+            return
+        }
+
+        // 3. Start new load
+        sharedPendingCallbacks[key] = mutableListOf(Pair(WeakReference(targetView), { loadedEntry: EmoteEntry ->
+            val proxy = ScalingProxyDrawable(loadedEntry, targetView, size)
+            loadedEntry.attachViewer(proxy)
+            proxy.setBounds(0, 0, proxy.intrinsicWidth, proxy.intrinsicHeight)
+            onReady(proxy)
+        }))
+
+        val url = "$EMOTE_BASE_URL$emoteId/fullsize"
+        loadInternalShared(context, url, key, masterSize)
+    }
+
+    fun loadSynchronizedImage(
+        context: Context,
+        url: String,
+        size: Int,
+        targetView: View,
+        onReady: (Drawable) -> Unit
+    ) {
+        val key = "url_${url.hashCode()}_$size"
+        
+        // 1. Check if already loaded
+        val entry = emoteEntries[key]
+        if (entry != null) {
+            val proxy = ProxyDrawable(entry, targetView)
+            entry.attachViewer(proxy)
+            proxy.setBounds(0, 0, size, size)
+            onReady(proxy)
+            return
+        }
+        
+        // 2. Check if currently loading - add to pending queue
+        val pending = pendingCallbacks[key]
+        if (pending != null) {
+            pending.add(Pair(WeakReference(targetView), onReady))
+            return
+        }
+        
+        // 3. Start new load
+        pendingCallbacks[key] = mutableListOf(Pair(WeakReference(targetView), onReady))
+        loadInternal(context, url, key, size, onReady)
+    }
+
+    private fun loadInternal(
+        context: Context,
+        url: String,
+        key: String,
+        size: Int,
+        @Suppress("UNUSED_PARAMETER") onReady: (Drawable) -> Unit
+    ) {
+        // Use APNGDrawable for PNG URLs (animated subscriber badges)
+        if (url.contains(".png", ignoreCase = true)) {
+            loadInternalApng(url, key, size)
+            return
+        }
+
+        val target = object : CustomTarget<Drawable>(size, size) {
+            override fun onResourceReady(resource: Drawable, transition: Transition<in Drawable>?) {
+                android.util.Log.d("EmoteManager", "✅ Loaded emote: $url")
+                val newEntry = EmoteEntry(key, resource, size)
+                emoteEntries[key] = newEntry
+                
+                // Notify all pending callbacks
+                val callbacks = pendingCallbacks.remove(key) ?: return
+                for ((viewRef, callback) in callbacks) {
+                    val view = viewRef.get() ?: continue
+                    val proxy = ProxyDrawable(newEntry, view)
+                    newEntry.attachViewer(proxy)
+                    proxy.setBounds(0, 0, size, size)
+                    callback(proxy)
+                }
+                
+                activeTargets.remove(key)
+            }
+
+            override fun onLoadCleared(placeholder: Drawable?) {}
+            
+            override fun onLoadFailed(errorDrawable: Drawable?) {
+                android.util.Log.e("EmoteManager", "❌ Failed to load emote: $url")
+                pendingCallbacks.remove(key)
+                activeTargets.remove(key)
+            }
+        }
+
+        activeTargets[key] = target
+
+        val glideUrl = com.bumptech.glide.load.model.GlideUrl(
+            url,
+            com.bumptech.glide.load.model.LazyHeaders.Builder()
+                .addHeader("User-Agent", dev.xacnio.kciktv.shared.util.Constants.USER_AGENT)
+                .build()
+        )
+
+        Glide.with(context.applicationContext)
+            .asDrawable()
+            .load(glideUrl)
+            .signature(ObjectKey("v10_sync_render_$key")) // Bumped version to v10
+            .diskCacheStrategy(DiskCacheStrategy.DATA)
+            .disallowHardwareConfig() // Important for BitmapShader and Span operations
+            .into(target)
+    }
+
+    /**
+     * Loads APNG animated badges. Glide reduces PNG to a static bitmap;
+     * penfeizhou APNGDrawable correctly plays APNG animation frames.
+     */
+    private fun loadInternalApng(url: String, key: String, size: Int) {
+        val targetView = pendingCallbacks[key]?.firstOrNull()?.first?.get()
+        if (targetView == null) {
+            android.util.Log.e("EmoteManager", "❌ Failed to load APNG badge: targetView is null for key $key")
+            pendingCallbacks.remove(key)
+            return
+        }
+
+        // Battery saver: when badge animation is off, an APNGDrawable that is never started
+        // decodes no frames and draws blank. Load the static first frame via Glide instead
+        // (non-animated PNG decoders render the APNG default image) so the badge is visible.
+        if (!badgesAnimated) {
+            loadStaticBadge(targetView.context.applicationContext, url, key, size)
+            return
+        }
+
+        ApngBadgeManager.loadBadge(url, size, targetView) { apngDrawable ->
+            if (apngDrawable != null) {
+                (apngDrawable as? APNGDrawable)?.setAutoPlay(true)
+                android.util.Log.d("EmoteManager", "✅ Loaded APNG badge via ApngBadgeManager: $url")
+
+                Handler(Looper.getMainLooper()).post {
+                    val newEntry = EmoteEntry(key, apngDrawable, size, Category.BADGE)
+                    emoteEntries[key] = newEntry
+
+                    val callbacks = pendingCallbacks.remove(key) ?: return@post
+                    for ((viewRef, callback) in callbacks) {
+                        val view = viewRef.get() ?: continue
+                        val proxy = ProxyDrawable(newEntry, view)
+                        newEntry.attachViewer(proxy)
+                        proxy.setBounds(0, 0, size, size)
+                        callback(proxy)
+                    }
+                }
+            } else {
+                android.util.Log.e("EmoteManager", "❌ Failed to load APNG badge: $url")
+                pendingCallbacks.remove(key)
+            }
+        }
+    }
+
+    /**
+     * Loads a badge as a static (non-animated) drawable via Glide. Used when badge
+     * animation is disabled — guarantees a visible first frame without relying on
+     * APNGDrawable's start()-driven decode (which would otherwise render blank).
+     */
+    private fun loadStaticBadge(context: Context, url: String, key: String, size: Int) {
+        val glideUrl = com.bumptech.glide.load.model.GlideUrl(
+            url,
+            com.bumptech.glide.load.model.LazyHeaders.Builder()
+                .addHeader("User-Agent", dev.xacnio.kciktv.shared.util.Constants.USER_AGENT)
+                .build()
+        )
+        Glide.with(context)
+            .asDrawable()
+            .load(glideUrl)
+            .dontAnimate()
+            .signature(ObjectKey("static_badge_$key"))
+            .diskCacheStrategy(DiskCacheStrategy.DATA)
+            .disallowHardwareConfig()
+            .into(object : CustomTarget<Drawable>(size, size) {
+                override fun onResourceReady(resource: Drawable, transition: Transition<in Drawable>?) {
+                    val newEntry = EmoteEntry(key, resource, size, Category.BADGE)
+                    emoteEntries[key] = newEntry
+                    val callbacks = pendingCallbacks.remove(key) ?: return
+                    for ((viewRef, callback) in callbacks) {
+                        val view = viewRef.get() ?: continue
+                        val proxy = ProxyDrawable(newEntry, view)
+                        newEntry.attachViewer(proxy)
+                        proxy.setBounds(0, 0, size, size)
+                        callback(proxy)
+                    }
+                }
+
+                override fun onLoadCleared(placeholder: Drawable?) {}
+
+                override fun onLoadFailed(errorDrawable: Drawable?) {
+                    android.util.Log.e("EmoteManager", "❌ Failed to load static badge: $url")
+                    pendingCallbacks.remove(key)
+                }
+            })
+    }
+
+    /**
+     * Shared loading function specifically for Badges (subscriber badges, etc).
+     * Bypasses PNG URL check and directly attempts APNG load.
+     */
+    fun loadBadgeSynchronized(
+        @Suppress("UNUSED_PARAMETER") context: Context,
+        url: String,
+        size: Int,
+        targetView: View,
+        onReady: (Drawable) -> Unit
+    ) {
+        val key = "v6_$url"
+
+        val callbacks = pendingCallbacks[key]
+        if (callbacks != null) {
+            callbacks.add(Pair(WeakReference(targetView), onReady))
+            return
+        }
+
+        val entry = emoteEntries[key]
+        if (entry != null) {
+            val proxy = ProxyDrawable(entry, targetView)
+            entry.attachViewer(proxy)
+            proxy.setBounds(0, 0, size, size)
+            onReady(proxy)
+            return
+        }
+
+        pendingCallbacks[key] = mutableListOf(Pair(WeakReference(targetView), onReady))
+        loadInternalApng(url, key, size)
+    }
+
+    /**
+     * Shared loading function that uses sharedPendingCallbacks.
+     * Callbacks receive EmoteEntry so they can create their own sized ProxyDrawable.
+     */
+    private fun loadInternalShared(
+        context: Context,
+        url: String,
+        key: String,
+        masterSize: Int
+    ) {
+        val target = object : CustomTarget<Drawable>(masterSize, masterSize) {
+            override fun onResourceReady(resource: Drawable, transition: Transition<in Drawable>?) {
+                android.util.Log.d("EmoteManager", "✅ Loaded shared emote: $url")
+                // key is the emote id here, which is what marks a collectible.
+                val newEntry = EmoteEntry(
+                    key,
+                    resource,
+                    masterSize,
+                    preserveAspect = preservesAspect(key)
+                )
+                emoteEntries[key] = newEntry
+                
+                // Notify all shared pending callbacks with the EmoteEntry
+                val callbacks = sharedPendingCallbacks.remove(key) ?: return
+                for ((viewRef, callback) in callbacks) {
+                    if (viewRef.get() == null) continue
+                    callback(newEntry)
+                }
+                
+                activeTargets.remove(key)
+            }
+
+            override fun onLoadCleared(placeholder: Drawable?) {}
+            
+            override fun onLoadFailed(errorDrawable: Drawable?) {
+                android.util.Log.e("EmoteManager", "❌ Failed to load shared emote: $url")
+                sharedPendingCallbacks.remove(key)
+                activeTargets.remove(key)
+            }
+        }
+
+        activeTargets[key] = target
+
+        val glideUrl = com.bumptech.glide.load.model.GlideUrl(
+            url,
+            com.bumptech.glide.load.model.LazyHeaders.Builder()
+                .addHeader("User-Agent", dev.xacnio.kciktv.shared.util.Constants.USER_AGENT)
+                .build()
+        )
+
+        Glide.with(context.applicationContext)
+            .asDrawable()
+            .load(glideUrl)
+            .signature(ObjectKey("v12_shared_sync_$key")) // New version for shared system
+            .diskCacheStrategy(DiskCacheStrategy.DATA)
+            .disallowHardwareConfig()
+            .into(target)
+    }
+
+    fun unregisterViewer(view: View) {
+        // Actively remove all proxy drawables associated with this view
+        // This prevents "ghost viewers" from accumulating when RecyclerView recycles
+        for (entry in emoteEntries.values) {
+            synchronized(entry.viewers) {
+                entry.viewers.removeAll { proxy ->
+                    when (proxy) {
+                        is ScalingProxyDrawable -> proxy.viewRef.get().let { it == null || it == view }
+                        is ProxyDrawable -> proxy.viewRef.get().let { it == null || it == view }
+                        else -> false
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Renders text with [emote:id:name] tags into a TextView using animated spans.
+     */
+    /**
+     * Tracks pending emote loads per TextView to batch layout updates.
+     * Key = view identity hash, Value = remaining load count
+     */
+    private val pendingEmoteLoads = java.util.WeakHashMap<View, java.util.concurrent.atomic.AtomicInteger>()
+
+    fun renderEmoteText(textView: android.widget.TextView, content: String, emoteSize: Int) {
+        val matcher = EMOTE_PATTERN.matcher(content)
+        val resultText = StringBuilder()
+        val emotePlaceholders = mutableListOf<Triple<Int, String, String>>()
+        var lastEnd = 0
+
+        while (matcher.find()) {
+            resultText.append(content.substring(lastEnd, matcher.start()))
+            val emoteId = matcher.group(1) ?: continue
+            val emoteName = matcher.group(2) ?: continue
+            val actualPosition = resultText.length
+            // Object Replacement Character (U+FFFC) is the standard for inline objects like spans
+            resultText.append("\uFFFC")
+            emotePlaceholders.add(Triple(actualPosition, emoteId, emoteName))
+            lastEnd = matcher.end()
+        }
+        resultText.append(content.substring(lastEnd))
+
+        val spannable = android.text.SpannableStringBuilder(resultText.toString())
+        textView.setText(spannable, android.widget.TextView.BufferType.SPANNABLE)
+
+        if (emotePlaceholders.isEmpty()) return
+
+        // Track how many emotes are still loading so we do ONE layout refresh at the end
+        val remaining = java.util.concurrent.atomic.AtomicInteger(emotePlaceholders.size)
+        pendingEmoteLoads[textView] = remaining
+
+        for ((pos, emoteId, _) in emotePlaceholders) {
+            loadSynchronizedEmote(textView.context, emoteId, emoteSize, textView) { sharedDrawable ->
+                try {
+                    val currentText = textView.text
+                    if (currentText is android.text.Spannable && pos < currentText.length) {
+                        // Use the custom CenterImageSpan with margin
+                        val span = try {
+                           dev.xacnio.kciktv.shared.ui.adapter.ChatAdapter.CenterImageSpan(sharedDrawable, 4)
+                         } catch (e: Exception) {
+                           android.text.style.ImageSpan(sharedDrawable, android.text.style.ImageSpan.ALIGN_BOTTOM)
+                         }
+                         
+                         // Remove any existing span at this position first
+                         currentText.getSpans(pos, pos + 1, android.text.style.ImageSpan::class.java).forEach {
+                             currentText.removeSpan(it)
+                         }
+                         currentText.setSpan(span, pos, pos + 1, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                         
+                         // Only do the expensive layout refresh once when ALL emotes are loaded
+                         if (remaining.decrementAndGet() <= 0) {
+                             // Force layout update to solve the "top line invisible" bug
+                             val fresh = android.text.SpannableStringBuilder()
+                             fresh.append(currentText.toString())
+                             val allSpans = currentText.getSpans(0, currentText.length, Any::class.java)
+                             for (s in allSpans) {
+                                 val start = currentText.getSpanStart(s)
+                                 val end = currentText.getSpanEnd(s)
+                                 val flags = currentText.getSpanFlags(s)
+                                 
+                                 // Clone CenterImageSpan to avoid caching issues
+                                 val newSpan = if (s is dev.xacnio.kciktv.shared.ui.adapter.ChatAdapter.CenterImageSpan) {
+                                     dev.xacnio.kciktv.shared.ui.adapter.ChatAdapter.CenterImageSpan(s.drawable, s.rightMargin)
+                                 } else {
+                                     s
+                                 }
+                                 fresh.setSpan(newSpan, start, end, flags)
+                             }
+                             textView.text = ""
+                             textView.setText(fresh, android.widget.TextView.BufferType.SPANNABLE)
+                         } else {
+                             // Lightweight invalidate for intermediate loads
+                             textView.invalidate()
+                         }
+                    } else {
+                        remaining.decrementAndGet()
+                    }
+                } catch (e: Exception) {
+                    remaining.decrementAndGet()
+                    android.util.Log.e("EmoteManager", "Error applying span: ${e.message}")
+                }
+            }
+        }
+    }
+}

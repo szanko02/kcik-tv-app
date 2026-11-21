@@ -1,0 +1,586 @@
+/**
+ * File: EmotePanelManager.kt
+ *
+ * Description: Manages the Emote Picker panel interface.
+ * It handles loading emote data, organizing emotes into tabs (Recents, Collectibles, Global, Channel, Emoji),
+ * and managing the grid layout and user selection interactions.
+ *
+ * Author: Xacnio
+ *
+ */
+package dev.xacnio.kciktv.mobile.ui.chat
+
+import android.content.Context
+import android.util.Log
+import android.view.View
+import android.view.inputmethod.InputMethodManager
+import androidx.lifecycle.LifecycleCoroutineScope
+import dev.xacnio.kciktv.mobile.MobilePlayerActivity
+import dev.xacnio.kciktv.R
+import dev.xacnio.kciktv.shared.data.repository.ChannelRepository
+import dev.xacnio.kciktv.databinding.ActivityMobilePlayerBinding
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import dev.xacnio.kciktv.shared.ui.adapter.EmoteAdapter
+import dev.xacnio.kciktv.shared.util.EmoteCache
+import dev.xacnio.kciktv.shared.ui.utils.EmoteManager
+
+/**
+ * Manages the emote panel UI, loading emotes, and interactions.
+ */
+class EmotePanelManager(
+    private val activity: MobilePlayerActivity,
+    private val binding: ActivityMobilePlayerBinding,
+    private val repository: ChannelRepository,
+    private val lifecycleScope: LifecycleCoroutineScope
+) {
+    private companion object {
+        const val TAG = "EmotePanelManager"
+
+        /** Matches the quick bar's refresh delay, so tabs settle after the click ripple. */
+        const val RECENTS_REFRESH_DELAY_MS = 250L
+    }
+
+    internal var emoteCategories: List<dev.xacnio.kciktv.shared.data.model.EmoteCategory> = emptyList()
+    // Tab order shown in the panel: recents, collectibles, global, channels, emojis
+    private var displayCategories: List<dev.xacnio.kciktv.shared.data.model.EmoteCategory> = emptyList()
+    private var activeEmoteSlug: String? = null
+    private var currentEmoteCategoryIndex = 0
+    private var emoteNameToId: Map<String, Long> = emptyMap() // For quick emote name lookup
+    private var isEmotePanelInitialized = false
+    private var modEmoteChannelsManager: ModEmoteChannelsManager? = null
+
+    fun resetForNewChannel() {
+        emoteCategories = emptyList()
+        displayCategories = emptyList()
+        currentEmoteCategoryIndex = 0
+        activeEmoteSlug = null
+    }
+
+    /**
+     * Builds the "recently used" category from the stored recent emote ids, resolving them
+     * against the emotes the current channel actually offers. Returns null when nothing is
+     * usable yet, so the tab only appears once the user has picked some emotes.
+     */
+    private fun buildRecentsCategory(): dev.xacnio.kciktv.shared.data.model.EmoteCategory? {
+        val channelId = activity.currentChannel?.id?.toLongOrNull()
+        val stored = (channelId?.let { activity.prefs.getChannelRecentEmoteIds(it) })
+            ?: activity.prefs.recentEmoteIds
+        val recentIds = stored?.split(",")?.mapNotNull { it.toLongOrNull() } ?: return null
+        if (recentIds.isEmpty()) return null
+
+        val isSubscribed = activity.chatStateManager.isSubscribedToCurrentChannel
+        val byId = emoteCategories.flatMap { it.emotes }.associateBy { it.id }
+        val recents = recentIds.mapNotNull { byId[it] }
+            .filter { emote ->
+                // Current channel's sub emotes need an active subscription; sub emotes from other
+                // channels are only in the payload because the user is subscribed there.
+                !emote.subscribersOnly || emote.channelId != channelId || isSubscribed
+            }
+            // Already filtered to usable emotes, so clear the flag to keep this a flat
+            // most-recent-first list instead of letting the adapter split off a subscriber section.
+            .map { if (it.subscribersOnly) it.copy(subscribersOnly = false) else it }
+            .take(QuickEmoteBarManager.MAX_STORED_RECENTS)
+
+        if (recents.isEmpty()) return null
+        return dev.xacnio.kciktv.shared.data.model.EmoteCategory(
+            id = "Recents",
+            name = "Recents",
+            emotes = recents,
+            isRecents = true
+        )
+    }
+
+    /**
+     * Rebuilds the recents tab after the stored list changed, so a clicked emote moves to the
+     * front of it. Delayed so the grid does not shift while the click ripple is still running.
+     */
+    fun refreshRecents() {
+        if (!isEmotePanelInitialized) return
+        if (binding.emotePanelContainer.visibility != View.VISIBLE) return
+
+        binding.emotePanelContainer.postDelayed({
+            if (binding.emotePanelContainer.visibility != View.VISIBLE) return@postDelayed
+
+            val hadRecents = displayCategories.firstOrNull()?.isRecents == true
+            val hasRecents = buildRecentsCategory() != null
+
+            if (hadRecents != hasRecents) {
+                // The strip gained or lost its first tab, so shift the selection to stay on the
+                // same category, then rebuild the tabs.
+                currentEmoteCategoryIndex =
+                    (currentEmoteCategoryIndex + if (hasRecents) 1 else -1).coerceAtLeast(0)
+                populateEmotePanel()
+                return@postDelayed
+            }
+
+            displayCategories = buildDisplayCategories()
+            if (hasRecents && currentEmoteCategoryIndex == 0) {
+                val recyclerView = binding.emotePanelContainer
+                    .findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.emoteRecyclerView)
+                (recyclerView?.adapter as? EmoteAdapter)?.setEmotes(displayCategories[0].emotes)
+                recyclerView?.scrollToPosition(0)
+            }
+        }, RECENTS_REFRESH_DELAY_MS)
+    }
+
+    /**
+     * Orders the API categories for the tab strip. sortedBy is stable, so channels keep the
+     * order the API sent them, and any unknown category lands with the channels.
+     */
+    private fun buildDisplayCategories(): List<dev.xacnio.kciktv.shared.data.model.EmoteCategory> {
+        val ordered = emoteCategories.sortedBy { category ->
+            when {
+                category.isCollectibles -> 0
+                category.isGlobal -> 1
+                category.isEmoji -> 3
+                else -> 2
+            }
+        }
+        val recents = buildRecentsCategory()
+        return if (recents != null) listOf(recents) + ordered else ordered
+    }
+
+    fun toggleEmotePanel(showKeyboardOnClose: Boolean = true) {
+        val panel = binding.emotePanelContainer
+        val isVisible = panel.visibility == View.VISIBLE
+        
+        if (isVisible) {
+            // Panel closing -> Switch to Emoji icon
+            binding.chatEmoteButton.setImageResource(R.drawable.ic_emoji)
+
+            // Close panel
+            panel.visibility = View.GONE
+            
+            if (showKeyboardOnClose) {
+                // Open keyboard only if requested
+                binding.chatInput.requestFocus()
+                val imm = activity.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                imm.showSoftInput(binding.chatInput, InputMethodManager.SHOW_IMPLICIT)
+            }
+        } else {
+            // Panel opening -> Switch to Keyboard icon
+            binding.chatEmoteButton.setImageResource(R.drawable.ic_keyboard)
+
+            // Close keyboard, open panel
+            val imm = activity.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.hideSoftInputFromWindow(binding.chatInput.windowToken, 0)
+            
+            panel.visibility = View.VISIBLE
+            updatePanelHeight()
+            activity.chatUiManager.forceScrollToBottomIfEnabled() // Fix chat jumping up
+            
+            if (!isEmotePanelInitialized) {
+                setupEmotePanel()
+            } else {
+                updateSpanCount()
+            }
+            
+            if (emoteCategories.isNotEmpty()) {
+                populateEmotePanel()
+            } else {
+                val loadingContainer = panel.findViewById<View>(R.id.emoteLoadingContainer)
+                if (loadingContainer != null) loadingContainer.visibility = View.VISIBLE
+                
+                // Retry loading emotes if list is empty
+                activity.currentChannel?.slug?.let { slug ->
+                     lifecycleScope.launch {
+                        loadChannelEmotes(slug)
+                    }
+                }
+            }
+        }
+    }
+    
+    private fun setupEmotePanel() {
+        val panel = binding.emotePanelContainer
+        val recyclerView =
+            panel.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.emoteRecyclerView)
+                ?: return
+
+        // 1. Create Adapter & LayoutManager IMMEDIATELY (Before post)
+        // This ensures adapter is not null when populateEmotePanel is called right after setup.
+        val emoteAdapter = dev.xacnio.kciktv.shared.ui.adapter.EmoteAdapter { emote ->
+            activity.appendEmoteToInput(binding.chatInput, emote)
+            activity.addRecentEmote(emote)
+        }
+        recyclerView.adapter = emoteAdapter
+        
+        // Pass info
+        emoteAdapter.setSubscriptionStatus(activity.chatStateManager.isSubscribedToCurrentChannel)
+        val currentChannelIdLong = activity.currentChannel?.id?.toLongOrNull()
+        emoteAdapter.setCurrentChannelId(currentChannelIdLong)
+
+        // Flow layout, not a grid: collectible emotes are card-shaped and wider than the rest, and
+        // a fixed-cell grid can only fit them via whole extra cells, leaving ragged holes. Flexbox
+        // packs each item at its own width and wraps.
+        recyclerView.layoutManager = com.google.android.flexbox.FlexboxLayoutManager(activity).apply {
+            flexDirection = com.google.android.flexbox.FlexDirection.ROW
+            flexWrap = com.google.android.flexbox.FlexWrap.WRAP
+            justifyContent = com.google.android.flexbox.JustifyContent.FLEX_START
+            alignItems = com.google.android.flexbox.AlignItems.CENTER
+        }
+
+        recyclerView.post {
+            if (!recyclerView.isAttachedToWindow) return@post
+            // Populate initial data if empty (fallback)
+            if (displayCategories.isNotEmpty() && currentEmoteCategoryIndex < displayCategories.size && emoteAdapter.itemCount == 0) {
+                emoteAdapter.setEmotes(displayCategories[currentEmoteCategoryIndex].emotes)
+            }
+        }
+
+        // Setup Delete (Backspace) Button
+        panel.findViewById<View>(R.id.btnDeleteEmote)?.setOnClickListener {
+            // Take out a whole emote if one is sitting before the cursor, otherwise fall back to
+            // a plain backspace.
+            if (!deleteEmoteBeforeCursor()) {
+                val event = android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_DEL)
+                binding.chatInput.dispatchKeyEvent(event)
+            }
+        }
+
+        isEmotePanelInitialized = true
+    }
+
+    /**
+     * Removes the emote immediately before the cursor in one press. Emotes are typed into the
+     * input as their bare name, with no tag/span to delete as a unit, so this matches the word
+     * before the cursor against the known emote names instead.
+     *
+     * @return false when there's no emote there, leaving the caller to delete normally.
+     */
+    private fun deleteEmoteBeforeCursor(): Boolean {
+        val editText = binding.chatInput
+        val editable = editText.text ?: return false
+        val cursor = editText.selectionStart
+        // Only for a plain caret: a selection already deletes as a unit.
+        if (cursor <= 0 || cursor != editText.selectionEnd) return false
+
+        // Insertion leaves a trailing space, so look past one.
+        var end = cursor
+        if (editable[end - 1] == ' ') end--
+        if (end <= 0) return false
+
+        val wordStart = editable.lastIndexOf(' ', end - 1) + 1
+        if (wordStart >= end) return false
+
+        val word = editable.subSequence(wordStart, end).toString()
+        if (!emoteNameToId.containsKey(word)) return false
+
+        // Through `cursor`, not `end`, so the trailing space goes with it.
+        editable.delete(wordStart, cursor)
+        return true
+    }
+
+    private fun updatePanelHeight() {
+        // Adjust height for landscape mode
+        val config = activity.resources.configuration
+        val isLandscape = config.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        
+        val emotePickerLayout = binding.emotePanelContainer.findViewById<View>(R.id.emotePickerLayout) ?: return
+        val params = emotePickerLayout.layoutParams as? android.view.ViewGroup.MarginLayoutParams ?: return
+        
+        if (isLandscape) {
+             // Use 70% of screen height for landscape to maximize visibility
+             val screenHeight = activity.resources.displayMetrics.heightPixels
+             val height = (screenHeight * 0.70).toInt()
+             params.height = height
+             
+             // Add bottom margin to avoid accidental seek bar touches
+             params.bottomMargin = (24 * activity.resources.displayMetrics.density).toInt()
+        } else {
+             // Standard height for portrait
+             params.height = (280 * activity.resources.displayMetrics.density).toInt()
+             params.bottomMargin = 0
+        }
+        emotePickerLayout.layoutParams = params
+    }
+
+    /** No-op since the switch to Flexbox — items carry their own width. Kept: still called on rotation/re-open. */
+    private fun updateSpanCount() {
+        // Intentionally empty.
+    }
+
+
+    suspend fun loadChannelEmotes(slug: String) {
+        activeEmoteSlug = slug
+        // Load from disk cache for instant display
+        val cached = withContext(Dispatchers.IO) { EmoteCache.load(activity, slug) }
+        if (cached != null) {
+            applyCategories(slug, cached)
+            // Background refresh to pick up any newly added emotes
+            lifecycleScope.launch { refreshFromApi(slug) }
+            return
+        }
+        // No cache yet — fetch from network
+        refreshFromApi(slug)
+    }
+
+    private suspend fun refreshFromApi(slug: String) {
+        val result = repository.getEmotes(slug, activity.prefs.authToken)
+        result.onSuccess { categories ->
+            withContext(Dispatchers.IO) { EmoteCache.save(activity, slug, categories) }
+            applyCategories(slug, categories)
+        }.onFailure {
+            Log.e(TAG, "Failed to load emotes from API", it)
+        }
+    }
+
+    private suspend fun applyCategories(slug: String, categories: List<dev.xacnio.kciktv.shared.data.model.EmoteCategory>) {
+        // Discard results from a previous channel's in-flight request
+        if (slug != activeEmoteSlug) return
+        this.emoteCategories = categories
+        if (dev.xacnio.kciktv.shared.data.mock.MockConfig.enabled) {
+            dev.xacnio.kciktv.shared.data.mock.MockDataPools.availableEmotes = categories
+                .flatMap { it.emotes }
+                .filter { !it.subscribersOnly }
+                .map { it.id to it.name }
+        }
+        val nameMap = mutableMapOf<String, Long>()
+        categories.forEach { category ->
+            category.emotes.forEach { emote -> nameMap[emote.name] = emote.id }
+        }
+        emoteNameToId = nameMap
+
+        // This is the only place that knows which emote ids are card-shaped collectibles, so
+        // hand them to EmoteManager for chat/panel/quick-bar to draw at their true aspect.
+        val aspectChanged = EmoteManager.setAspectRatioEmotes(
+            categories
+                .filter { it.isCollectibles }
+                .flatMap { it.emotes }
+                .map { it.id.toString() }
+                .toSet()
+        )
+        // Chat history usually loads in parallel and renders square before this lands; rebind so
+        // those spans pick up the right shape.
+        if (aspectChanged) {
+            activity.runOnUiThread {
+                try {
+                    activity.chatAdapter.notifyDataSetChanged()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to refresh chat after emote shapes changed", e)
+                }
+            }
+        }
+
+        try {
+            activity.chatUiManager.setEmoteMap(nameMap.mapValues { it.value.toString() })
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting emote map to ChatUiManager", e)
+        }
+
+        if (activity.chatStateManager.isModeratorOrOwner) {
+            loadModEmoteChannels()
+        }
+
+        if (isEmotePanelInitialized) {
+            activity.runOnUiThread { populateEmotePanel() }
+        }
+        activity.runOnUiThread { activity.updateQuickEmoteBar() }
+    }
+
+    suspend fun loadModEmoteChannels() {
+        val savedSlugs = activity.prefs.modEmoteChannelSlugs
+        if (savedSlugs.isEmpty()) return
+
+        // Collect slugs already in panel (from channel categories that have profile pics / are channel-based)
+        val existingSlugs = emoteCategories
+            .filter { it.isChannelEmotes && !it.isModEmoteOnly }
+            .mapNotNull { it.slug }
+            .toSet()
+
+        val modCategories = mutableListOf<dev.xacnio.kciktv.shared.data.model.EmoteCategory>()
+
+        for (slug in savedSlugs) {
+            if (slug in existingSlugs) continue
+            try {
+                repository.getEmotes(slug, activity.prefs.authToken).onSuccess { cats ->
+                    cats.filter { it.isChannelEmotes }.forEach { cat ->
+                        val subscriberEmotes = cat.emotes.filter { it.subscribersOnly }
+                        if (subscriberEmotes.isNotEmpty()) {
+                            modCategories.add(cat.copy(emotes = subscriberEmotes, isModEmoteOnly = true))
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to load mod emote channel: $slug", e)
+            }
+        }
+
+        if (modCategories.isNotEmpty()) {
+            // Merge: base categories + mod-only categories (no duplicates by slug)
+            val base = emoteCategories.filter { !it.isModEmoteOnly }
+            val existingModSlugs = base.mapNotNull { it.slug }.toSet()
+            val filtered = modCategories.filter { it.slug !in existingModSlugs }
+            emoteCategories = base + filtered
+
+            // Add mod emote names to the replacement map
+            val updatedMap = emoteNameToId.toMutableMap()
+            filtered.forEach { cat ->
+                cat.emotes.forEach { emote -> updatedMap[emote.name] = emote.id }
+            }
+            emoteNameToId = updatedMap
+            try {
+                activity.chatUiManager.setEmoteMap(updatedMap.mapValues { it.value.toString() })
+            } catch (e: Exception) {
+                Log.e(TAG, "Error updating emote map with mod channels", e)
+            }
+
+            if (isEmotePanelInitialized) {
+                activity.runOnUiThread { populateEmotePanel() }
+            }
+        }
+    }
+
+    private fun populateEmotePanel() {
+        Log.d(TAG, "populateEmotePanel called with ${emoteCategories.size} categories")
+        val panel = binding.emotePanelContainer
+        val loadingContainer = panel.findViewById<View>(R.id.emoteLoadingContainer)
+        val recyclerView = panel.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.emoteRecyclerView)
+        val tabContainer = panel.findViewById<android.widget.LinearLayout>(R.id.emoteTabContainer)
+        val settingsButton = panel.findViewById<android.widget.ImageButton>(R.id.modEmoteSettingsButton)
+
+        if (loadingContainer != null) loadingContainer.visibility = View.GONE
+        if (recyclerView != null) recyclerView.visibility = View.VISIBLE
+        if (tabContainer == null) {
+            Log.e(TAG, "tabContainer is null in populateEmotePanel")
+            return
+        }
+
+        // Show settings button only for mods
+        if (settingsButton != null) {
+            val isMod = activity.chatStateManager.isModeratorOrOwner
+            settingsButton.visibility = if (isMod) View.VISIBLE else View.GONE
+            settingsButton.setOnClickListener {
+                val existingSlugs = emoteCategories
+                    .filter { it.isChannelEmotes && !it.isModEmoteOnly }
+                    .mapNotNull { it.slug }
+                    .toSet()
+                if (modEmoteChannelsManager == null) {
+                    modEmoteChannelsManager = ModEmoteChannelsManager(
+                        activity = activity,
+                        repository = repository,
+                        lifecycleScope = lifecycleScope,
+                        onChannelsChanged = {
+                            lifecycleScope.launch { loadModEmoteChannels() }
+                        }
+                    )
+                }
+                modEmoteChannelsManager!!.show(existingSlugs)
+            }
+        }
+        
+        tabContainer.removeAllViews()
+
+        displayCategories = buildDisplayCategories()
+        if (currentEmoteCategoryIndex >= displayCategories.size) currentEmoteCategoryIndex = 0
+
+        // Ensure adapter is ready
+        var adapter = recyclerView?.adapter as? dev.xacnio.kciktv.shared.ui.adapter.EmoteAdapter
+        if (adapter == null) {
+            if (!isEmotePanelInitialized) setupEmotePanel()
+            adapter = recyclerView?.adapter as? dev.xacnio.kciktv.shared.ui.adapter.EmoteAdapter
+            if (adapter == null) return
+        }
+        
+        // Initial data set
+        if (displayCategories.isNotEmpty() && currentEmoteCategoryIndex < displayCategories.size) {
+            adapter.setEmotes(displayCategories[currentEmoteCategoryIndex].emotes)
+        }
+        
+        // Build Tabs
+        val size = (40 * activity.resources.displayMetrics.density).toInt()
+        val padding = (8 * activity.resources.displayMetrics.density).toInt()
+
+        displayCategories.forEachIndexed { index, category ->
+             val tabView = android.widget.ImageView(activity)
+             tabView.layoutParams = android.widget.LinearLayout.LayoutParams(size, size)
+             tabView.setPadding(padding, padding, padding, padding)
+             tabView.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+             
+             // Load category icon
+             when {
+                 category.isRecents -> {
+                     tabView.setImageResource(R.drawable.ic_history)
+                     tabView.setColorFilter(android.graphics.Color.WHITE)
+                 }
+                 category.isGlobal -> {
+                     tabView.setImageResource(R.drawable.ic_globe)
+                     tabView.setColorFilter(android.graphics.Color.WHITE)
+                 }
+                 category.isEmoji -> {
+                     tabView.setImageResource(R.drawable.ic_emoji)
+                     tabView.setColorFilter(android.graphics.Color.WHITE)
+                 }
+                 category.isCollectibles -> {
+                     tabView.setImageResource(R.drawable.ic_collectibles)
+                     tabView.setColorFilter(android.graphics.Color.WHITE)
+                 }
+                 else -> {
+                     val profilePic = category.profilePic
+                     val firstEmoteId = category.emotes.firstOrNull()?.id
+                     
+                     if (profilePic != null) {
+                         // Categories with profile pics (streamers) get circle crop
+                         com.bumptech.glide.Glide.with(activity).load(profilePic).circleCrop().into(tabView)
+                         tabView.clearColorFilter()
+                     } else if (firstEmoteId != null) {
+                         // Categories using first emote as icon get fully synchronized emote (no crop)
+                         dev.xacnio.kciktv.shared.ui.utils.EmoteManager.loadSynchronizedEmote(
+                             activity,
+                             firstEmoteId.toString(),
+                             size,
+                             tabView
+                         ) { drawable ->
+                             tabView.setImageDrawable(drawable)
+                             tabView.clearColorFilter()
+                         }
+                     }
+                 }
+             }
+             
+             // Selected state
+             if (index == currentEmoteCategoryIndex) {
+                 tabView.alpha = 1.0f
+                 tabView.setBackgroundResource(R.drawable.bg_item_ripple)
+             } else {
+                 tabView.alpha = 0.5f
+                 tabView.background = null
+             }
+             
+             tabView.setOnClickListener {
+                 currentEmoteCategoryIndex = index
+                 
+                 // Update adapter content
+                 adapter.setEmotes(displayCategories[index].emotes)
+                 
+                 // Update tab UI
+                 for (i in 0 until tabContainer.childCount) {
+                     val child = tabContainer.getChildAt(i)
+                     if (i == index) {
+                         child.alpha = 1.0f
+                         child.setBackgroundResource(R.drawable.bg_item_ripple)
+                     } else {
+                         child.alpha = 0.5f
+                         child.background = null
+                     }
+                 }
+             }
+             
+             tabContainer.addView(tabView)
+        }
+    }
+
+    fun updateSubscriptionStatus() {
+        val panel = binding.emotePanelContainer
+        val recyclerView = panel.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.emoteRecyclerView)
+        val emoteAdapter = recyclerView?.adapter as? dev.xacnio.kciktv.shared.ui.adapter.EmoteAdapter
+        emoteAdapter?.setSubscriptionStatus(activity.chatStateManager.isSubscribedToCurrentChannel)
+    }
+
+    fun updateCurrentChannelId(channelId: Long?) {
+        val recyclerView = binding.emotePanelContainer.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.emoteRecyclerView)
+        (recyclerView?.adapter as? dev.xacnio.kciktv.shared.ui.adapter.EmoteAdapter)?.setCurrentChannelId(channelId)
+    }
+}

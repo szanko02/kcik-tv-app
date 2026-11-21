@@ -1,0 +1,1614 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/chatSettingsPanelRoot"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/bg_chat_settings_panel"
+    android:elevation="20dp">
+
+    <!-- ===== SHARED HEADER ===== -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="2dp"
+        android:paddingEnd="4dp">
+
+        <ImageButton
+            android:id="@+id/panelBackButton"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_arrow_back"
+            android:padding="10dp"
+            app:tint="#FFFFFF"
+            android:visibility="gone" />
+
+        <View
+            android:id="@+id/panelBackSpacer"
+            android:layout_width="14dp"
+            android:layout_height="1dp" />
+
+        <TextView
+            android:id="@+id/panelTitleText"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:text="@string/chat_settings_title"
+            android:textColor="#FFFFFF"
+            android:textSize="17sp"
+            android:textStyle="bold" />
+
+        <ImageButton
+            android:id="@+id/btnDismissSettings"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_close"
+            android:padding="11dp"
+            app:tint="#888888" />
+    </LinearLayout>
+
+    <!-- Separator -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#18FFFFFF" />
+
+    <!-- ===== CONTENT AREA (fills remaining space via weight) ===== -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <!-- ROOT MENU -->
+        <LinearLayout
+            android:id="@+id/chatSettingsRootMenu"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="10dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="10dp">
+
+            <!-- Profile Identity -->
+            <LinearLayout
+                android:id="@+id/btnMenuProfile"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/bg_ripple_rounded"
+                android:paddingHorizontal="10dp">
+
+                <ImageView
+                    android:id="@+id/menuProfileAvatar"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:scaleType="centerCrop"
+                    android:src="@drawable/default_avatar"
+                    android:background="@drawable/bg_circle"
+                    android:visibility="gone"/>
+
+                <FrameLayout
+                    android:id="@+id/menuProfileIconFallback"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:background="@drawable/bg_settings_card">
+                    <ImageView
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_person"
+                        app:tint="#AAAAAA" />
+                </FrameLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:layout_marginStart="12dp">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/chat_identity_title"
+                        android:textColor="#FFFFFF"
+                        android:textSize="15sp" />
+                </LinearLayout>
+
+                <ImageButton
+                    android:id="@+id/btnMenuSwitchAccount"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:layout_marginEnd="8dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@drawable/ic_switch_account"
+                    android:padding="8dp"
+                    app:tint="#AAAAAA"
+                    android:visibility="gone" />
+
+                <ImageView
+                    android:layout_width="16dp"
+                    android:layout_height="16dp"
+                    android:src="@drawable/ic_chevron_right"
+                    app:tint="#444444" />
+            </LinearLayout>
+
+            <!-- Chat Appearance -->
+            <LinearLayout
+                android:id="@+id/btnMenuChatSettings"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/bg_ripple_rounded"
+                android:paddingHorizontal="10dp">
+
+                <FrameLayout
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:background="@drawable/bg_settings_card">
+                    <ImageView
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_settings"
+                        app:tint="#AAAAAA" />
+                </FrameLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:layout_marginStart="12dp">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/chat_appearance_title"
+                        android:textColor="#FFFFFF"
+                        android:textSize="15sp" />
+                </LinearLayout>
+
+                <ImageView
+                    android:layout_width="16dp"
+                    android:layout_height="16dp"
+                    android:src="@drawable/ic_chevron_right"
+                    app:tint="#444444" />
+            </LinearLayout>
+
+            <!-- Chat Rules -->
+            <LinearLayout
+                android:id="@+id/btnMenuChatRules"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/bg_ripple_rounded"
+                android:paddingHorizontal="10dp">
+
+                <FrameLayout
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:background="@drawable/bg_settings_card">
+                    <ImageView
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_info"
+                        app:tint="#AAAAAA" />
+                </FrameLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:layout_marginStart="12dp">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/chat_rules_title"
+                        android:textColor="#FFFFFF"
+                        android:textSize="15sp" />
+                </LinearLayout>
+
+                <ImageView
+                    android:layout_width="16dp"
+                    android:layout_height="16dp"
+                    android:src="@drawable/ic_chevron_right"
+                    app:tint="#444444" />
+            </LinearLayout>
+
+            <!-- Battery Saver -->
+            <LinearLayout
+                android:id="@+id/btnMenuBattery"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/bg_ripple_rounded"
+                android:paddingHorizontal="10dp">
+
+                <FrameLayout
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:background="@drawable/bg_settings_card">
+                    <ImageView
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_battery_saver"
+                        app:tint="#AAAAAA" />
+                </FrameLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:layout_marginStart="12dp">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/battery_saver_settings"
+                        android:textColor="#FFFFFF"
+                        android:textSize="15sp" />
+                </LinearLayout>
+
+                <ImageView
+                    android:layout_width="16dp"
+                    android:layout_height="16dp"
+                    android:src="@drawable/ic_chevron_right"
+                    app:tint="#444444" />
+            </LinearLayout>
+
+        </LinearLayout>
+
+        <!-- PROFILE IDENTITY VIEW -->
+        <FrameLayout
+            android:id="@+id/profileViewContainer"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone">
+
+            <androidx.core.widget.NestedScrollView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scrollbars="none"
+                android:overScrollMode="never">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <!-- Section label -->
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/chat_identity_preview"
+                        android:textColor="#666666"
+                        android:textSize="11sp"
+                        android:textStyle="bold"
+                        android:textAllCaps="true"
+                        android:letterSpacing="0.08"
+                        android:paddingStart="2dp" />
+
+                    <!-- Preview row -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_marginTop="8dp"
+                        android:background="@drawable/bg_settings_card"
+                        android:padding="14dp"
+                        android:gravity="center_vertical">
+
+                        <LinearLayout
+                            android:id="@+id/previewBadgeLayout"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal" />
+
+                        <TextView
+                            android:id="@+id/previewUsername"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/user_default_name"
+                            android:textStyle="bold"
+                            android:textSize="14sp"
+                            android:layout_marginStart="4dp" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textColor="#CCCCCC"
+                            android:textSize="14sp"
+                            android:text=": Hello world!" />
+                    </LinearLayout>
+
+                    <!-- Level progress (hidden until data loads) -->
+                    <LinearLayout
+                        android:id="@+id/profileLevelCard"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_marginTop="12dp"
+                        android:background="@drawable/bg_settings_card"
+                        android:padding="10dp"
+                        android:gravity="center_vertical"
+                        android:visibility="gone">
+
+                        <ImageView
+                            android:id="@+id/profileLevelBadge"
+                            android:layout_width="28dp"
+                            android:layout_height="28dp"
+                            android:scaleType="fitCenter"/>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:layout_marginStart="10dp">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical">
+
+                                <TextView
+                                    android:id="@+id/profileLevelText"
+                                    android:layout_width="0dp"
+                                    android:layout_weight="1"
+                                    android:layout_height="wrap_content"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="12sp"
+                                    android:textStyle="bold"/>
+
+                                <TextView
+                                    android:id="@+id/profileLevelProgressText"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:textColor="#888888"
+                                    android:textSize="10sp"/>
+
+                            </LinearLayout>
+
+                            <ProgressBar
+                                android:id="@+id/profileLevelProgress"
+                                style="?android:attr/progressBarStyleHorizontal"
+                                android:layout_width="match_parent"
+                                android:layout_height="3dp"
+                                android:progressTint="#53FC18"
+                                android:max="100"
+                                android:layout_marginTop="5dp"/>
+
+                            <TextView
+                                android:id="@+id/profileWatchTimeText"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:textColor="#888888"
+                                android:textSize="10sp"
+                                android:layout_marginTop="5dp"/>
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <!-- Badges section header -->
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/chat_identity_badges_section"
+                        android:textColor="#FFFFFF"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:paddingStart="2dp"
+                        android:layout_marginTop="20dp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/chat_identity_badges_max"
+                        android:textColor="#888888"
+                        android:textSize="12sp"
+                        android:paddingStart="2dp"
+                        android:layout_marginTop="2dp" />
+
+                    <!-- Global badges sub-label + list (hidden until data loads) -->
+                    <TextView
+                        android:id="@+id/labelGlobalBadges"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/chat_identity_global_badges"
+                        android:textColor="#888888"
+                        android:textSize="12sp"
+                        android:paddingStart="2dp"
+                        android:layout_marginTop="12dp"
+                        android:visibility="gone"/>
+
+                    <LinearLayout
+                        android:id="@+id/globalBadgesContainer"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_marginTop="6dp"
+                        android:visibility="gone"/>
+
+                    <TextView
+                        android:id="@+id/emptyGlobalBadges"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/chat_identity_no_badges"
+                        android:textColor="#555555"
+                        android:textSize="12sp"
+                        android:paddingStart="2dp"
+                        android:layout_marginTop="6dp"
+                        android:visibility="gone"/>
+
+                    <!-- Channel badges sub-label -->
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/chat_identity_channel_badges"
+                        android:textColor="#888888"
+                        android:textSize="12sp"
+                        android:paddingStart="2dp"
+                        android:layout_marginTop="12dp" />
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/rvProfileBadges"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp" />
+
+                    <TextView
+                        android:id="@+id/emptyChannelBadges"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/chat_identity_no_badges"
+                        android:textColor="#555555"
+                        android:textSize="12sp"
+                        android:paddingStart="2dp"
+                        android:layout_marginTop="6dp"
+                        android:visibility="gone"/>
+
+                    <!-- Colors label -->
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/chat_identity_color"
+                        android:textColor="#666666"
+                        android:textSize="11sp"
+                        android:textStyle="bold"
+                        android:textAllCaps="true"
+                        android:letterSpacing="0.08"
+                        android:paddingStart="2dp"
+                        android:layout_marginTop="20dp" />
+
+                    <GridLayout
+                        android:id="@+id/gridNameColors"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:rowCount="2"
+                        android:columnCount="8"
+                        android:layout_marginTop="8dp"
+                        android:layout_marginBottom="8dp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginTop="12dp">
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="@string/chat_identity_random_color"
+                                android:textColor="#FFFFFF"
+                                android:textSize="14sp" />
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="@string/chat_identity_random_color_subtitle"
+                                android:textColor="#5A5A5E"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+                        <androidx.appcompat.widget.SwitchCompat
+                            android:id="@+id/switchRandomNameColor"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content" />
+                    </LinearLayout>
+
+                </LinearLayout>
+            </androidx.core.widget.NestedScrollView>
+        </FrameLayout>
+
+        <!-- CHAT SETTINGS VIEW -->
+        <FrameLayout
+            android:id="@+id/chatSettingsViewContainer"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone">
+
+            <!-- Main Settings Page -->
+            <androidx.core.widget.NestedScrollView
+                android:id="@+id/mainSettingsScrollView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scrollbars="none"
+                android:overScrollMode="never">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="20dp">
+
+                    <!-- SECTION HEADER: Sizes -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginTop="12dp"
+                        android:layout_marginBottom="6dp"
+                        android:paddingStart="4dp">
+                        <ImageView
+                            android:layout_width="13dp"
+                            android:layout_height="13dp"
+                            android:src="@drawable/ic_palette"
+                            app:tint="#606060" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="6dp"
+                            android:text="@string/chat_section_sizes"
+                            android:textColor="#606060"
+                            android:textSize="11sp"
+                            android:textStyle="bold"
+                            android:textAllCaps="true"
+                            android:letterSpacing="0.1" />
+                    </LinearLayout>
+
+                    <!-- Sizes Card -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:background="@drawable/bg_settings_card"
+                        android:paddingHorizontal="16dp"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="10dp">
+
+                        <!-- Font Size -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:paddingVertical="4dp">
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical">
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_weight="1"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/chat_font_size"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp" />
+                                <TextView
+                                    android:id="@+id/textValueMessageSize"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    tools:text="14sp"
+                                    android:textColor="#53FC18"
+                                    android:textSize="12sp"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+                            <SeekBar
+                                android:id="@+id/seekBarMessageSize"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:paddingHorizontal="0dp" />
+                        </LinearLayout>
+
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:background="#2C2C2E" />
+
+                        <!-- Emote Size -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:paddingVertical="4dp">
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical">
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_weight="1"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/chat_emote_size"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp" />
+                                <TextView
+                                    android:id="@+id/textValueEmoteSize"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    tools:text="1.0x"
+                                    android:textColor="#53FC18"
+                                    android:textSize="12sp"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+                            <SeekBar
+                                android:id="@+id/seekBarEmoteSize"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:paddingHorizontal="0dp" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <!-- SECTION HEADER: Features -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginTop="20dp"
+                        android:layout_marginBottom="6dp"
+                        android:paddingStart="4dp">
+                        <ImageView
+                            android:layout_width="13dp"
+                            android:layout_height="13dp"
+                            android:src="@drawable/ic_sparkle"
+                            app:tint="#606060" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="6dp"
+                            android:text="@string/chat_section_features"
+                            android:textColor="#606060"
+                            android:textSize="11sp"
+                            android:textStyle="bold"
+                            android:textAllCaps="true"
+                            android:letterSpacing="0.1" />
+                    </LinearLayout>
+
+                    <!-- Features Card -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:background="@drawable/bg_settings_card"
+                        android:paddingHorizontal="16dp">
+
+                        <!-- Timestamps -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="52dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_weight="1"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:layout_marginEnd="12dp">
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/chat_timestamps"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp" />
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:text="@string/chat_timestamps_subtitle"
+                                    android:textColor="#5A5A5E"
+                                    android:textSize="12sp" />
+                            </LinearLayout>
+                            <androidx.appcompat.widget.SwitchCompat
+                                android:id="@+id/switchTimestamps"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content" />
+                        </LinearLayout>
+
+                        <!-- Include Seconds sub-option -->
+                        <LinearLayout
+                            android:id="@+id/containerSeconds"
+                            android:layout_width="match_parent"
+                            android:layout_height="40dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:paddingStart="20dp"
+                            android:paddingBottom="6dp">
+                            <View
+                                android:layout_width="2dp"
+                                android:layout_height="16dp"
+                                android:background="#3A3A3C"
+                                android:layout_marginEnd="12dp" />
+                            <TextView
+                                android:id="@+id/textSeconds"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="@string/chat_seconds"
+                                android:textColor="#C7C7CC"
+                                android:textSize="13sp" />
+                            <androidx.appcompat.widget.SwitchCompat
+                                android:id="@+id/switchSeconds"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content" />
+                        </LinearLayout>
+
+                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#2C2C2E" />
+
+                        <!-- Pinned Gifts -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="52dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_weight="1"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:layout_marginEnd="12dp">
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/show_pinned_gifts"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp" />
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:text="@string/chat_pinned_gifts_subtitle"
+                                    android:textColor="#5A5A5E"
+                                    android:textSize="12sp" />
+                            </LinearLayout>
+                            <androidx.appcompat.widget.SwitchCompat
+                                android:id="@+id/switchPinnedGifts"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content" />
+                        </LinearLayout>
+
+                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#2C2C2E" />
+
+                        <!-- Emote Combo -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="52dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_weight="1"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:layout_marginEnd="12dp">
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/chat_emote_combo"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp" />
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:text="@string/chat_emote_combo_subtitle"
+                                    android:textColor="#5A5A5E"
+                                    android:textSize="12sp" />
+                            </LinearLayout>
+                            <androidx.appcompat.widget.SwitchCompat
+                                android:id="@+id/switchEmoteCombo"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content" />
+                        </LinearLayout>
+
+                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#2C2C2E" />
+
+                        <!-- Floating Emotes -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="52dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_weight="1"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:layout_marginEnd="12dp">
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/chat_settings_floating_emotes"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp" />
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:text="@string/chat_floating_emotes_subtitle"
+                                    android:textColor="#5A5A5E"
+                                    android:textSize="12sp" />
+                            </LinearLayout>
+                            <androidx.appcompat.widget.SwitchCompat
+                                android:id="@+id/switchFloatingEmotes"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content" />
+                        </LinearLayout>
+
+                    </LinearLayout>
+
+                    <!-- SECTION HEADER: Advanced -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginTop="20dp"
+                        android:layout_marginBottom="6dp"
+                        android:paddingStart="4dp">
+                        <ImageView
+                            android:layout_width="13dp"
+                            android:layout_height="13dp"
+                            android:src="@drawable/ic_settings"
+                            app:tint="#606060" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="6dp"
+                            android:text="@string/chat_section_advanced"
+                            android:textColor="#606060"
+                            android:textSize="11sp"
+                            android:textStyle="bold"
+                            android:textAllCaps="true"
+                            android:letterSpacing="0.1" />
+                    </LinearLayout>
+
+                    <!-- Advanced Card -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:background="@drawable/bg_settings_card"
+                        android:paddingHorizontal="16dp">
+
+                        <!-- Chat Animation -->
+                        <LinearLayout
+                            android:id="@+id/btnChatAnimation"
+                            android:layout_width="match_parent"
+                            android:layout_height="52dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:background="?attr/selectableItemBackground">
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_weight="1"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:layout_marginEnd="12dp">
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/setting_chat_animation"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp" />
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:text="@string/chat_anim_subtitle"
+                                    android:textColor="#5A5A5E"
+                                    android:textSize="12sp" />
+                            </LinearLayout>
+                            <TextView
+                                android:id="@+id/textChatAnimationValue"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="@string/animation_none"
+                                android:textColor="#53FC18"
+                                android:textSize="12sp"
+                                android:textStyle="bold"
+                                android:layout_marginEnd="6dp" />
+                            <ImageView
+                                android:layout_width="16dp"
+                                android:layout_height="16dp"
+                                android:src="@drawable/ic_chevron_right"
+                                app:tint="#5A5A5E" />
+                        </LinearLayout>
+
+                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#2C2C2E" />
+
+                        <!-- Highlighted Messages -->
+                        <LinearLayout
+                            android:id="@+id/btnHighlightedMessages"
+                            android:layout_width="match_parent"
+                            android:layout_height="52dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:background="?attr/selectableItemBackground">
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_weight="1"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:layout_marginEnd="12dp">
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/chat_setting_highlighted"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp" />
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:text="@string/chat_setting_highlighted_subtitle"
+                                    android:textColor="#5A5A5E"
+                                    android:textSize="12sp" />
+                            </LinearLayout>
+                            <ImageView
+                                android:layout_width="16dp"
+                                android:layout_height="16dp"
+                                android:src="@drawable/ic_chevron_right"
+                                app:tint="#5A5A5E" />
+                        </LinearLayout>
+
+                    </LinearLayout>
+
+                </LinearLayout>
+            </androidx.core.widget.NestedScrollView>
+
+            <!-- Highlight Settings Sub-Page -->
+            <LinearLayout
+                android:id="@+id/highlightSettingsScrollView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <androidx.core.widget.NestedScrollView
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:scrollbars="none"
+                    android:overScrollMode="never">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:paddingHorizontal="16dp"
+                        android:paddingVertical="12dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="@string/chat_setting_own_messages"
+                                android:textColor="#FFFFFF"
+                                android:textSize="14sp" />
+                            <androidx.appcompat.widget.SwitchCompat
+                                android:id="@+id/switchHighlightOwn"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content" />
+                        </LinearLayout>
+
+                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#2C2C2E" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="@string/mentions_title"
+                                android:textColor="#FFFFFF"
+                                android:textSize="14sp" />
+                            <androidx.appcompat.widget.SwitchCompat
+                                android:id="@+id/switchHighlightMentions"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content" />
+                        </LinearLayout>
+
+                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#2C2C2E" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="@string/chat_setting_mod_messages"
+                                android:textColor="#FFFFFF"
+                                android:textSize="14sp" />
+                            <androidx.appcompat.widget.SwitchCompat
+                                android:id="@+id/switchHighlightMods"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content" />
+                        </LinearLayout>
+
+                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#2C2C2E" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="@string/chat_setting_vip_messages"
+                                android:textColor="#FFFFFF"
+                                android:textSize="14sp" />
+                            <androidx.appcompat.widget.SwitchCompat
+                                android:id="@+id/switchHighlightVips"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content" />
+                        </LinearLayout>
+
+                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#2C2C2E" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="@string/chat_setting_og_messages"
+                                android:textColor="#FFFFFF"
+                                android:textSize="14sp" />
+                            <androidx.appcompat.widget.SwitchCompat
+                                android:id="@+id/switchHighlightOg"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content" />
+                        </LinearLayout>
+
+                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#2C2C2E" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="@string/chat_setting_name_color"
+                                android:textColor="#FFFFFF"
+                                android:textSize="14sp" />
+                            <androidx.appcompat.widget.SwitchCompat
+                                android:id="@+id/switchHighlightUseNameColor"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content" />
+                        </LinearLayout>
+
+                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#2C2C2E" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="@string/chat_setting_highlight_background"
+                                android:textColor="#FFFFFF"
+                                android:textSize="14sp" />
+                            <androidx.appcompat.widget.SwitchCompat
+                                android:id="@+id/switchHighlightBackground"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content" />
+                        </LinearLayout>
+
+                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#2C2C2E" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="@string/chat_settings_vibrate_on_mention"
+                                android:textColor="#FFFFFF"
+                                android:textSize="14sp" />
+                            <androidx.appcompat.widget.SwitchCompat
+                                android:id="@+id/switchVibrateOnMentions"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content" />
+                        </LinearLayout>
+
+                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#2C2C2E" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="@string/chat_settings_sound_on_mention"
+                                android:textColor="#FFFFFF"
+                                android:textSize="14sp" />
+                            <androidx.appcompat.widget.SwitchCompat
+                                android:id="@+id/switchSoundOnMentions"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content" />
+                        </LinearLayout>
+
+                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#2C2C2E" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="@string/chat_settings_notify_on_mention"
+                                android:textColor="#FFFFFF"
+                                android:textSize="14sp" />
+                            <androidx.appcompat.widget.SwitchCompat
+                                android:id="@+id/switchNotifyOnMentions"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content" />
+                        </LinearLayout>
+
+                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#2C2C2E" />
+
+                        <!-- Nick Detection -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="52dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:paddingVertical="6dp">
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_weight="1"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:layout_marginEnd="12dp">
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/chat_settings_nick_detection"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp" />
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:text="@string/chat_settings_nick_detection_subtitle"
+                                    android:textColor="#5A5A5E"
+                                    android:textSize="12sp" />
+                            </LinearLayout>
+                            <androidx.appcompat.widget.SwitchCompat
+                                android:id="@+id/switchNickDetection"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content" />
+                        </LinearLayout>
+
+                    </LinearLayout>
+                </androidx.core.widget.NestedScrollView>
+            </LinearLayout>
+
+            <!-- Animation Settings Sub-Page -->
+            <LinearLayout
+                android:id="@+id/animationSettingsContainer"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <!-- Animation Options List -->
+                <androidx.core.widget.NestedScrollView
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:scrollbars="none"
+                    android:overScrollMode="never">
+                    <LinearLayout
+                        android:id="@+id/animationOptionsContainer"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:paddingHorizontal="16dp"
+                        android:paddingBottom="16dp" />
+                </androidx.core.widget.NestedScrollView>
+
+            </LinearLayout>
+
+            <!-- Battery Saver Settings Sub-Page -->
+            <LinearLayout
+                android:id="@+id/batterySettingsContainer"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <androidx.core.widget.NestedScrollView
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:scrollbars="none"
+                    android:overScrollMode="never">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:paddingHorizontal="16dp"
+                        android:paddingVertical="12dp">
+
+                        <!-- Master: Battery Saver (quality cap + slower timers) -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:background="@drawable/bg_settings_card"
+                            android:paddingHorizontal="16dp"
+                            android:layout_marginBottom="12dp">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="62dp"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical">
+                                <LinearLayout
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:orientation="vertical"
+                                    android:layout_marginEnd="12dp">
+                                    <TextView
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:text="@string/chat_low_battery_mode"
+                                        android:textColor="#FFFFFF"
+                                        android:textSize="14sp" />
+                                    <TextView
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:layout_marginTop="2dp"
+                                        android:text="@string/chat_battery_saver_subtitle"
+                                        android:textColor="#5A5A5E"
+                                        android:textSize="12sp" />
+                                </LinearLayout>
+                                <androidx.appcompat.widget.SwitchCompat
+                                    android:id="@+id/switchLowBatteryMode"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content" />
+                            </LinearLayout>
+
+                        </LinearLayout>
+
+                        <!-- Battery Saver effects (gated by master) -->
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/battery_effects_header"
+                            android:textColor="#5A5A5E"
+                            android:textSize="12sp"
+                            android:textAllCaps="true"
+                            android:layout_marginStart="4dp"
+                            android:layout_marginBottom="6dp" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:background="@drawable/bg_settings_card"
+                            android:paddingHorizontal="16dp"
+                            android:layout_marginBottom="12dp">
+
+                            <!-- Limit quality to 720p -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="56dp"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical">
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:layout_marginEnd="12dp"
+                                    android:text="@string/battery_effect_limit_quality"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp" />
+                                <androidx.appcompat.widget.SwitchCompat
+                                    android:id="@+id/switchEffectLimitQuality"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content" />
+                            </LinearLayout>
+
+                            <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#2C2C2E" />
+
+                            <!-- Slow down timers -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="56dp"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical">
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:layout_marginEnd="12dp"
+                                    android:text="@string/battery_effect_slow_timers"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp" />
+                                <androidx.appcompat.widget.SwitchCompat
+                                    android:id="@+id/switchEffectSlowTimers"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content" />
+                            </LinearLayout>
+
+                            <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#2C2C2E" />
+
+                            <!-- Disable shimmer -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="56dp"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical">
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:layout_marginEnd="12dp"
+                                    android:text="@string/battery_effect_disable_shimmer"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp" />
+                                <androidx.appcompat.widget.SwitchCompat
+                                    android:id="@+id/switchEffectShimmer"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content" />
+                            </LinearLayout>
+
+                            <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#2C2C2E" />
+
+                            <!-- Pause chat in mini-player / PIP -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="56dp"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical">
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:layout_marginEnd="12dp"
+                                    android:text="@string/battery_effect_pause_chat_pip"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp" />
+                                <androidx.appcompat.widget.SwitchCompat
+                                    android:id="@+id/switchEffectPauseChatPip"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content" />
+                            </LinearLayout>
+
+                        </LinearLayout>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/battery_animations_header"
+                            android:textColor="#5A5A5E"
+                            android:textSize="12sp"
+                            android:textAllCaps="true"
+                            android:layout_marginStart="4dp"
+                            android:layout_marginBottom="6dp" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:background="@drawable/bg_settings_card"
+                            android:paddingHorizontal="16dp">
+
+                            <!-- Animated subscriber badges -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="56dp"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical">
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:layout_marginEnd="12dp"
+                                    android:text="@string/battery_animated_badges"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp" />
+                                <androidx.appcompat.widget.SwitchCompat
+                                    android:id="@+id/switchAnimatedBadges"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content" />
+                            </LinearLayout>
+
+                            <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#2C2C2E" />
+
+                            <!-- Animated chat emotes -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="56dp"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical">
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:layout_marginEnd="12dp"
+                                    android:text="@string/battery_animated_chat_emotes"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp" />
+                                <androidx.appcompat.widget.SwitchCompat
+                                    android:id="@+id/switchAnimatedChatEmotes"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content" />
+                            </LinearLayout>
+
+                            <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#2C2C2E" />
+
+                            <!-- Animated quick emoji panel -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="56dp"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical">
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:layout_marginEnd="12dp"
+                                    android:text="@string/battery_animated_quick_panel"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp" />
+                                <androidx.appcompat.widget.SwitchCompat
+                                    android:id="@+id/switchAnimatedQuickPanel"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content" />
+                            </LinearLayout>
+
+                        </LinearLayout>
+
+                        <!-- Independent of the Battery Saver master: always editable -->
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/battery_general_header"
+                            android:textColor="#5A5A5E"
+                            android:textSize="12sp"
+                            android:textAllCaps="true"
+                            android:layout_marginStart="4dp"
+                            android:layout_marginTop="16dp"
+                            android:layout_marginBottom="6dp" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:background="@drawable/bg_settings_card"
+                            android:paddingHorizontal="16dp">
+
+                            <!-- Chat emote FPS -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:paddingVertical="12dp">
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/battery_chat_emote_fps"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp" />
+                                <LinearLayout
+                                    android:id="@+id/batteryFpsOptions"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="8dp"
+                                    android:orientation="horizontal" />
+                            </LinearLayout>
+
+                            <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#2C2C2E" />
+
+                            <!-- Chat refresh rate -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:paddingVertical="12dp">
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/battery_chat_refresh_rate"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp" />
+                                <LinearLayout
+                                    android:id="@+id/batteryRefreshOptions"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="8dp"
+                                    android:orientation="horizontal" />
+                            </LinearLayout>
+
+                        </LinearLayout>
+
+                    </LinearLayout>
+                </androidx.core.widget.NestedScrollView>
+
+            </LinearLayout>
+
+        </FrameLayout>
+
+    </FrameLayout>
+
+    <!-- Bottom drag handle -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="20dp">
+        <View
+            android:layout_width="40dp"
+            android:layout_height="4dp"
+            android:layout_gravity="center"
+            android:background="@drawable/bg_rounded_circle"
+            android:backgroundTint="#282828" />
+    </FrameLayout>
+
+</LinearLayout>
