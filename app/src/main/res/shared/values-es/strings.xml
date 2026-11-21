@@ -1452,4 +1452,10 @@
     <string name="side_chat_width_reset_toast">Ancho del chat lateral restablecido al valor predeterminado</string>
     <string name="setting_fullscreen_sensor_rotation">Girar en pantalla completa</string>
     <string name="setting_fullscreen_sensor_rotation_desc">Permite girar la pantalla en pantalla completa aunque la rotación automática del sistema esté desactivada</string>
+
+    <!-- Dual Update Source -->
+    <string name="setting_update_source">Fuente de actualizaciones</string>
+    <string name="update_source_fork">Fork (szanko02)</string>
+    <string name="update_source_upstream">Upstream (xacnio)</string>
+    <string name="whats_new_empty">Aún no se han publicado versiones en esta fuente de actualizaciones.</string>
 </resources>

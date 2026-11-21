@@ -1,22 +1,31 @@
 name: Build and Release
 
 on:
-  workflow_dispatch:
   push:
     tags:
       - 'v*'
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - '.gitignore'
-      - 'LICENSE'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag (e.g. v2.4.5-fork.1). Leave empty to use v<baseVersion>-<sha>.'
+        required: false
+        type: string
+      prerelease:
+        description: 'Mark release as prerelease'
+        required: false
+        type: boolean
+        default: true
+      release_notes:
+        description: 'Optional release notes (defaults to CHANGELOG.md / git log)'
+        required: false
+        type: string
 
 permissions:
   contents: write
 
 jobs:
   build:
-    name: Build APK
+    name: Build & Release APK
     runs-on: ubuntu-latest
 
     steps:
@@ -30,14 +39,14 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          
+
       - name: Verify Translations
         run: python3 scripts/verify_translations_strict.py
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-            gradle-version: 8.5
+          gradle-version: 8.5
 
       - name: Create google-services.json
         env:
@@ -51,25 +60,127 @@ jobs:
             echo "Used mock google-services.json from example file"
           fi
 
-      - name: Build with Gradle
+      - name: Run Unit Tests
+        run: gradle testDebugUnitTest
+
+      - name: Resolve Version and Changelog
+        id: meta
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          INPUT_TAG: ${{ github.event.inputs.tag_name }}
+          INPUT_PRERELEASE: ${{ github.event.inputs.prerelease }}
+          INPUT_NOTES: ${{ github.event.inputs.release_notes }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ -n "$SIGNING_KEY" ]; then
+            echo "has_signing_key=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_signing_key=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          VERSION_BASE=$(grep 'val baseVersion =' app/build.gradle.kts | head -n 1 | awk -F '"' '{print $2}')
+          SHORT_SHA=$(git rev-parse --short HEAD)
+
+          if [ "$REF_TYPE" = "tag" ] && [ -n "$REF_NAME" ]; then
+            TAG_NAME="$REF_NAME"
+            VERSION="${REF_NAME#v}"
+            VERSION="${VERSION#V}"
+          elif [ -n "$INPUT_TAG" ]; then
+            TAG_NAME="$INPUT_TAG"
+            VERSION="${INPUT_TAG#v}"
+            VERSION="${VERSION#V}"
+          else
+            VERSION="${VERSION_BASE}-${SHORT_SHA}"
+            TAG_NAME="v${VERSION}"
+          fi
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "$INPUT_PRERELEASE" ]; then
+            IS_PRERELEASE="$INPUT_PRERELEASE"
+          elif [[ "$VERSION" == *"beta"* ]] || [[ "$VERSION" == *"alpha"* ]] || [[ "$VERSION" == *"rc"* ]]; then
+            IS_PRERELEASE="true"
+          else
+            IS_PRERELEASE="false"
+          fi
+
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
+          echo "is_prerelease=$IS_PRERELEASE" >> "$GITHUB_OUTPUT"
+
+          NOTES=""
+          if [ -n "$INPUT_NOTES" ]; then
+            NOTES="$INPUT_NOTES"
+          else
+            NOTES=$(python3 - "$VERSION" "$VERSION_BASE" << 'PYEOF'
+          import os, re, sys
+
+          version = sys.argv[1]
+          base_version = sys.argv[2]
+          path = "CHANGELOG.md"
+          if not os.path.exists(path):
+              sys.exit(0)
+
+          with open(path, "r", encoding="utf-8") as f:
+              text = f.read()
+
+          sections = re.split(r'(?m)^## \[([^\]]+)\].*$', text)
+          # sections = [preamble, header1, body1, header2, body2, ...]
+          pairs = [(sections[i].strip(), sections[i + 1].strip()) for i in range(1, len(sections) - 1, 2)]
+
+          chosen = ""
+          for target in (version, f"v{version}", base_version, "Unreleased"):
+              for hdr, body in pairs:
+                  if hdr.lower() == target.lower() and body:
+                      chosen = body
+                      break
+              if chosen:
+                  break
+
+          if chosen:
+              print(chosen)
+          PYEOF
+            )
+          fi
+
+          if [ -z "$NOTES" ]; then
+            if [ "$REF_TYPE" = "tag" ]; then
+              PREV_TAG=$(git describe --tags --abbrev=0 "${TAG_NAME}^" 2>/dev/null || echo "")
+            else
+              PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+            fi
+            if [ -n "$PREV_TAG" ]; then
+              NOTES=$(git log --pretty=format:"- %s" "${PREV_TAG}..HEAD")
+            else
+              NOTES=$(git log --pretty=format:"- %s" -20)
+            fi
+            if [ -n "$NOTES" ]; then
+              NOTES="## Changes"$'\n'"$NOTES"
+            fi
+          fi
+
+          {
+            echo 'notes<<EOF'
+            echo "$NOTES"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build Release APK
+        if: steps.meta.outputs.has_signing_key == 'true'
         run: gradle assembleRelease
 
       - name: Fix Android Build Tools Path
+        if: steps.meta.outputs.has_signing_key == 'true'
         run: |
-          # Find the actual path where build-tools are
           SDK_PATH=$ANDROID_HOME
-          # Get the latest version folder name
-          LATEST_VERSION=$(ls $SDK_PATH/build-tools | sort -V | tail -n 1)
+          LATEST_VERSION=$(ls "$SDK_PATH/build-tools" | sort -V | tail -n 1)
           echo "Found latest build tools version: $LATEST_VERSION"
-          
-          # Create the path that the action expects
           sudo mkdir -p /usr/local/lib/android/sdk/build-tools/29.0.3
-          
-          # Symlink all files from the latest version to the 29.0.3 folder
-          sudo ln -s $SDK_PATH/build-tools/$LATEST_VERSION/* /usr/local/lib/android/sdk/build-tools/29.0.3/
+          sudo ln -s "$SDK_PATH/build-tools/$LATEST_VERSION/"* /usr/local/lib/android/sdk/build-tools/29.0.3/
 
       - name: Sign APK
         id: sign_app
+        if: steps.meta.outputs.has_signing_key == 'true'
         uses: r0adkll/sign-android-release@v1
         with:
           releaseDirectory: app/build/outputs/apk/release
@@ -78,40 +189,25 @@ jobs:
           keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
           keyPassword: ${{ secrets.KEY_PASSWORD }}
 
-      - name: Rename APK
-        run: mv ${{ steps.sign_app.outputs.signedReleaseFile }} app/build/outputs/apk/release/KCIKTV-release.apk
-
-      - name: Extract Version Name
-        id: version
+      - name: Prepare Signed Release APK
+        id: signed_apk
+        if: steps.meta.outputs.has_signing_key == 'true'
         run: |
-          VERSION_BASE=$(grep 'val baseVersion =' app/build.gradle.kts | head -n 1 | awk -F '"' '{print $2}')
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          VERSION="${VERSION_BASE}-${SHORT_SHA}"
+          DEST="app/build/outputs/apk/release/KCIKTV-${{ steps.meta.outputs.version }}.apk"
+          mv "${{ steps.sign_app.outputs.signedReleaseFile }}" "$DEST"
+          echo "apk_path=$DEST" >> "$GITHUB_OUTPUT"
 
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+      - name: Build Debug APK (Fallback without Signing Key)
+        if: steps.meta.outputs.has_signing_key != 'true'
+        run: gradle assembleDebug
 
-          if [[ $VERSION_BASE == *"beta"* ]]; then
-            echo "is_prerelease=true" >> $GITHUB_OUTPUT
-          else
-            echo "is_prerelease=false" >> $GITHUB_OUTPUT
-          fi
-
-          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          if [ -n "$PREV_TAG" ]; then
-            CHANGES=$(git log --pretty=format:"- %s" "$PREV_TAG"..HEAD)
-          else
-            CHANGES=$(git log --pretty=format:"- %s" -20)
-          fi
-
-          {
-            echo 'changes<<EOF'
-            echo "$CHANGES"
-            echo EOF
-          } >> $GITHUB_OUTPUT
-        
-      - name: Rename file to version
-        run: mv app/build/outputs/apk/release/KCIKTV-release.apk app/build/outputs/apk/release/KCIKTV-${{ env.VERSION }}.apk
+      - name: Prepare Debug Release APK
+        id: debug_apk
+        if: steps.meta.outputs.has_signing_key != 'true'
+        run: |
+          DEST="app/build/outputs/apk/debug/KCIKTV-${{ steps.meta.outputs.version }}-debug.apk"
+          mv app/build/outputs/apk/debug/app-debug.apk "$DEST"
+          echo "apk_path=$DEST" >> "$GITHUB_OUTPUT"
 
       - name: Create Release
         id: create_release
@@ -119,18 +215,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: v${{ env.VERSION }}
-          name: KCIKTV v${{ env.VERSION }}
+          tag_name: ${{ steps.meta.outputs.tag_name }}
+          name: KCIKTV ${{ steps.meta.outputs.tag_name }}
           draft: false
-          prerelease: ${{ steps.version.outputs.is_prerelease }}
-          files: app/build/outputs/apk/release/KCIKTV-${{ env.VERSION }}.apk
-          body: |
-            ## Changes
-            ${{ steps.version.outputs.changes }}
+          prerelease: ${{ steps.meta.outputs.is_prerelease }}
+          files: ${{ steps.signed_apk.outputs.apk_path || steps.debug_apk.outputs.apk_path }}
+          body: ${{ steps.meta.outputs.notes }}
           generate_release_notes: true
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: KCIKTV-v${{ env.VERSION }}
-          path: app/build/outputs/apk/release/KCIKTV-${{ env.VERSION }}.apk
+          name: KCIKTV-${{ steps.meta.outputs.tag_name }}
+          path: ${{ steps.signed_apk.outputs.apk_path || steps.debug_apk.outputs.apk_path }}

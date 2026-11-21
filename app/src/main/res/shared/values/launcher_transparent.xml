@@ -21,6 +21,6 @@
         <!-- No Icon -->
         <item name="windowSplashScreenAnimatedIcon">@android:color/transparent</item>
         
-        <item name="postSplashScreenTheme">@style/Theme.KCIKTV.Fullscreen</item>
+        <item name="postSplashScreenTheme">@style/Theme.KCIKTV.Mobile</item>
     </style>
 </resources>

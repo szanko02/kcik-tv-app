@@ -1,161 +1,70 @@
-# KCIKTV - Android Client (TV & Mobile)
+# KCIKTV (форк `szanko02/kcik-tv-app`)
 
-An unofficial client for the Kick.com streaming platform. Designed for both **Android TV** (fully D-Pad compatible) and **Mobile devices**, featuring low-latency playback, chat integration, and a modern UI.
+[![CI](https://github.com/szanko02/kcik-tv-app/actions/workflows/ci.yml/badge.svg)](https://github.com/szanko02/kcik-tv-app/actions/workflows/ci.yml)
+[![Build and Release](https://github.com/szanko02/kcik-tv-app/actions/workflows/release.yml/badge.svg)](https://github.com/szanko02/kcik-tv-app/actions/workflows/release.yml)
 
-[![Build and Release](https://github.com/xacnio/kcik-tv-app/actions/workflows/release.yml/badge.svg)](https://github.com/xacnio/kcik-tv-app/actions/workflows/release.yml)
-[![Website](https://img.shields.io/badge/Website-KCIKTV-53FC18)](https://xacnio.github.io/kcik-tv-app/)
+Мобильный неофициальный Android-клиент для **Kick.com** — форк [`xacnio/kcik-tv-app`](https://github.com/xacnio/kcik-tv-app) с удалённым TV-интерфейсом, доработками чата и плеера по мотивам **ReTwitch**, исправлением чата в VOD и поддержкой обновлений как из форка, так и из upstream.
 
-## ⚠️ Disclaimer
+> **Отказ от ответственности:** неофициальный проект, не связанный с Kick.com или Blerp. Все торговые марки принадлежат их владельцам.
 
-Unofficial, independent project — **not affiliated with, authorized by, or endorsed by Kick.com, Blerp, or any other service it connects to**. All trademarks belong to their respective owners and are used for identification only.
+## Основные изменения форка
 
-It hosts no content of its own; it is an alternative client for publicly reachable endpoints. Provided "as is", with no warranty — you are responsible for complying with each platform's Terms of Service.
+- **Только мобильный интерфейс:** удалены Leanback / Android TV активности, ресурсы и переключение режимов (`tv/PlayerActivity`, `ChannelSidebarAdapter`, зависимости `androidx.leanback`).
+- **Настройки бокового чата и отображения (ReTwitch):**
+  - Изменение ширины бокового чата в ландшафте (15%–70%) с перетаскиваемой ручкой на границе и сбросом двойным тапом.
+  - Масштаб сообщений чата (50%–200%), жест масштабирования двумя пальцами (pinch-to-resize) и настройка отступа между сообщениями (0–16 dp).
+  - Поворот в полноэкранном режиме по датчику даже при отключённом системном автоповороте.
+- **Исправление VOD:**
+  - Переработанный буфер реплея чата VOD (`VodChatReplayBuffer`) со строгим 5-секундным шагом страниц, упреждающим буфером 15 с (до 20 с), защитой от пропусков на пустых страницах, корректной обработкой перемотки и экспоненциальным backoff.
+  - Исправлено обновление (refresh) при просмотре VOD/клипа: больше не сбрасывается на лайв-стрим (`Stream Offline`), сохраняются позиция и скорость воспроизведения.
+- **Двойной источник обновлений:** выбор источника релизов и списка «Что нового» в настройках (`Fork (szanko02)` или `Upstream (xacnio)`).
 
-## 🌟 Features & Usage
+Подробная история изменений — в [CHANGELOG.md](CHANGELOG.md).  
+Каталог всех функций ReTwitch и их статус для порта на Kick — в [RETWITCH_FEATURES.md](RETWITCH_FEATURES.md).
 
-For a comprehensive list of features, screenshots, and usage instructions, please visit our official website:
-**[xacnio.github.io/kcik-tv-app](https://xacnio.github.io/kcik-tv-app/)**
+## Стек и структура
 
-## 📋 Target Devices
+- **Язык:** Kotlin, MVVM + менеджеры UI, Coroutines/Flow.
+- **Плеер:** Amazon IVS Player SDK (с поддержкой RNNoise через JNI/Pine), фоновое аудио и PiP.
+- **Сеть и чат:** Retrofit 2, OkHttp 3, Gson, WebSocket, прокси (HTTP/SOCKS5).
 
-This project is optimized and tested for the following form factors:
+## Сборка и тестирование
 
-*   📱 **Mobile (Portrait):** Android Phones (Foldable & Standard).
-*   📺 **TV (Landscape):** Android TV, Google TV, Fire TV Stick, Nvidia Shield.
-*   📐 **Tablets (Landscape/Portrait):** Responsive tablet UI.
-*   💻 **Desktop/Chromebooks:** Large screen support with keyboard/mouse navigation.
-
-## 🛠️ Tech Stack
-
-### Core
-*   **Language:** Kotlin (100%)
-*   **Architecture:** MVVM (Model-View-ViewModel)
-*   **Async:** Kotlin Coroutines & Flow
-
-### UI & Presentation
-*   **TV UI:** AndroidX Leanback SDK
-*   **Mobile UI:** Material Design Components 3
-*   **Image Loading:** Glide (Verified Memory Caching) + Glide Transformations
-*   **Animations:** APNG (for animated verified badges)
-
-### Networking & Data
-*   **API Client:** Retrofit 2 + OkHttp 3
-*   **Serialization:** Gson
-*   **WebSocket:** Native OkHttp WebSocket (Kick Chat)
-
-### Media & Playback
-*   **Player Engine:** Amazon IVS Player SDK (Native Low-Latency)
-*   **Background Playback:** Android Foreground Services + MediaSessionCompat
-
-### Features & Utilities
-*   **QR Code:** ZXing Core + ZXing Android Embedded
-*   **HTML Parsing:** Jsoup (Link Previews)
-*   **Browser Integration:** AndroidX WebKit
-*   **Background Tasks:** AndroidX WorkManager
-*   **Analytics:** Firebase Analytics (Privacy-focused / GDPR Compliant configuration)
-
-## 🏗️ Project Architecture
-
-The codebase follows a modular monolithic approach, separating platform-specific logic while sharing the core data and business layer.
-
-```
-app/src/main/java/dev/xacnio/kciktv/
-├── mobile/                     # Mobile (Touch) Implementation
-│   ├── ui/                     # UI Logic Managers (Delegation Pattern)
-│   ├── LoginActivity.kt        # Mobile Authentication UI
-│   └── MobilePlayerActivity.kt # Main Mobile Activity
-│
-├── tv/                         # Android TV (D-Pad) Implementation
-│   └── PlayerActivity.kt       # Main TV Activity
-│
-└── shared/                     # Shared Core & Business Logic
-    ├── data/
-    │   ├── api/                # Retrofit Interfaces
-    │   ├── chat/               # Chat Flow & Connection Logic
-    │   ├── model/              # Data Entites
-    ├── ui/                     # Shared UI Adapters & ViewHolders
-    ├── websocket/              # Low-level WebSocket Handling
-    ├── LauncherActivity.kt     # Entry Point: Detects Device & Routes
-    └── PlaybackService.kt      # Foreground Service for Background Audio
-```
-
-## 🌍 Translation
-The app supports multiple languages. If you want to contribute a translation:
-
-1.  Fork the repository.
-2.  Navigate to `app/src/main/res/`.
-3.  Create a new values directory for your language code (e.g., `values-fr` for French).
-4.  Copy `strings.xml` from `values/` and translate the strings.
-5.  Register your new language in `app/src/main/java/dev/xacnio/kciktv/shared/util/SupportedLanguages.kt`.
-6.  Run the verification script to ensure everything is correct:
-    ```bash
-    python3 scripts/verify_translations_strict.py
-    ```
-7.  Submit a Pull Request!
-
-> **⚠️ IMPORTANT:** Creating a translation file is NOT enough. You MUST add the language code and name to the `SupportedLanguages.kt` file for it to appear in the app settings.
-
-> **⚠️ WARNING:** Do NOT remove any lines or change the order of keys. The `strings.xml` structure must match the English version exactly line-by-line for our automation scripts to work correctly.
-
-### 🌍 Supported Languages
-
-| Language |
-| :--- |
-| 🇺🇸 English |
-| 🇹🇷 Turkish |
-| 🇪🇸 Spanish |
-| 🇫🇷 French |
-| 🇩🇪 German |
-| 🇸🇦 Arabic |
-
-## 🚀 Getting Started
-
-### Prerequisites
-- Android Studio Iguana or newer.
-- Android SDK 24+ (Android 7.0+).
-- Gradle 8.5+.
-
-### Installation
-1. Clone the repository:
+1. Клонируйте репозиторий:
    ```bash
-   git clone https://github.com/xacnio/kcik-tv-app.git
+   git clone https://github.com/szanko02/kcik-tv-app.git
+   cd kcik-tv-app
    ```
-2. Set up Firebase:
-   - Copy `app/google-services.json.example` to `app/google-services.json`.
-   - OR place your own `google-services.json` in the `app/` directory.
-3. Open the project in Android Studio.
-4. Sync Project with Gradle Files.
-5. Run on your Android TV or Mobile device (or Emulator).
+2. Подготовьте `app/google-services.json` (для локальной сборки/CI подойдёт копия `app/google-services.json.example`):
+   ```bash
+   cp app/google-services.json.example app/google-services.json
+   ```
+3. Проверьте строгую синхронизацию переводов (`values*/strings.xml`):
+   ```bash
+   python3 scripts/verify_translations_strict.py
+   ```
+4. Запустите unit-тесты и соберите debug APK:
+   ```bash
+   # Linux / macOS
+   ./gradlew testDebugUnitTest assembleDebug
 
-## 🔧 Build Commands
+   # Windows
+   .\gradlew.bat testDebugUnitTest assembleDebug
+   ```
+
+## Выпуск релизов
+
+Workflow [`.github/workflows/release.yml`](.github/workflows/release.yml) запускается при пуше тега вида `v*` или вручную через `workflow_dispatch`:
 
 ```bash
-# Build Debug APK
-./gradlew assembleDebug
-
-# Build Release APK
-./gradlew assembleRelease
+git tag v2.4.5-fork.1
+git push --tags
 ```
 
-## 📝 License
+При наличии секретов подписи (`SIGNING_KEY`, `ALIAS`, `KEY_STORE_PASSWORD`, `KEY_PASSWORD`) публикуется подписанный `KCIKTV-${VERSION}.apk`, иначе — `KCIKTV-${VERSION}-debug.apk` для прямой установки и работы встроенного автообновления форка.
 
-Distributed under the MIT License.
+## Лицензия и благодарности
 
-## 🌐 Website & Releases
-
-- **Landing Page:** [xacnio.github.io/kcik-tv-app](https://xacnio.github.io/kcik-tv-app/)
-- **Latest Release:** [Download APK](https://github.com/xacnio/kcik-tv-app/releases/latest)
-
-
-## ☕ Support
-If you like my work, you can support me by buying a coffee!
-
-<a href="https://buymeacoffee.com/xacnio"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" width="200" ></a>
-
-
-## 👤 Developer
-
-Maintainer: **xacnio** (Alperen Cetin)
-
----
-*Developed with the assistance of AI technology.*
+- Лицензия: **MIT** ([LICENSE](LICENSE)).
+- Оригинальный клиент KCIKTV: **[xacnio](https://github.com/xacnio/kcik-tv-app)**.
+- Вдохновение и список доработок плеера/чата: **[ReTwitch](https://github.com/reyohoho/ReTwitch-src)**.

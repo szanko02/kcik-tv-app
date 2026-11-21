@@ -17,21 +17,10 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
 
-    <!-- TV Feature - NOT required so app works on mobile too -->
-    <uses-feature
-        android:name="android.software.leanback"
-        android:required="false" />
-
-    <!-- Touch screen not required for TV -->
-    <uses-feature
-        android:name="android.hardware.touchscreen"
-        android:required="false" />
-
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher_green"
         android:label="@string/app_name"
-        android:banner="@drawable/app_banner"
         android:supportsRtl="false"
         android:theme="@style/Theme.KCIKTV"
         tools:targetApi="31">
@@ -60,7 +49,6 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- Launcher Activity - Routes to TV or Mobile UI -->
         <!-- Launcher Activity - Core logic remains here -->
         <activity
             android:name=".shared.LauncherActivity"
@@ -79,19 +67,8 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
-                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity-alias>
-
-        <!-- TV Player Activity (Landscape) -->
-        <activity
-            android:name=".tv.PlayerActivity"
-            android:exported="false"
-            android:screenOrientation="landscape"
-            android:theme="@style/Theme.KCIKTV.Fullscreen"
-            android:configChanges="keyboard|keyboardHidden|navigation|screenSize|smallestScreenSize|screenLayout|orientation"
-            android:supportsPictureInPicture="true"
-            android:launchMode="singleTask" />
 
         <activity
             android:name=".mobile.MobilePlayerActivity"

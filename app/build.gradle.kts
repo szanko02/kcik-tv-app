@@ -55,7 +55,6 @@ android {
             res.setSrcDirs(
                 listOf(
                     "src/main/res/mobile",
-                    "src/main/res/tv",
                     "src/main/res/shared"
                 )
             )
@@ -107,9 +106,7 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
-
-    // Leanback for Android TV
-    implementation("androidx.leanback:leanback:1.0.0")
+    implementation("androidx.media:media:1.7.0")
 
     // Material Design
     implementation("com.google.android.material:material:1.12.0")

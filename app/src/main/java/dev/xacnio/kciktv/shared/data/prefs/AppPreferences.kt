@@ -39,6 +39,8 @@ class AppPreferences(private val context: Context) {
         const val CHAT_SPACING_MIN = 0
         const val CHAT_SPACING_MAX = 16
         const val CHAT_SPACING_DEFAULT = 4
+        const val UPDATE_SOURCE_FORK = "fork"
+        const val UPDATE_SOURCE_UPSTREAM = "upstream"
 
         private val decryptCache = java.util.concurrent.ConcurrentHashMap<String, String>()
         private const val ABSENT = "__kick_tv_absent__"
@@ -116,6 +118,16 @@ class AppPreferences(private val context: Context) {
             }
         }
         set(value) = prefs.edit().putString("update_channel", value).apply()
+
+    var updateSource: String
+        get() {
+            val saved = prefs.getString("update_source", UPDATE_SOURCE_FORK)
+            return if (saved == UPDATE_SOURCE_UPSTREAM) UPDATE_SOURCE_UPSTREAM else UPDATE_SOURCE_FORK
+        }
+        set(value) {
+            val normalized = if (value == UPDATE_SOURCE_UPSTREAM) UPDATE_SOURCE_UPSTREAM else UPDATE_SOURCE_FORK
+            prefs.edit().putString("update_source", normalized).apply()
+        }
 
     var language: String
         get() = prefs.getString("language", "system") ?: "system"
@@ -216,10 +228,6 @@ class AppPreferences(private val context: Context) {
     var mobileLayoutMode: String
         get() = prefs.getString("mobile_layout_mode", "list") ?: "list"
         set(value) = prefs.edit().putString("mobile_layout_mode", value).apply()
-
-    var uiMode: String
-        get() = prefs.getString("ui_mode", "auto") ?: "auto"
-        set(value) = prefs.edit().putString("ui_mode", value).apply()
 
     var catchUpMode: String
         get() = prefs.getString("catch_up_mode", "low") ?: "low"

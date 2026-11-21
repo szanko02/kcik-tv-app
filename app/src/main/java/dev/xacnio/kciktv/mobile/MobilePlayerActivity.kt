@@ -1946,7 +1946,7 @@ class MobilePlayerActivity : FragmentActivity() {
 
         // Retry button
         binding.retryButton.setOnClickListener {
-            playCurrentChannel()
+            refreshCurrentPlayback()
         }
         // Video tap to show/hide controls
         binding.videoContainer.setOnClickListener {
@@ -2116,10 +2116,6 @@ class MobilePlayerActivity : FragmentActivity() {
         
         view.findViewById<android.view.View>(R.id.btnGithub)?.setOnClickListener {
             openLink(getString(R.string.url_github))
-        }
-        
-        view.findViewById<android.view.View>(R.id.btnCoffee)?.setOnClickListener {
-            openLink(getString(R.string.url_coffee))
         }
 
         // Configure bottom sheet behavior
@@ -2389,6 +2385,12 @@ class MobilePlayerActivity : FragmentActivity() {
     }
 
     internal fun playCurrentChannel() = channelLoadManager.playCurrentChannel()
+
+    internal fun refreshCurrentPlayback() {
+        if (!vodManager.refreshCurrentPlayback()) {
+            playCurrentChannel()
+        }
+    }
 
     private fun fetchCurrentChannelBans(slug: String) = channelLoadManager.fetchCurrentChannelBans(slug)
 
