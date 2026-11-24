@@ -74,6 +74,15 @@ class ChatUiManager(
     private val incomingMessageBuffer = java.util.Collections.synchronizedList(mutableListOf<ChatMessage>())
     var isChatUiPaused = false
 
+    private val baseChatListPadding by lazy {
+        intArrayOf(
+            binding.chatRecyclerView.paddingLeft,
+            binding.chatRecyclerView.paddingTop,
+            binding.chatRecyclerView.paddingRight,
+            binding.chatRecyclerView.paddingBottom
+        )
+    }
+
     init {
         chatAdapter = ChatAdapter(
             onReplyClick = { originalId -> scrollToRepliedMessage(originalId) },
@@ -121,6 +130,8 @@ class ChatUiManager(
     }
 
     private fun setupRecyclerView() {
+        // Snapshot XML baseline paddings (12dp horizontal, 8dp top/bottom) before any setVodMode call
+        baseChatListPadding
         binding.chatRecyclerView.apply {
             layoutManager = LinearLayoutManager(activity)
             adapter = chatAdapter
@@ -282,9 +293,11 @@ class ChatUiManager(
     }
 
     private fun setupClickListeners() {
-        binding.chatLoginButton.setOnClickListener {
+        val openLogin = View.OnClickListener {
             activity.startActivity(Intent(activity, LoginActivity::class.java))
         }
+        binding.chatLoginButton.setOnClickListener(openLogin)
+        binding.chatLoginOverlay.setOnClickListener(openLogin)
 
         binding.chatSendButton.setOnClickListener {
             sendChatMessage()
@@ -428,7 +441,7 @@ class ChatUiManager(
     fun updateChatModeIndicators() {
         val text = binding.chatInput.text?.toString() ?: ""
         
-        if (text.isNotEmpty()) {
+        if (text.isNotEmpty() || !activity.chatInputResponsiveController.allowModeIndicator) {
             binding.chatModeIndicator.visibility = View.GONE
             return
         }
@@ -658,8 +671,7 @@ class ChatUiManager(
         chatStateManager.onMessageSent(messageRef)
 
         if (!isOverride) {
-            binding.chatSendButton.visibility = View.GONE
-            binding.chatSettingsButton.visibility = View.VISIBLE
+            activity.chatInputResponsiveController.reapply()
         }
 
         if (replyId != null) cancelReply()
@@ -810,26 +822,9 @@ class ChatUiManager(
     }
     
     private fun showCommandLoading(show: Boolean) {
-        if (show) {
-            binding.chatSendContainer.visibility = View.VISIBLE
-            binding.chatSendButton.visibility = View.GONE
-            binding.chatSendLoading.visibility = View.VISIBLE
-            binding.chatInput.isEnabled = false
-        } else {
-            binding.chatSendLoading.visibility = View.GONE
-            binding.chatInput.isEnabled = true
-            
-            // Restore visibility based on input text
-            if (binding.chatInput.text.isNullOrEmpty()) {
-                binding.chatSendContainer.visibility = View.GONE
-                binding.chatSendButton.visibility = View.GONE
-                binding.chatSettingsButton.visibility = View.VISIBLE
-            } else {
-                binding.chatSendContainer.visibility = View.VISIBLE
-                binding.chatSendButton.visibility = View.VISIBLE
-                binding.chatSettingsButton.visibility = View.GONE
-            }
-        }
+        binding.chatSendLoading.visibility = if (show) View.VISIBLE else View.GONE
+        binding.chatInput.isEnabled = !show
+        activity.chatInputResponsiveController.reapply()
     }
 
     private fun handleMessageClick(message: ChatMessage) {
@@ -1214,9 +1209,7 @@ class ChatUiManager(
 
         // Reset Input
         binding.chatInput.text?.clear()
-        binding.chatSendContainer.visibility = View.GONE
-        binding.chatSendButton.visibility = View.GONE
-        binding.chatSettingsButton.visibility = View.VISIBLE
+        activity.chatInputResponsiveController.reapply()
         
         // Reset Celebration
         exitCelebrationMode()
@@ -1234,16 +1227,21 @@ class ChatUiManager(
     
     fun setVodMode(enabled: Boolean) {
         chatAdapter.isVodMode = enabled
-        
+
+        binding.chatRecyclerView.setPadding(
+            baseChatListPadding[0],
+            baseChatListPadding[1],
+            baseChatListPadding[2],
+            baseChatListPadding[3]
+        )
+        binding.chatRecyclerView.clipToPadding = false
+
         if (enabled) {
-             val padding = (50 * activity.resources.displayMetrics.density).toInt()
-             binding.chatRecyclerView.setPadding(0, 0, 0, padding)
-             binding.chatRecyclerView.clipToPadding = false
-             
-             // Ensure interactions are hidden
-             binding.chatInputContainer.visibility = View.GONE
+            // Ensure interactions are hidden
+            binding.chatInputContainer.visibility = View.GONE
         } else {
-             binding.chatRecyclerView.setPadding(0, 0, 0, 0)
+            binding.chatInputContainer.visibility = if (activity.isBannedFromCurrentChannel) View.GONE else View.VISIBLE
+            activity.chatInputResponsiveController.reapply()
         }
     }
 
@@ -1809,7 +1807,7 @@ class ChatUiManager(
         val container = binding.celebrationContainer
         
         container.root.visibility = View.VISIBLE
-        binding.chatInputCelebrationButton.visibility = View.GONE
+        activity.chatInputResponsiveController.setCelebrationAvailable(false)
 
         container.celebrationBannerUser.text = prefs.username
         
@@ -1876,10 +1874,10 @@ class ChatUiManager(
         binding.celebrationContainer.celebrationBannerIcon.clearAnimation()
         binding.celebrationContainer.root.visibility = View.GONE
         if (defer && currentCelebration != null) {
-            binding.chatInputCelebrationButton.visibility = View.VISIBLE
+            activity.chatInputResponsiveController.setCelebrationAvailable(true)
         } else {
-            binding.chatInputCelebrationButton.visibility = View.GONE
             currentCelebration = null
+            activity.chatInputResponsiveController.setCelebrationAvailable(false)
         }
     }
 

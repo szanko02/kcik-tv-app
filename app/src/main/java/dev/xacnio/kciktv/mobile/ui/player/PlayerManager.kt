@@ -111,6 +111,7 @@ class PlayerManager(
                         // Audio-only keeps the player view hidden behind the placeholder — don't
                         // let a PLAYING transition (rebuffer recovery, resume, etc.) undo that.
                         if (!isAudioOnlyActive) binding.playerView.visibility = View.VISIBLE
+                        activity.applyEffectiveVideoResizeModeIfReady()
                         binding.offlineBanner.visibility = View.GONE
                         binding.errorOverlay.visibility = View.GONE
                         binding.errorDetailsButton.visibility = View.GONE
@@ -233,6 +234,7 @@ class PlayerManager(
                 if (ivsPlayer?.state == Player.State.PLAYING || ivsPlayer?.state == Player.State.BUFFERING) {
                     applyPlaybackRefreshForCurrentState()
                 }
+                activity.applyEffectiveVideoResizeModeIfReady()
             }
         }
         override fun onCue(cue: com.amazonaws.ivs.player.Cue) {}
@@ -248,11 +250,12 @@ class PlayerManager(
                 // Auto-enter Theatre Mode for Portrait (Only once per session)
                 if (!activity.fullscreenToggleManager.hasAutoEnteredTheatreMode) {
                     val isPortrait = height > width
-                    if (isPortrait && !activity.fullscreenToggleManager.isTheatreMode) {
+                    if (isPortrait && !activity.isFullscreen && !activity.fullscreenToggleManager.isTheatreMode) {
                          activity.fullscreenToggleManager.hasAutoEnteredTheatreMode = true
                          activity.fullscreenToggleManager.enterTheatreMode()
                     }
                 }
+                activity.applyEffectiveVideoResizeModeIfReady()
             }
         }
     }
@@ -416,6 +419,7 @@ class PlayerManager(
 
             ivsPlayer = binding.playerView.player
             binding.playerView.controlsEnabled = false
+            activity.applyEffectiveVideoResizeModeIfReady()
 
             // Audio-only has no video track, so it can't be reached by capping the ABR ladder —
             // it must always be a hard pin, even while Dynamic Quality is on. This is a

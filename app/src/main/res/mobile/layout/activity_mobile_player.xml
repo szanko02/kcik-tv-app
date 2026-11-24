@@ -743,6 +743,20 @@
                     android:visibility="gone" />
             </FrameLayout>
 
+            <!-- Fullscreen video scale (Fit / Zoom / Fill), shown only in landscape fullscreen -->
+            <ImageButton
+                android:id="@+id/fullscreenScaleButton"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginEnd="8dp"
+                android:background="@drawable/bg_item_ripple"
+                android:padding="8dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_video_scale"
+                android:visibility="gone"
+                android:contentDescription="@null"
+                app:tint="#FFFFFF" />
+
             <ImageButton
                 android:id="@+id/videoSettingsButton"
                 android:layout_width="40dp"
@@ -2101,8 +2115,9 @@
                                 app:tint="#53FC18"
                                 tools:visibility="visible" />
 
-                            <!-- Emoji Button Frame -->
+                            <!-- Emoji Button Frame (resized/hidden by ChatInputResponsiveController) -->
                             <FrameLayout
+                                android:id="@+id/chatEmoteButtonFrame"
                                 android:layout_width="36dp"
                                 android:layout_height="36dp">
 
@@ -2144,8 +2159,11 @@
                             android:visibility="gone">
 
                             <TextView
+                                android:id="@+id/chatLoginPromptPrefix"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
+                                android:ellipsize="end"
+                                android:maxLines="1"
                                 android:text="@string/chat_login_prompt_prefix"
                                 android:textColor="#808080"
                                 android:textSize="13sp" />
@@ -2155,6 +2173,8 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:background="?attr/selectableItemBackground"
+                                android:ellipsize="end"
+                                android:maxLines="1"
                                 android:padding="4dp"
                                 android:text="@string/login_button"
                                 android:textColor="#53FC18"
@@ -2163,8 +2183,10 @@
                         </LinearLayout>
                     </FrameLayout>
 
-                    <!-- Loyalty Points Button (Inline style like reference app) -->
+                    <!-- Loyalty Points Button (Inline style like reference app).
+                         Wrapper visibility/margins are owned by ChatInputResponsiveController. -->
                     <FrameLayout
+                        android:id="@+id/loyaltyPointsWrapper"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="6dp">
@@ -2187,24 +2209,35 @@
                                 android:src="@drawable/ic_loyalty"
                                 app:tint="#53FC18" />
 
-                            <TextView
-                                android:id="@+id/loyaltyPointsText"
+                            <!-- Balance (text or infinity). Hidden as a group in compact widths
+                                 (icon-only button); children are toggled by LoyaltyPointsManager. -->
+                            <LinearLayout
+                                android:id="@+id/loyaltyPointsValueGroup"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:layout_marginStart="4dp"
-                                android:textColor="#53FC18"
-                                android:textSize="13sp"
-                                android:textStyle="bold"
-                                tools:text="0" />
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
 
-                            <ImageView
-                                android:id="@+id/loyaltyInfinityIcon"
-                                android:layout_width="14dp"
-                                android:layout_height="14dp"
-                                android:layout_marginStart="4dp"
-                                android:src="@drawable/ic_infinity"
-                                android:visibility="gone"
-                                app:tint="#53FC18" />
+                                <TextView
+                                    android:id="@+id/loyaltyPointsText"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="4dp"
+                                    android:maxLines="1"
+                                    android:textColor="#53FC18"
+                                    android:textSize="13sp"
+                                    android:textStyle="bold"
+                                    tools:text="0" />
+
+                                <ImageView
+                                    android:id="@+id/loyaltyInfinityIcon"
+                                    android:layout_width="14dp"
+                                    android:layout_height="14dp"
+                                    android:layout_marginStart="4dp"
+                                    android:src="@drawable/ic_infinity"
+                                    android:visibility="gone"
+                                    app:tint="#53FC18" />
+                            </LinearLayout>
                         </LinearLayout>
                         
                         <TextView
@@ -2212,6 +2245,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_gravity="center_horizontal|top"
+                            android:maxLines="1"
                             android:translationY="-8dp"
                             tools:text="+500"
                             android:textColor="#53FC18"

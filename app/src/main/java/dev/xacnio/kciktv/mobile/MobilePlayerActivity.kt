@@ -323,6 +323,9 @@ class MobilePlayerActivity : FragmentActivity() {
     internal val chatInputStateManager: dev.xacnio.kciktv.mobile.ui.chat.ChatInputStateManager by lazy {
         dev.xacnio.kciktv.mobile.ui.chat.ChatInputStateManager(this)
     }
+    internal val chatInputResponsiveController: dev.xacnio.kciktv.mobile.ui.chat.ChatInputResponsiveController by lazy {
+        dev.xacnio.kciktv.mobile.ui.chat.ChatInputResponsiveController(this)
+    }
     internal val playerGestureManager: dev.xacnio.kciktv.mobile.ui.player.PlayerGestureManager by lazy {
         dev.xacnio.kciktv.mobile.ui.player.PlayerGestureManager(this)
     }
@@ -357,6 +360,14 @@ class MobilePlayerActivity : FragmentActivity() {
     internal var currentIsFollowing = false
     internal var isSubscribedToCurrentChannel = false
     internal var isSubscriptionEnabled = true
+        set(value) {
+            if (field != value) {
+                field = value
+                if (::binding.isInitialized) {
+                    chatInputResponsiveController.reapply()
+                }
+            }
+        }
     internal var isModeratorOrOwner = false // Can manage pinned messages
     internal var isChannelOwner = false // Can always change title/category even offline
     internal var isBannedFromCurrentChannel = false
@@ -1042,10 +1053,14 @@ class MobilePlayerActivity : FragmentActivity() {
             windowInsets
         }
         
-        // Apply system bar insets to player screen container for status bar and navigation bar padding
+        // Apply system bar / cutout insets to player screen container via FullscreenToggleManager
         androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.playerScreenContainer) { view, windowInsets ->
-            val insets = windowInsets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-            view.setPadding(view.paddingLeft, insets.top, view.paddingRight, insets.bottom)
+            if (::fullscreenToggleManager.isInitialized) {
+                fullscreenToggleManager.onPlayerWindowInsetsChanged(view, windowInsets)
+            } else {
+                val insets = windowInsets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                view.setPadding(view.paddingLeft, insets.top, view.paddingRight, insets.bottom)
+            }
             windowInsets
         }
         
@@ -1224,6 +1239,7 @@ class MobilePlayerActivity : FragmentActivity() {
             this, binding, prefs, repository, chatStateManager, lifecycleScope
         )
         chatUiManager.setup()
+        chatInputResponsiveController.setup()
         
         // Bind slow mode callbacks
         chatStateManager.onSlowModeCountdownUpdate = { remainingSeconds ->
@@ -1285,6 +1301,8 @@ class MobilePlayerActivity : FragmentActivity() {
         customEqDialogManager = dev.xacnio.kciktv.mobile.ui.player.CustomEqDialogManager(this, prefs)
         fullscreenManager = dev.xacnio.kciktv.mobile.ui.player.FullscreenManager(this)
         fullscreenToggleManager = dev.xacnio.kciktv.mobile.ui.player.FullscreenToggleManager(this)
+        fullscreenToggleManager.applyDisplayCutoutMode()
+        fullscreenToggleManager.applyEffectiveVideoResizeMode()
         videoSettingsDialogManager = dev.xacnio.kciktv.mobile.ui.player.VideoSettingsDialogManager(this, prefs)
         playerStatsSheetManager = dev.xacnio.kciktv.mobile.ui.player.PlayerStatsSheetManager(this)
         loyaltyPointsManager = dev.xacnio.kciktv.mobile.ui.player.LoyaltyPointsManager(this, prefs)
@@ -2192,6 +2210,13 @@ class MobilePlayerActivity : FragmentActivity() {
         }
 
         if (miniPlayerManager.isMiniPlayerMode) exitMiniPlayerMode()
+        val wasPlayerAlreadyVisible = binding.playerScreenContainer.visibility == View.VISIBLE
+        val preserveLandscapeFullscreen = ::fullscreenToggleManager.isInitialized &&
+            wasPlayerAlreadyVisible &&
+            isFullscreen &&
+            !fullscreenToggleManager.isTheatreMode
+        val preserveSideChatInFullscreen = preserveLandscapeFullscreen && fullscreenToggleManager.isSideChatVisible
+
         vodManager.currentPlaybackMode = dev.xacnio.kciktv.mobile.ui.player.VodManager.PlaybackMode.LIVE
         updatePlaybackUI()
         
@@ -2211,52 +2236,60 @@ class MobilePlayerActivity : FragmentActivity() {
         chatUiManager.reset()
         chatUiManager.resumeChatUi()
 
-        // FORCE RESET PLAYER LAYOUT STATE
+        // FORCE RESET PLAYER LAYOUT STATE (unless refreshing/switching while already in landscape fullscreen)
         // Fix for "stuck layout" when closing video in landscape vs portrait
-        // Strategy: ALWAYS start with portrait layout. If device is actually in landscape,
-        // onConfigurationChanged will fire and apply split-screen automatically.
+        // Strategy: Start with portrait layout when opening fresh; if already in landscape fullscreen,
+        // preserve fullscreen + side-chat + cutout/resizeMode state instead of dropping to 16:9 FIT.
         if (::fullscreenToggleManager.isInitialized) {
-             // STEP 1: Clean up any existing side chat state
-             fullscreenToggleManager.cleanupSideChat(forceReset = true)
-             fullscreenToggleManager.exitFullscreen(forceCleanReset = true)
-             
-             // STEP 2: Force portrait constraints - onConfigurationChanged handles landscape
-             // ONLY do this if we are not already in side chat mode (which exitFullscreen might have just set up)
-             if (!fullscreenToggleManager.isSideChatVisible) {
-                 val params = binding.videoContainer.layoutParams as ConstraintLayout.LayoutParams
-                 params.dimensionRatio = "H,16:9"
-                 params.width = 0 
-                 params.height = 0
-                 params.startToStart = ConstraintLayout.LayoutParams.PARENT_ID
-                 params.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-                 params.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
-                 params.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
-                 params.verticalBias = 0.0f
-                 params.endToStart = ConstraintLayout.LayoutParams.UNSET
-                 binding.videoContainer.layoutParams = params
-             }
-             
-             // STEP 3: Check REAL orientation after layout completes
-             if (isTabletOrLargeWindow()) {
-                  // Wait for layout to complete, then check actual root view dimensions
-                  binding.root.viewTreeObserver.addOnGlobalLayoutListener(object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
-                       override fun onGlobalLayout() {
-                            binding.root.viewTreeObserver.removeOnGlobalLayoutListener(this)
-                            
-                            val rootWidth = binding.root.width
-                            val rootHeight = binding.root.height
-                            val isActuallyLandscape = rootWidth > rootHeight
-                            val isSideChatAlreadyVisible = fullscreenToggleManager.isSideChatVisible
-                            Log.d(TAG, "playChannel layout check: isActuallyLandscape=$isActuallyLandscape, isSideChatVisible=$isSideChatAlreadyVisible, root=${rootWidth}x${rootHeight}")
-                            
-                            if (isActuallyLandscape && !isSideChatAlreadyVisible) {
-                                 Log.d(TAG, "playChannel: Calling showSideChat")
-                                 fullscreenToggleManager.showSideChat(skipAnimation = true)
-                            } else {
-                                 Log.d(TAG, "playChannel: NOT calling showSideChat (landscape=$isActuallyLandscape, sideChatVisible=$isSideChatAlreadyVisible)")
-                            }
-                       }
-                  })
+             if (preserveLandscapeFullscreen) {
+                 if (!preserveSideChatInFullscreen) {
+                     fullscreenToggleManager.enterFullscreen()
+                 } else {
+                     applyFullscreenCutoutAndResizeModeIfReady()
+                 }
+             } else {
+                 // STEP 1: Clean up any existing side chat state
+                 fullscreenToggleManager.cleanupSideChat(forceReset = true)
+                 fullscreenToggleManager.exitFullscreen(forceCleanReset = true)
+                 
+                 // STEP 2: Force portrait constraints - onConfigurationChanged handles landscape
+                 // ONLY do this if we are not already in side chat mode (which exitFullscreen might have just set up)
+                 if (!fullscreenToggleManager.isSideChatVisible) {
+                     val params = binding.videoContainer.layoutParams as ConstraintLayout.LayoutParams
+                     params.dimensionRatio = "H,16:9"
+                     params.width = 0 
+                     params.height = 0
+                     params.startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                     params.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                     params.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                     params.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                     params.verticalBias = 0.0f
+                     params.endToStart = ConstraintLayout.LayoutParams.UNSET
+                     binding.videoContainer.layoutParams = params
+                 }
+                 
+                 // STEP 3: Check REAL orientation after layout completes
+                 if (isTabletOrLargeWindow()) {
+                      // Wait for layout to complete, then check actual root view dimensions
+                      binding.root.viewTreeObserver.addOnGlobalLayoutListener(object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+                           override fun onGlobalLayout() {
+                                binding.root.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                                
+                                val rootWidth = binding.root.width
+                                val rootHeight = binding.root.height
+                                val isActuallyLandscape = rootWidth > rootHeight
+                                val isSideChatAlreadyVisible = fullscreenToggleManager.isSideChatVisible
+                                Log.d(TAG, "playChannel layout check: isActuallyLandscape=$isActuallyLandscape, isSideChatVisible=$isSideChatAlreadyVisible, root=${rootWidth}x${rootHeight}")
+                                
+                                if (isActuallyLandscape && !isSideChatAlreadyVisible) {
+                                     Log.d(TAG, "playChannel: Calling showSideChat")
+                                     fullscreenToggleManager.showSideChat(skipAnimation = true)
+                                } else {
+                                     Log.d(TAG, "playChannel: NOT calling showSideChat (landscape=$isActuallyLandscape, sideChatVisible=$isSideChatAlreadyVisible)")
+                                }
+                           }
+                      })
+                 }
              }
         }
 
@@ -2277,7 +2310,7 @@ class MobilePlayerActivity : FragmentActivity() {
         // Show player screen
         // actionBar visibility is managed by ChannelUiManager (animateActionBarIn/Out)
         // Do NOT set it here - it would override the GONE state and prevent animations
-        binding.chatContainer.visibility = View.VISIBLE
+        binding.chatContainer.visibility = if (shouldKeepMainChatHiddenInFullscreen()) View.GONE else View.VISIBLE
         
         val wasPlayerVisible = binding.playerScreenContainer.visibility == View.VISIBLE
         binding.playerScreenContainer.visibility = View.VISIBLE
@@ -2338,7 +2371,7 @@ class MobilePlayerActivity : FragmentActivity() {
             .load(thumbUrl)
             .into(object : com.bumptech.glide.request.target.CustomTarget<android.graphics.Bitmap>() {
                 override fun onResourceReady(resource: android.graphics.Bitmap, transition: com.bumptech.glide.request.transition.Transition<in android.graphics.Bitmap>?) {
-                        if (resource.height > resource.width && !fullscreenToggleManager.isTheatreMode) {
+                        if (resource.height > resource.width && !isFullscreen && !fullscreenToggleManager.isTheatreMode) {
                             fullscreenToggleManager.hasAutoEnteredTheatreMode = true
                             fullscreenToggleManager.updateVideoSize(resource.width, resource.height)
                             fullscreenToggleManager.enterTheatreMode()
@@ -2454,6 +2487,10 @@ class MobilePlayerActivity : FragmentActivity() {
         }
         
         vodManager.playVideo(video, channelData, pos)
+        if (::fullscreenToggleManager.isInitialized) {
+            fullscreenToggleManager.applyDisplayCutoutMode()
+            fullscreenToggleManager.applyEffectiveVideoResizeMode()
+        }
         // NOTE: Split screen is handled in playChannel, not here
     }
 
@@ -2485,7 +2522,28 @@ class MobilePlayerActivity : FragmentActivity() {
 
         dvrPlaybackUrl = null // Reset DVR mode for Clip
         vodManager.playClip(clip, channelData)
+        applyFullscreenCutoutAndResizeModeIfReady()
         // NOTE: Split screen handled by layout reset logic, not here
+    }
+
+    internal fun applyEffectiveVideoResizeModeIfReady() {
+        if (::fullscreenToggleManager.isInitialized) {
+            fullscreenToggleManager.applyEffectiveVideoResizeMode()
+        }
+    }
+
+    internal fun applyFullscreenCutoutAndResizeModeIfReady() {
+        if (::fullscreenToggleManager.isInitialized) {
+            fullscreenToggleManager.applyDisplayCutoutMode()
+            fullscreenToggleManager.applyEffectiveVideoResizeMode()
+        }
+    }
+
+    internal fun shouldKeepMainChatHiddenInFullscreen(): Boolean {
+        return isFullscreen &&
+            ::fullscreenToggleManager.isInitialized &&
+            !fullscreenToggleManager.isTheatreMode &&
+            !fullscreenToggleManager.isSideChatVisible
     }
 
     // Returns true for both VOD and CLIP modes (non-live playback)
@@ -2971,6 +3029,10 @@ class MobilePlayerActivity : FragmentActivity() {
                   fullscreenToggleManager.cleanupSideChat()
                   fullscreenToggleManager.exitFullscreen()
              }
+        }
+        if (::fullscreenToggleManager.isInitialized) {
+            fullscreenToggleManager.applyDisplayCutoutMode()
+            fullscreenToggleManager.applyEffectiveVideoResizeMode()
         }
         
         // Reset exit flag in case onStart wasn't called (e.g. from Paused state)

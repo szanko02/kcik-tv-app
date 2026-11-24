@@ -11,7 +11,9 @@
 package dev.xacnio.kciktv.mobile.ui.player
 
 import android.content.pm.ActivityInfo
+import android.content.res.ColorStateList
 import android.graphics.Color
+import android.os.Build
 import android.transition.AutoTransition
 import android.transition.TransitionManager
 import android.util.Log
@@ -46,6 +48,23 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
     // Saved state for PiP transition
     private var savedVideoParams: ConstraintLayout.LayoutParams? = null
     private var savedResizeMode: com.amazonaws.ivs.player.ResizeMode? = null
+
+    private data class HorizontalPadding(val left: Int, val right: Int)
+    private var baseVideoTopBarPadding: HorizontalPadding? = null
+    private var baseVideoOverlayPadding: HorizontalPadding? = null
+    private var basePlayPauseOverlayPadding: HorizontalPadding? = null
+    private var baseSideChatPadding: HorizontalPadding? = null
+    private var isFullscreenScaleButtonWired = false
+
+    private val isInPipModeCompat: Boolean
+        get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && activity.isInPictureInPictureMode
+
+    private val isMiniPlayerCompat: Boolean
+        get() = try {
+            activity.miniPlayerManager.isMiniPlayerMode
+        } catch (_: UninitializedPropertyAccessException) {
+            false
+        }
 
     // Saved state for overlay reparenting
     private var originalOverlayParent: android.view.ViewGroup? = null
@@ -519,6 +538,8 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
 
         // Enable theatre mode preference
         isTheatreMode = true
+        applyDisplayCutoutMode()
+        applyEffectiveVideoResizeMode()
 
         // Update PiP state immediately to disable auto-PiP
         activity.updatePiPUi()
@@ -1675,6 +1696,8 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         isTheatreMode = false
         fullscreenManager.isFullscreen = false
         updateFullscreenButtonState()
+        applyDisplayCutoutMode()
+        applyEffectiveVideoResizeMode()
         
         // Update PiP state to re-enable auto-PiP
         Log.d("FullscreenToggleManager", "exitTheatreMode: Updating PiP UI to re-enable auto-PiP")
@@ -1778,6 +1801,9 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         } else {
             hideSideChatDivider()
         }
+
+        applyDisplayCutoutMode()
+        applyEffectiveVideoResizeMode()
     }
 
     /**
@@ -1816,6 +1842,8 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             }
             fullscreenManager.isFullscreen = false
             updateFullscreenButtonState()
+            applyDisplayCutoutMode()
+            applyEffectiveVideoResizeMode()
             activity.playerManager.updateAudioOnlyVisual(activity.playerManager.isAudioOnlyActive)
             return // EARLY RETURN FOR TABLETS!
         }
@@ -1841,6 +1869,8 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         activity.channelUiManager.updateChatPaddingForPanels(false)
         fullscreenManager.isFullscreen = false
         updateFullscreenButtonState()
+        applyDisplayCutoutMode()
+        applyEffectiveVideoResizeMode()
         activity.playerManager.updateAudioOnlyVisual(activity.playerManager.isAudioOnlyActive)
 
         binding.root.post {
@@ -1860,6 +1890,191 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         params.verticalBias = 0.0f
         params.endToStart = ConstraintLayout.LayoutParams.UNSET
         binding.videoContainer.layoutParams = params
+        applyDisplayCutoutMode()
+        applyEffectiveVideoResizeMode()
+    }
+
+    private fun ensureBaseCutoutPaddingsCaptured() {
+        if (baseVideoTopBarPadding == null) {
+            baseVideoTopBarPadding = HorizontalPadding(
+                binding.videoTopBar.paddingLeft,
+                binding.videoTopBar.paddingRight
+            )
+        }
+        if (baseVideoOverlayPadding == null) {
+            baseVideoOverlayPadding = HorizontalPadding(
+                binding.videoOverlay.paddingLeft,
+                binding.videoOverlay.paddingRight
+            )
+        }
+        if (basePlayPauseOverlayPadding == null) {
+            basePlayPauseOverlayPadding = HorizontalPadding(
+                binding.playPauseOverlay.paddingLeft,
+                binding.playPauseOverlay.paddingRight
+            )
+        }
+        if (baseSideChatPadding == null) {
+            baseSideChatPadding = HorizontalPadding(
+                binding.sideChatContainer.paddingLeft,
+                binding.sideChatContainer.paddingRight
+            )
+        }
+    }
+
+    private fun applyHorizontalPadding(view: View, left: Int, right: Int) {
+        if (view.paddingLeft != left || view.paddingRight != right) {
+            view.setPadding(left, view.paddingTop, right, view.paddingBottom)
+        }
+    }
+
+    fun applyDisplayCutoutMode() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val isFullscreen = activity.isFullscreen
+            val useCutout = VideoCutoutScalingPolicy.shouldDrawUnderCutout(
+                isFullscreen = isFullscreen,
+                isTheatreMode = isTheatreMode,
+                isInPip = isInPipModeCompat,
+                drawUnderCutoutPref = prefs.drawUnderCutout
+            )
+            val desired = when {
+                useCutout && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R ->
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                useCutout ->
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                isFullscreen && !isTheatreMode ->
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER
+                else ->
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+            }
+            val lp = activity.window.attributes
+            if (lp.layoutInDisplayCutoutMode != desired) {
+                lp.layoutInDisplayCutoutMode = desired
+                activity.window.attributes = lp
+            }
+            ViewCompat.getRootWindowInsets(binding.playerScreenContainer)?.let {
+                onPlayerWindowInsetsChanged(binding.playerScreenContainer, it)
+            }
+            ViewCompat.requestApplyInsets(binding.playerScreenContainer)
+        }
+    }
+
+    fun onPlayerWindowInsetsChanged(playerScreenView: View, windowInsets: WindowInsetsCompat) {
+        ensureBaseCutoutPaddingsCaptured()
+        val topBarBase = baseVideoTopBarPadding!!
+        val overlayBase = baseVideoOverlayPadding!!
+        val playPauseBase = basePlayPauseOverlayPadding!!
+        val sideChatBase = baseSideChatPadding!!
+
+        if (activity.isFullscreen && !isTheatreMode) {
+            if (playerScreenView.paddingLeft != 0 ||
+                playerScreenView.paddingTop != 0 ||
+                playerScreenView.paddingRight != 0 ||
+                playerScreenView.paddingBottom != 0
+            ) {
+                playerScreenView.setPadding(0, 0, 0, 0)
+            }
+            if (prefs.drawUnderCutout) {
+                val cutout = windowInsets.getInsets(WindowInsetsCompat.Type.displayCutout())
+                val overlayLeft = cutout.left
+                val overlayRight = if (isSideChatVisible) 0 else cutout.right
+                val sideChatRight = if (isSideChatVisible) cutout.right else 0
+                applyHorizontalPadding(binding.videoTopBar, topBarBase.left + overlayLeft, topBarBase.right + overlayRight)
+                applyHorizontalPadding(binding.videoOverlay, overlayBase.left + overlayLeft, overlayBase.right + overlayRight)
+                applyHorizontalPadding(binding.playPauseOverlay, playPauseBase.left + overlayLeft, playPauseBase.right + overlayRight)
+                applyHorizontalPadding(binding.sideChatContainer, sideChatBase.left, sideChatBase.right + sideChatRight)
+            } else {
+                applyHorizontalPadding(binding.videoTopBar, topBarBase.left, topBarBase.right)
+                applyHorizontalPadding(binding.videoOverlay, overlayBase.left, overlayBase.right)
+                applyHorizontalPadding(binding.playPauseOverlay, playPauseBase.left, playPauseBase.right)
+                applyHorizontalPadding(binding.sideChatContainer, sideChatBase.left, sideChatBase.right)
+            }
+        } else {
+            val sys = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
+            if (playerScreenView.paddingTop != sys.top || playerScreenView.paddingBottom != sys.bottom) {
+                playerScreenView.setPadding(
+                    playerScreenView.paddingLeft,
+                    sys.top,
+                    playerScreenView.paddingRight,
+                    sys.bottom
+                )
+            }
+            applyHorizontalPadding(binding.videoTopBar, topBarBase.left, topBarBase.right)
+            applyHorizontalPadding(binding.videoOverlay, overlayBase.left, overlayBase.right)
+            applyHorizontalPadding(binding.playPauseOverlay, playPauseBase.left, playPauseBase.right)
+            applyHorizontalPadding(binding.sideChatContainer, sideChatBase.left, sideChatBase.right)
+        }
+    }
+
+    private fun ensureFullscreenScaleButtonWired() {
+        if (!isFullscreenScaleButtonWired) {
+            isFullscreenScaleButtonWired = true
+            binding.fullscreenScaleButton.setOnClickListener {
+                cycleFullscreenResizeMode()
+            }
+        }
+    }
+
+    fun applyEffectiveVideoResizeMode() {
+        ensureFullscreenScaleButtonWired()
+        val isFullscreen = activity.isFullscreen
+        val isInPip = isInPipModeCompat
+        val isMiniPlayer = isMiniPlayerCompat
+        val preferredMode = VideoCutoutScalingPolicy.fromPref(prefs.fullscreenResizeMode)
+        val effectiveMode = VideoCutoutScalingPolicy.resolveEffectiveScaleMode(
+            isFullscreen = isFullscreen,
+            isTheatreMode = isTheatreMode,
+            isInPip = isInPip,
+            isMiniPlayer = isMiniPlayer,
+            isSideChatVisible = isSideChatVisible,
+            preferredMode = preferredMode
+        )
+        val targetResizeMode = when (effectiveMode) {
+            VideoScaleMode.FIT -> com.amazonaws.ivs.player.ResizeMode.FIT
+            VideoScaleMode.ZOOM -> com.amazonaws.ivs.player.ResizeMode.ZOOM
+            VideoScaleMode.FILL -> com.amazonaws.ivs.player.ResizeMode.FILL
+        }
+        if (binding.playerView.resizeMode != targetResizeMode) {
+            binding.playerView.resizeMode = targetResizeMode
+        }
+
+        val showScaleButton = isFullscreen && !isTheatreMode && !isInPip && !isMiniPlayer && !isSideChatVisible
+        binding.fullscreenScaleButton.visibility = if (showScaleButton) View.VISIBLE else View.GONE
+        val tintColor = if (effectiveMode == VideoScaleMode.FIT) {
+            Color.WHITE
+        } else {
+            Color.parseColor("#53FC18")
+        }
+        binding.fullscreenScaleButton.imageTintList = ColorStateList.valueOf(tintColor)
+        binding.fullscreenScaleButton.contentDescription = activity.getString(
+            when (effectiveMode) {
+                VideoScaleMode.FIT -> R.string.video_scale_fit
+                VideoScaleMode.ZOOM -> R.string.video_scale_zoom
+                VideoScaleMode.FILL -> R.string.video_scale_fill
+            }
+        )
+    }
+
+    fun setFullscreenResizeMode(mode: VideoScaleMode, showFeedback: Boolean = false) {
+        prefs.fullscreenResizeMode = mode.prefValue
+        applyEffectiveVideoResizeMode()
+        if (showFeedback) {
+            val labelRes = when (mode) {
+                VideoScaleMode.FIT -> R.string.video_scale_fit
+                VideoScaleMode.ZOOM -> R.string.video_scale_zoom
+                VideoScaleMode.FILL -> R.string.video_scale_fill
+            }
+            Toast.makeText(
+                activity,
+                activity.getString(R.string.video_scale_mode_toast, activity.getString(labelRes)),
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    fun cycleFullscreenResizeMode() {
+        val current = VideoCutoutScalingPolicy.fromPref(prefs.fullscreenResizeMode)
+        val next = VideoCutoutScalingPolicy.nextCycleMode(current)
+        setFullscreenResizeMode(next, showFeedback = true)
     }
 
     fun restoreRotationAnimation() {
@@ -1989,6 +2204,8 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         }
         
         isSideChatVisible = true
+        applyDisplayCutoutMode()
+        applyEffectiveVideoResizeMode()
         ensureSideChatDividerSetup()
 
         val chatWidth = computeSideChatWidthPx(rootWidth)
@@ -2211,6 +2428,8 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
                 isSideChatVisible = false
                 originalChatParent = null
                 originalActionBarParent = null
+                applyDisplayCutoutMode()
+                applyEffectiveVideoResizeMode()
             }
         })
         
@@ -2270,6 +2489,8 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         params.horizontalBias = 0.5f
         
         binding.videoContainer.layoutParams = params
+        applyDisplayCutoutMode()
+        applyEffectiveVideoResizeMode()
     }
 
     fun onExitPipMode() {
@@ -2316,6 +2537,8 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         // Clear saved state
         savedVideoParams = null
         savedResizeMode = null
+        applyDisplayCutoutMode()
+        applyEffectiveVideoResizeMode()
     }
     
     /**

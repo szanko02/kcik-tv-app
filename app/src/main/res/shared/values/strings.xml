@@ -1458,4 +1458,13 @@
     <string name="update_source_fork">Fork (szanko02)</string>
     <string name="update_source_upstream">Upstream (xacnio)</string>
     <string name="whats_new_empty">No releases published on this update source yet.</string>
+
+    <!-- Fullscreen Cutout & Video Scaling -->
+    <string name="setting_draw_under_cutout">Draw Under Camera Cutout</string>
+    <string name="setting_draw_under_cutout_desc">Extend fullscreen video into the camera cutout area in landscape</string>
+    <string name="setting_fullscreen_scale_mode">Fullscreen Video Scaling</string>
+    <string name="video_scale_fit">Fit</string>
+    <string name="video_scale_zoom">Zoom (Fill Cutout)</string>
+    <string name="video_scale_fill">Stretch</string>
+    <string name="video_scale_mode_toast">Video scaling: %1$s</string>
 </resources>

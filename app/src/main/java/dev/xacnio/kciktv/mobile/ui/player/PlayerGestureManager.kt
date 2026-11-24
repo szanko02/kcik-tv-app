@@ -13,15 +13,78 @@ package dev.xacnio.kciktv.mobile.ui.player
 import android.annotation.SuppressLint
 import android.view.GestureDetector
 import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.View
 import dev.xacnio.kciktv.mobile.MobilePlayerActivity
 
 class PlayerGestureManager(private val activity: MobilePlayerActivity) {
 
     lateinit var playerGestureDetector: GestureDetector
+    private lateinit var playerScaleGestureDetector: ScaleGestureDetector
+    private var isPinching = false
+    private var pinchTriggeredInGesture = false
+    private var cumulativePinchScale = 1.0f
+    private var blockSingleFingerUntilUp = false
+
+    private fun isPinchZoomEligible(): Boolean {
+        val isInPip = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N &&
+            activity.isInPictureInPictureMode
+        return activity.isFullscreen &&
+            !activity.fullscreenToggleManager.isTheatreMode &&
+            !activity.fullscreenToggleManager.isSideChatVisible &&
+            !isInPip &&
+            !activity.miniPlayerManager.isMiniPlayerMode
+    }
+
+    private fun cancelSingleFingerGesture(event: MotionEvent) {
+        val cancelEvent = MotionEvent.obtain(event)
+        cancelEvent.action = MotionEvent.ACTION_CANCEL
+        playerGestureDetector.onTouchEvent(cancelEvent)
+        cancelEvent.recycle()
+    }
 
     @SuppressLint("ClickableViewAccessibility")
     fun setupPlayerGestureDetector() {
+        playerScaleGestureDetector = ScaleGestureDetector(
+            activity,
+            object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
+                    if (!isPinchZoomEligible()) return false
+                    isPinching = true
+                    blockSingleFingerUntilUp = true
+                    pinchTriggeredInGesture = false
+                    cumulativePinchScale = 1.0f
+                    return true
+                }
+
+                override fun onScale(detector: ScaleGestureDetector): Boolean {
+                    if (!isPinchZoomEligible()) return false
+                    if (pinchTriggeredInGesture) return true
+                    val factor = detector.scaleFactor
+                    if (factor.isFinite() && factor > 0f) {
+                        cumulativePinchScale *= factor
+                        val currentMode = VideoCutoutScalingPolicy.fromPref(activity.prefs.fullscreenResizeMode)
+                        val nextMode = VideoCutoutScalingPolicy.resolvePinchScaleMode(
+                            cumulativePinchScale,
+                            currentMode
+                        )
+                        if (nextMode != null) {
+                            pinchTriggeredInGesture = true
+                            activity.fullscreenToggleManager.setFullscreenResizeMode(
+                                nextMode,
+                                showFeedback = true
+                            )
+                        }
+                    }
+                    return true
+                }
+
+                override fun onScaleEnd(detector: ScaleGestureDetector) {
+                    isPinching = false
+                }
+            }
+        )
+
         // Initialize Gesture Detector for Rewind and Player Controls
         playerGestureDetector = GestureDetector(activity, object : GestureDetector.SimpleOnGestureListener() {
             override fun onDown(e: MotionEvent): Boolean {
@@ -29,6 +92,7 @@ class PlayerGestureManager(private val activity: MobilePlayerActivity) {
             }
 
             override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                if (isPinching || blockSingleFingerUntilUp) return false
                 // Ignore taps if an overlay was just hidden (e.g. closing pinned message)
                 if (System.currentTimeMillis() - activity.overlayManager.lastOverlayHideTime < 500) {
                     return false
@@ -64,11 +128,13 @@ class PlayerGestureManager(private val activity: MobilePlayerActivity) {
             }
             
             override fun onDoubleTap(e: MotionEvent): Boolean {
+                 if (isPinching || blockSingleFingerUntilUp) return false
                  // Double tap rewind disabled
                  return super.onDoubleTap(e)
             }
 
             override fun onLongPress(e: MotionEvent) {
+                 if (isPinching || blockSingleFingerUntilUp) return
                  try {
                      // Handle Theatre Mode resizing on long press
                      if (activity.fullscreenToggleManager.isTheatreMode) {
@@ -80,6 +146,7 @@ class PlayerGestureManager(private val activity: MobilePlayerActivity) {
             }
             
             override fun onScroll(e1: MotionEvent?, e2: MotionEvent, distanceX: Float, distanceY: Float): Boolean {
+                if (isPinching || blockSingleFingerUntilUp) return false
                 if (e1 == null) return false
                 
                 val deltaX = e2.rawX - e1.rawX
@@ -157,6 +224,7 @@ class PlayerGestureManager(private val activity: MobilePlayerActivity) {
             }
             
             override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
+                 if (isPinching || blockSingleFingerUntilUp) return false
                  if (e1 == null) return false
                  
                  val deltaX = e2.rawX - e1.rawX
@@ -251,8 +319,48 @@ class PlayerGestureManager(private val activity: MobilePlayerActivity) {
 
         val touchListener = View.OnTouchListener { _, event ->
             val dragManager = activity.dragToMiniPlayerManager
-            
-            when (event.action) {
+            val action = event.actionMasked
+
+            if (action == MotionEvent.ACTION_DOWN) {
+                isPinching = false
+                pinchTriggeredInGesture = false
+                cumulativePinchScale = 1.0f
+                blockSingleFingerUntilUp = false
+            }
+
+            if (isPinchZoomEligible()) {
+                playerScaleGestureDetector.onTouchEvent(event)
+            }
+
+            val isMultiTouch = event.pointerCount > 1 ||
+                action == MotionEvent.ACTION_POINTER_DOWN ||
+                action == MotionEvent.ACTION_POINTER_UP
+
+            if (isMultiTouch || isPinching || playerScaleGestureDetector.isInProgress) {
+                if (!blockSingleFingerUntilUp) {
+                    blockSingleFingerUntilUp = true
+                    cancelSingleFingerGesture(event)
+                }
+                if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                    isPinching = false
+                    pinchTriggeredInGesture = false
+                    cumulativePinchScale = 1.0f
+                    blockSingleFingerUntilUp = false
+                }
+                return@OnTouchListener true
+            }
+
+            if (blockSingleFingerUntilUp) {
+                if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                    isPinching = false
+                    pinchTriggeredInGesture = false
+                    cumulativePinchScale = 1.0f
+                    blockSingleFingerUntilUp = false
+                }
+                return@OnTouchListener true
+            }
+
+            when (action) {
                 MotionEvent.ACTION_DOWN -> {
                     // Always notify drag manager of touch start
                     dragManager.onTouchDown(event.rawX, event.rawY)
@@ -280,7 +388,7 @@ class PlayerGestureManager(private val activity: MobilePlayerActivity) {
                         // Normal flow - pass to gesture detector
                         playerGestureDetector.onTouchEvent(event)
                         // Overlay auto-hide timer
-                        if (event.action == MotionEvent.ACTION_UP) {
+                        if (action == MotionEvent.ACTION_UP) {
                             if (activity.binding.videoOverlay.visibility == View.VISIBLE) {
                                 activity.mainHandler.removeCallbacks(activity.getHideOverlayRunnable())
                                 activity.mainHandler.postDelayed(activity.getHideOverlayRunnable(), 3000)

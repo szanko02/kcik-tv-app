@@ -162,8 +162,9 @@ class ChannelUiManager(private val activity: MobilePlayerActivity) {
         val mode = vodManager.currentPlaybackMode
         val isLive = mode == dev.xacnio.kciktv.mobile.ui.player.VodManager.PlaybackMode.LIVE
         val isVod = mode == dev.xacnio.kciktv.mobile.ui.player.VodManager.PlaybackMode.VOD
+        val targetChatVisibility = if (activity.shouldKeepMainChatHiddenInFullscreen()) View.GONE else View.VISIBLE
 
-        // For VOD/Clip: Show chat container but hide input, disconnect websocket
+        // For VOD/Clip: Show chat container (unless in unobstructed fullscreen) but hide input, disconnect websocket
         if (!isLive) {
             // Disconnect live chat websocket
             chatConnectionManager.disconnect()
@@ -171,8 +172,8 @@ class ChannelUiManager(private val activity: MobilePlayerActivity) {
             // Clear existing chat messages
             chatAdapter.clearMessages()
 
-            // Show chat container but hide input (read-only chat replay)
-            binding.chatContainer.visibility = View.VISIBLE
+            // Show chat container (when appropriate) but hide input (read-only chat replay)
+            binding.chatContainer.visibility = targetChatVisibility
             binding.chatInputRoot.visibility = View.GONE
 
             // Hide live-only overlays
@@ -207,7 +208,7 @@ class ChannelUiManager(private val activity: MobilePlayerActivity) {
             // Hide uptimeDivider in VOD/Clip mode - used for live stream uptime
             binding.uptimeDivider.visibility = View.GONE
         } else {
-            binding.chatContainer.visibility = View.VISIBLE
+            binding.chatContainer.visibility = targetChatVisibility
             binding.chatInputRoot.visibility = View.VISIBLE
             binding.liveDot.visibility = View.VISIBLE
             binding.viewerLayout.visibility = View.VISIBLE
@@ -225,6 +226,7 @@ class ChannelUiManager(private val activity: MobilePlayerActivity) {
             // Back on the live stream, so resume earning points
             activity.ensureBlerpEarnTicker()
         }
+        activity.applyEffectiveVideoResizeModeIfReady()
     }
 
     /**

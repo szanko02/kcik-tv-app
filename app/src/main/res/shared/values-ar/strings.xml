@@ -1458,4 +1458,13 @@
     <string name="update_source_fork">النسخة المتفرعة (szanko02)</string>
     <string name="update_source_upstream">المصدر الأصلي (xacnio)</string>
     <string name="whats_new_empty">لم يتم نشر أي إصدارات على مصدر التحديثات هذا بعد.</string>
+
+    <!-- Fullscreen Cutout & Video Scaling -->
+    <string name="setting_draw_under_cutout">عرض الفيديو أسفل فتحة الكاميرا</string>
+    <string name="setting_draw_under_cutout_desc">تمديد الفيديو بملء الشاشة ليشمل منطقة فتحة الكاميرا في الوضع الأفقي</string>
+    <string name="setting_fullscreen_scale_mode">تحجيم الفيديو في ملء الشاشة</string>
+    <string name="video_scale_fit">ملاءمة</string>
+    <string name="video_scale_zoom">تكبير (ملء الشاشة)</string>
+    <string name="video_scale_fill">تمديد</string>
+    <string name="video_scale_mode_toast">تحجيم الفيديو: %1$s</string>
 </resources>

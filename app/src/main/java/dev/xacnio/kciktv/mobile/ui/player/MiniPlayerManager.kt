@@ -112,6 +112,7 @@ class MiniPlayerManager(private val activity: MobilePlayerActivity) {
         miniPlayerTranslationX = 0f
         miniPlayerTranslationY = 0f
         isMiniPlayerMode = false
+        activity.applyFullscreenCutoutAndResizeModeIfReady()
         
         // Reset player state
         activity.currentChannel = null
@@ -255,6 +256,7 @@ class MiniPlayerManager(private val activity: MobilePlayerActivity) {
         videoContainer.translationY = 0f
         
         isMiniPlayerMode = true
+        activity.applyFullscreenCutoutAndResizeModeIfReady()
 
         // Mini player floats over the home feed — drop the playback refresh cap so the feed
         // scrolls at the panel's full refresh rate (e.g. 120 Hz) again.
@@ -347,6 +349,7 @@ class MiniPlayerManager(private val activity: MobilePlayerActivity) {
         }
 
         isMiniPlayerMode = false
+        activity.applyFullscreenCutoutAndResizeModeIfReady()
 
         // Back to full player — re-apply the content-matched refresh cap (e.g. 60 Hz).
         activity.playerManager.reapplyPlaybackRefreshCap()
