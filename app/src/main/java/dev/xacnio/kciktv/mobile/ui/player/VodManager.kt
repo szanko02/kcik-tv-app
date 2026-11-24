@@ -181,7 +181,9 @@ class VodManager(
         activity.chatUiManager.chatAdapter.clearMessages()
         vodSimulationHandler.postDelayed(vodSimulationRunnable, VOD_TICK_MS)
 
-        activity.binding.chatContainer.visibility = View.VISIBLE
+        if (!activity.shouldKeepMainChatHiddenInFullscreen()) {
+            activity.binding.chatContainer.visibility = View.VISIBLE
+        }
     }
 
     fun stopVodChatReplay() {
@@ -849,6 +851,7 @@ class VodManager(
         pendingPlaybackListener = null
 
         activity.playerManager.resetPlayer()
+        activity.applyFullscreenCutoutAndResizeModeIfReady()
 
         activity.isErrorStateActive = false
         binding.errorOverlay.visibility = View.GONE

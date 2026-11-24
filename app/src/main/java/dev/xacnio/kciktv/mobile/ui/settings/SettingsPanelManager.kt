@@ -28,6 +28,8 @@ import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import dev.xacnio.kciktv.BuildConfig
 import dev.xacnio.kciktv.mobile.MobilePlayerActivity
+import dev.xacnio.kciktv.mobile.ui.player.VideoCutoutScalingPolicy
+import dev.xacnio.kciktv.mobile.ui.player.VideoScaleMode
 import dev.xacnio.kciktv.R
 import dev.xacnio.kciktv.shared.data.prefs.AppPreferences
 import dev.xacnio.kciktv.shared.data.repository.UpdateReleaseSelector
@@ -159,6 +161,22 @@ class SettingsPanelManager(
                 prefs.fullscreenSensorRotation) { isEnabled ->
                 prefs.fullscreenSensorRotation = isEnabled
                 activity.fullscreenToggleManager.applyFullscreenOrientationSetting()
+            }
+
+            // Draw Under Camera Cutout Toggle
+            addToggleSetting(container, R.drawable.ic_fullscreen,
+                activity.getString(R.string.setting_draw_under_cutout),
+                activity.getString(R.string.setting_draw_under_cutout_desc),
+                prefs.drawUnderCutout) { isEnabled ->
+                prefs.drawUnderCutout = isEnabled
+                activity.fullscreenToggleManager.applyDisplayCutoutMode()
+            }
+
+            // Fullscreen Video Scaling Mode
+            addSettingItem(container, R.drawable.ic_video_scale,
+                activity.getString(R.string.setting_fullscreen_scale_mode),
+                getFullscreenScaleModeValue()) {
+                showFullscreenScaleModeDialog()
             }
         }
     }
@@ -990,6 +1008,37 @@ class SettingsPanelManager(
                 activity.checkAndApplyQualityLimit()
                 dialog.dismiss()
                 // Refresh detail sheet
+                detailDialog?.dismiss()
+                showPlayerSettings()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun getFullscreenScaleModeValue(): String {
+        return when (VideoCutoutScalingPolicy.fromPref(prefs.fullscreenResizeMode)) {
+            VideoScaleMode.FIT -> activity.getString(R.string.video_scale_fit)
+            VideoScaleMode.ZOOM -> activity.getString(R.string.video_scale_zoom)
+            VideoScaleMode.FILL -> activity.getString(R.string.video_scale_fill)
+        }
+    }
+
+    private fun showFullscreenScaleModeDialog() {
+        val options = arrayOf(
+            activity.getString(R.string.video_scale_fit),
+            activity.getString(R.string.video_scale_zoom),
+            activity.getString(R.string.video_scale_fill)
+        )
+        val modes = arrayOf(VideoScaleMode.FIT, VideoScaleMode.ZOOM, VideoScaleMode.FILL)
+        val currentMode = VideoCutoutScalingPolicy.fromPref(prefs.fullscreenResizeMode)
+        val currentIndex = modes.indexOf(currentMode).takeIf { it >= 0 } ?: 0
+
+        AlertDialog.Builder(activity)
+            .setTitle(R.string.setting_fullscreen_scale_mode)
+            .setSingleChoiceItems(options, currentIndex) { dialog, which ->
+                prefs.fullscreenResizeMode = modes[which].prefValue
+                activity.fullscreenToggleManager.applyEffectiveVideoResizeMode()
+                dialog.dismiss()
                 detailDialog?.dismiss()
                 showPlayerSettings()
             }

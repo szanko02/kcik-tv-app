@@ -1458,4 +1458,13 @@
     <string name="update_source_fork">Fork (szanko02)</string>
     <string name="update_source_upstream">Upstream (xacnio)</string>
     <string name="whats_new_empty">Aún no se han publicado versiones en esta fuente de actualizaciones.</string>
+
+    <!-- Fullscreen Cutout & Video Scaling -->
+    <string name="setting_draw_under_cutout">Mostrar bajo el recorte de cámara</string>
+    <string name="setting_draw_under_cutout_desc">Extender el vídeo en pantalla completa al área del recorte de cámara en horizontal</string>
+    <string name="setting_fullscreen_scale_mode">Escalado de vídeo en pantalla completa</string>
+    <string name="video_scale_fit">Ajustar</string>
+    <string name="video_scale_zoom">Zoom (llenar recorte)</string>
+    <string name="video_scale_fill">Estirar</string>
+    <string name="video_scale_mode_toast">Escalado de vídeo: %1$s</string>
 </resources>

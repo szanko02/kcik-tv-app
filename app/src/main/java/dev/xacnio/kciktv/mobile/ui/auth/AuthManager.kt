@@ -334,15 +334,11 @@ class AuthManager(
                 binding.chatInputContainer.visibility = View.VISIBLE
                 binding.quickEmoteRecyclerView.visibility = View.VISIBLE
                 binding.loyaltyPointsButton.visibility = View.VISIBLE
-                binding.loyaltyStoreButton.visibility = if (activity.isSubscriptionEnabled) View.VISIBLE else View.GONE
-                (binding.chatSettingsButton.layoutParams as? android.view.ViewGroup.MarginLayoutParams)?.apply {
-                    marginStart = ((if (activity.isSubscriptionEnabled) 4 else 12) * activity.resources.displayMetrics.density).toInt()
-                    binding.chatSettingsButton.layoutParams = this
-                }
-                
+
                 activity.chatInputStateManager.updateInputState()
                 activity.chatUiManager.updateChatModeIndicators()
-                
+                activity.chatInputResponsiveController.reapply()
+
                 activity.chatInputStateManager.startSlowModeCountdown()
             }
         } else {
@@ -350,14 +346,9 @@ class AuthManager(
             binding.chatLoginOverlay.visibility = View.VISIBLE
             binding.chatBannedOverlay.visibility = View.GONE
             binding.quickEmoteRecyclerView.visibility = View.GONE
-            binding.loyaltyPointsButton.visibility = View.GONE
-            binding.loyaltyStoreButton.visibility = View.GONE
-            (binding.chatSettingsButton.layoutParams as? android.view.ViewGroup.MarginLayoutParams)?.apply {
-                marginStart = (12 * activity.resources.displayMetrics.density).toInt()
-                binding.chatSettingsButton.layoutParams = this
-            }
             // Keep container visible so settings button is shown
             binding.chatInputContainer.visibility = View.VISIBLE
+            activity.chatInputResponsiveController.reapply()
             
             // Hide Quick Emote Menu if not logged in
             if (binding.emotePanelContainer.visibility == View.VISIBLE) {

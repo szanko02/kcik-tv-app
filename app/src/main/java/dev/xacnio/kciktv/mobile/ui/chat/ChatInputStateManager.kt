@@ -136,6 +136,7 @@ class ChatInputStateManager(private val activity: MobilePlayerActivity) {
             activity.binding.chatSendButton.isEnabled = isCelebration
             if (!isCelebration) {
                 activity.binding.chatInput.hint = activity.getString(R.string.chat_hint_login_required)
+                activity.chatInputResponsiveController.reapply()
                 return
             }
         }
@@ -159,24 +160,13 @@ class ChatInputStateManager(private val activity: MobilePlayerActivity) {
         if ((activity.isBannedFromCurrentChannel || activity.isCheckingBanStatus) && !isCelebration) {
             activity.binding.chatInput.isEnabled = false
             activity.binding.chatSendButton.isEnabled = false
-            // But we still want to ensure button visibility is consistent
-            activity.binding.chatSendContainer.visibility = if (hasText) View.VISIBLE else View.GONE
-            activity.binding.chatSendButton.visibility = if (hasText) View.VISIBLE else View.GONE
-            activity.binding.chatSettingsButton.visibility = if (hasText) View.GONE else View.VISIBLE
+            activity.chatInputResponsiveController.reapply()
             return
         }
 
         activity.binding.chatInput.isEnabled = !isLocked || isCelebration
         activity.binding.chatSendButton.isEnabled = (!isLocked && !isSlowModeActive && hasText) || isCelebration
-        
-        if (hasText || isCelebration) {
-            activity.binding.chatSendContainer.visibility = View.VISIBLE
-            activity.binding.chatSendButton.visibility = View.VISIBLE
-            activity.binding.chatSettingsButton.visibility = View.GONE
-        } else {
-            activity.binding.chatSendContainer.visibility = View.GONE
-            activity.binding.chatSendButton.visibility = View.GONE
-            activity.binding.chatSettingsButton.visibility = View.VISIBLE
-        }
+
+        activity.chatInputResponsiveController.reapply()
     }
 }

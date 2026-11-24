@@ -1458,4 +1458,13 @@
     <string name="update_source_fork">Fork (szanko02)</string>
     <string name="update_source_upstream">Upstream (xacnio)</string>
     <string name="whats_new_empty">Bu güncelleme kaynağında henüz yayınlanmış sürüm yok.</string>
+
+    <!-- Fullscreen Cutout & Video Scaling -->
+    <string name="setting_draw_under_cutout">Kamera Çentiğinin Altına Uzat</string>
+    <string name="setting_draw_under_cutout_desc">Yatay tam ekranda videoyu kamera çentiği alanına kadar genişlet</string>
+    <string name="setting_fullscreen_scale_mode">Tam Ekran Video Ölçekleme</string>
+    <string name="video_scale_fit">Sığdır</string>
+    <string name="video_scale_zoom">Yakınlaştır (Çentiği Doldur)</string>
+    <string name="video_scale_fill">Uzat</string>
+    <string name="video_scale_mode_toast">Video ölçekleme: %1$s</string>
 </resources>

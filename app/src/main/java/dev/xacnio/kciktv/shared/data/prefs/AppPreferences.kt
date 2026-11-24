@@ -15,6 +15,7 @@ import com.google.gson.reflect.TypeToken
 import dev.xacnio.kciktv.shared.util.CryptoManager
 import dev.xacnio.kciktv.shared.data.prefs.AppPreferences
 import dev.xacnio.kciktv.R
+import dev.xacnio.kciktv.mobile.ui.player.VideoCutoutScalingPolicy
 
 class AppPreferences(private val context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("kick_tv_prefs", Context.MODE_PRIVATE)
@@ -41,6 +42,9 @@ class AppPreferences(private val context: Context) {
         const val CHAT_SPACING_DEFAULT = 4
         const val UPDATE_SOURCE_FORK = "fork"
         const val UPDATE_SOURCE_UPSTREAM = "upstream"
+        const val RESIZE_MODE_FIT = "FIT"
+        const val RESIZE_MODE_ZOOM = "ZOOM"
+        const val RESIZE_MODE_FILL = "FILL"
 
         private val decryptCache = java.util.concurrent.ConcurrentHashMap<String, String>()
         private const val ABSENT = "__kick_tv_absent__"
@@ -951,4 +955,17 @@ class AppPreferences(private val context: Context) {
     var fullscreenSensorRotation: Boolean
         get() = prefs.getBoolean("fullscreen_sensor_rotation", true)
         set(value) = prefs.edit().putBoolean("fullscreen_sensor_rotation", value).apply()
+
+    var drawUnderCutout: Boolean
+        get() = prefs.getBoolean("draw_under_cutout", true)
+        set(value) = prefs.edit().putBoolean("draw_under_cutout", value).apply()
+
+    var fullscreenResizeMode: String
+        get() = VideoCutoutScalingPolicy.fromPref(
+            prefs.getString("fullscreen_resize_mode", RESIZE_MODE_FIT)
+        ).prefValue
+        set(value) = prefs.edit().putString(
+            "fullscreen_resize_mode",
+            VideoCutoutScalingPolicy.fromPref(value).prefValue
+        ).apply()
 }
