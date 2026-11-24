@@ -41,8 +41,10 @@ captures/
 *.iws
 
 # Keystore files
+keystore/
 *.jks
 *.keystore
+keystore-info.txt
 
 # External native build folder generated in Android Studio 2.2 and later
 .externalNativeBuild

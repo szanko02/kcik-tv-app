@@ -20,6 +20,19 @@ fun getGitHash(): String {
     }
 }
 
+fun getGitCommitCount(): Int {
+    return try {
+        val stdout = ByteArrayOutputStream()
+        project.exec {
+            commandLine("git", "rev-list", "--count", "HEAD")
+            standardOutput = stdout
+        }
+        stdout.toString().trim().toIntOrNull()?.takeIf { it > 0 } ?: 1
+    } catch (e: Exception) {
+        1
+    }
+}
+
 android {
     namespace = "dev.xacnio.kciktv"
     compileSdk = 34
@@ -28,9 +41,11 @@ android {
         applicationId = "dev.xacnio.kciktv"
         minSdk = 23
         targetSdk = 34
-        versionCode = 17
-        val baseVersion = "2.4.5-beta"
-        versionName = "$baseVersion-${getGitHash()}"
+        versionCode = 100 + getGitCommitCount()
+        val baseVersion = "2.5.0"
+        versionName = providers.gradleProperty("appVersionName").orNull
+            ?: System.getenv("VERSION")?.takeIf { it.isNotBlank() }
+            ?: "$baseVersion-${getGitHash()}"
 
         // Native RNNoise noise-suppression library (see src/main/cpp).
         externalNativeBuild {
@@ -61,8 +76,38 @@ android {
         }
     }
 
+    val keystorePathProp = providers.gradleProperty("KEYSTORE_PATH").orNull
+        ?: System.getenv("KEYSTORE_PATH")?.takeIf { it.isNotBlank() }
+    val resolvedKeystoreFile = keystorePathProp?.let { file(it) }
+        ?: file("../keystore/kciktv-fork-release.jks")
+    val keystorePasswordVal = providers.gradleProperty("KEY_STORE_PASSWORD").orNull
+        ?: System.getenv("KEY_STORE_PASSWORD")?.takeIf { it.isNotBlank() }
+    val keyAliasVal = providers.gradleProperty("ALIAS").orNull
+        ?: System.getenv("ALIAS")?.takeIf { it.isNotBlank() }
+    val keyPasswordVal = providers.gradleProperty("KEY_PASSWORD").orNull
+        ?: System.getenv("KEY_PASSWORD")?.takeIf { it.isNotBlank() }
+
+    signingConfigs {
+        if (resolvedKeystoreFile.exists() &&
+            !keystorePasswordVal.isNullOrBlank() &&
+            !keyAliasVal.isNullOrBlank() &&
+            !keyPasswordVal.isNullOrBlank()
+        ) {
+            create("release") {
+                storeFile = resolvedKeystoreFile
+                storePassword = keystorePasswordVal
+                keyAlias = keyAliasVal
+                keyPassword = keyPasswordVal
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("release")
             // R8 minify + resource shrink: removes unused code + unreferenced resources.
             // Typical savings on this app: APK ~25-40% smaller, fewer classes loaded at
             // startup, lower steady-state RAM. proguard-rules.pro covers IVS Player,
