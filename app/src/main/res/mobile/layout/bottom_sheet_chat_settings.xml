@@ -790,6 +790,87 @@
                                 android:layout_marginTop="2dp"
                                 android:paddingHorizontal="0dp" />
                         </LinearLayout>
+
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:background="#2C2C2E" />
+
+                        <!-- Transparent Chat Overlay -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="52dp"
+                            android:paddingVertical="8dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_weight="1"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:layout_marginEnd="12dp">
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/setting_transparent_chat_overlay"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp" />
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:text="@string/setting_transparent_chat_overlay_desc"
+                                    android:textColor="#5A5A5E"
+                                    android:textSize="12sp" />
+                            </LinearLayout>
+                            <androidx.appcompat.widget.SwitchCompat
+                                android:id="@+id/switchTransparentChatOverlay"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content" />
+                        </LinearLayout>
+
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:background="#2C2C2E" />
+
+                        <!-- Overlay Background Opacity -->
+                        <LinearLayout
+                            android:id="@+id/layoutChatOverlayOpacity"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:paddingVertical="4dp">
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical">
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_weight="1"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/setting_chat_overlay_opacity"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp" />
+                                <TextView
+                                    android:id="@+id/textValueChatOverlayOpacity"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    tools:text="50%"
+                                    android:textColor="#53FC18"
+                                    android:textSize="12sp"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+                            <SeekBar
+                                android:id="@+id/seekBarChatOverlayOpacity"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:max="100"
+                                android:paddingHorizontal="0dp" />
+                        </LinearLayout>
                     </LinearLayout>
 
                     <!-- SECTION HEADER: Features -->

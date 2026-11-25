@@ -152,6 +152,37 @@ class VideoCutoutScalingPolicyTest {
     }
 
     @Test
+    fun resolveEffectiveScaleMode_allowsZoomAndFillWhenTransparentSideChatOverlayIsEnabled() {
+        for (preferred in VideoScaleMode.values()) {
+            assertEquals(
+                preferred,
+                VideoCutoutScalingPolicy.resolveEffectiveScaleMode(
+                    isFullscreen = true,
+                    isTheatreMode = false,
+                    isInPip = false,
+                    isMiniPlayer = false,
+                    isSideChatVisible = true,
+                    preferredMode = preferred,
+                    transparentChatOverlayEnabled = true
+                )
+            )
+        }
+        // Docked split-screen (transparentChatOverlayEnabled = false) still forces FIT
+        assertEquals(
+            VideoScaleMode.FIT,
+            VideoCutoutScalingPolicy.resolveEffectiveScaleMode(
+                isFullscreen = true,
+                isTheatreMode = false,
+                isInPip = false,
+                isMiniPlayer = false,
+                isSideChatVisible = true,
+                preferredMode = VideoScaleMode.ZOOM,
+                transparentChatOverlayEnabled = false
+            )
+        )
+    }
+
+    @Test
     fun resolvePinchScaleMode_respectsThresholdsCurrentModeAndInvalidFactors() {
         // Pinch out -> ZOOM when not already ZOOM
         assertEquals(VideoScaleMode.ZOOM, VideoCutoutScalingPolicy.resolvePinchScaleMode(1.15f, VideoScaleMode.FIT))

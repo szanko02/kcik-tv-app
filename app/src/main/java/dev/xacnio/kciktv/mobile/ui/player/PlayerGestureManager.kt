@@ -31,7 +31,7 @@ class PlayerGestureManager(private val activity: MobilePlayerActivity) {
             activity.isInPictureInPictureMode
         return activity.isFullscreen &&
             !activity.fullscreenToggleManager.isTheatreMode &&
-            !activity.fullscreenToggleManager.isSideChatVisible &&
+            !activity.fullscreenToggleManager.isDockedSideChatActive() &&
             !isInPip &&
             !activity.miniPlayerManager.isMiniPlayerMode
     }

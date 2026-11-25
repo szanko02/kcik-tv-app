@@ -1464,4 +1464,9 @@
     <string name="video_scale_zoom">Yakınlaştır (Çentiği Doldur)</string>
     <string name="video_scale_fill">Uzat</string>
     <string name="video_scale_mode_toast">Video ölçekleme: %1$s</string>
+
+    <!-- Transparent Chat Overlay -->
+    <string name="setting_transparent_chat_overlay">Şeffaf Sohbet Katmanı</string>
+    <string name="setting_transparent_chat_overlay_desc">Yatay tam ekranda yarı şeffaf sohbeti videonun üzerine yerleştir</string>
+    <string name="setting_chat_overlay_opacity">Katman Arka Plan Opaklığı</string>
 </resources>

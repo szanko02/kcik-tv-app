@@ -1464,4 +1464,9 @@
     <string name="video_scale_zoom">Zoom (llenar recorte)</string>
     <string name="video_scale_fill">Estirar</string>
     <string name="video_scale_mode_toast">Escalado de vídeo: %1$s</string>
+
+    <!-- Transparent Chat Overlay -->
+    <string name="setting_transparent_chat_overlay">Chat transparente superpuesto</string>
+    <string name="setting_transparent_chat_overlay_desc">Superponer el chat semitransparente sobre el vídeo en pantalla completa en horizontal</string>
+    <string name="setting_chat_overlay_opacity">Opacidad del fondo del chat</string>
 </resources>

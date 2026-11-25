@@ -150,6 +150,9 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
     private var originalChatParent: android.view.ViewGroup? = null
     private var originalChatIndex: Int = -1
     private var originalChatParams: android.view.ViewGroup.LayoutParams? = null
+    private var lastWindowInsets: WindowInsetsCompat? = null
+    private var theatreImeOpen: Boolean = false
+    private var activeSideChatAnimator: android.animation.ValueAnimator? = null
 
     // Side Chat Resize Handle State
     private var isDividerSetup = false
@@ -160,6 +163,12 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
     private var pillDrawable: android.graphics.drawable.GradientDrawable? = null
     private var badgeDrawable: android.graphics.drawable.GradientDrawable? = null
     private var sideChatWidthPreviewLine: View? = null
+
+    private fun isTransparentSideChatActive(): Boolean =
+        isSideChatVisible && prefs.transparentChatOverlayEnabled
+
+    fun isDockedSideChatActive(): Boolean =
+        ChatOverlayStyleUtils.isDockedSideChat(isSideChatVisible, prefs.transparentChatOverlayEnabled)
 
     private fun effectiveRootWidth(rootWidth: Int = binding.root.width): Int {
         if (rootWidth > 0) return rootWidth
@@ -172,6 +181,20 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             effectiveRootWidth(rootWidth),
             percent
         )
+    }
+
+    private fun currentSideChatWidthPx(rootWidth: Int = effectiveRootWidth()): Int {
+        val activePercent = if (isDraggingDivider && lastDraggedPercent > 0) {
+            lastDraggedPercent
+        } else {
+            prefs.sideChatWidthPercent
+        }
+        val lpWidth = binding.sideChatContainer.layoutParams?.width ?: 0
+        return if (isSideChatVisible && lpWidth > 0) {
+            lpWidth
+        } else {
+            computeSideChatWidthPx(rootWidth, activePercent)
+        }
     }
 
     private fun ensureSideChatDividerSetup() {
@@ -331,8 +354,23 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             binding.sideChatContainer.layoutParams = chatParams
         }
 
-        val isTablet = activity.isTabletOrLargeWindow()
         val videoParams = binding.videoContainer.layoutParams as ConstraintLayout.LayoutParams
+        if (prefs.transparentChatOverlayEnabled) {
+            videoParams.width = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT
+            videoParams.height = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT
+            videoParams.dimensionRatio = null
+            videoParams.startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+            videoParams.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+            videoParams.endToStart = ConstraintLayout.LayoutParams.UNSET
+            videoParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+            videoParams.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+            videoParams.verticalBias = 0.5f
+            binding.videoContainer.layoutParams = videoParams
+            refreshPlayerWindowInsets()
+            return
+        }
+
+        val isTablet = activity.isTabletOrLargeWindow()
         if (isTablet) {
             videoParams.width = (rootWidth - newChatWidth).coerceAtLeast(1)
             videoParams.dimensionRatio = "H,16:9"
@@ -345,6 +383,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         videoParams.endToStart = R.id.sideChatContainer
         videoParams.endToEnd = ConstraintLayout.LayoutParams.UNSET
         binding.videoContainer.layoutParams = videoParams
+        refreshPlayerWindowInsets()
     }
 
     fun updateSideChatHandleVisibility(overlayVisible: Boolean? = null) {
@@ -515,11 +554,14 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
      *                    Used during playChannel to ensure absolutely clean state.
      */
     internal fun cleanupSideChat(forceReset: Boolean = false) {
+        activeSideChatAnimator?.cancel()
+        activeSideChatAnimator = null
         hideSideChatDivider()
         // Use early return guard for normal calls, but skip it if forcing reset
         if (!forceReset && !isSideChatVisible && binding.sideChatContainer.visibility != View.VISIBLE) return
         
         val chat = binding.chatContainer
+        binding.sideChatContainer.translationX = 0f
         binding.sideChatContainer.visibility = View.GONE
         
         // Remove chat from side container if it's there
@@ -533,7 +575,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             }
         }
         
-        // --- Restore ActionBar (Tablets) ---
+        // --- Restore ActionBar (Tablets / Phone Side Chat) ---
         if (isActionBarReparentedToSide) {
             val actionBar = binding.actionBar
             if (actionBar.parent == binding.sideChatContainer) {
@@ -548,16 +590,20 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             }
         }
 
-        // Restore default background
-        chat.setBackgroundColor(android.graphics.Color.parseColor("#0f0f0f"))
         isSideChatVisible = false
-        originalChatParent = null 
+        originalChatParent = null
+        chat.setPadding(chat.paddingLeft, chat.paddingTop, chat.paddingRight, 0)
         
         // CRITICAL: Reset video layout params to prevent "Stuck Split Screen"
         val params = binding.videoContainer.layoutParams as ConstraintLayout.LayoutParams
         params.endToStart = ConstraintLayout.LayoutParams.UNSET
         params.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
         binding.videoContainer.layoutParams = params
+
+        // Restore all overlay backgrounds, text shadows, control insets, and resize mode
+        applyChatOverlayAppearance()
+        refreshPlayerWindowInsets()
+        applyEffectiveVideoResizeMode()
 
         // Restore Chat Rules Container to default
         activity.chatRulesManager.updateContainer(activity.binding.bottomSheetCoordinator)
@@ -597,6 +643,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
 
         // Enable theatre mode preference
         isTheatreMode = true
+        theatreImeOpen = false
         applyDisplayCutoutMode()
         applyEffectiveVideoResizeMode()
 
@@ -668,14 +715,9 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             // Also force top padding to 0 for Theatre Mode
             view.setPadding(view.paddingLeft, 0, view.paddingRight, 0)
             
-            // Adjust background opacity when keyboard is open (60% Black) to improve readability
-            if (keyboardHeight > 0) {
-                binding.chatListContainer.setBackgroundColor(android.graphics.Color.parseColor("#99000000"))
-                binding.quickEmoteRecyclerView.setBackgroundColor(android.graphics.Color.parseColor("#99000000"))
-            } else {
-                binding.chatListContainer.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                binding.quickEmoteRecyclerView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-            }
+            // Track keyboard open state and re-apply user-configured overlay opacity (with IME floor)
+            theatreImeOpen = keyboardHeight > 0
+            applyChatOverlayAppearance()
             
             insets
         }
@@ -1188,6 +1230,9 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             }
         }
 
+        // Apply configured transparent overlay opacity & text shadows across Theatre Mode views
+        applyChatOverlayAppearance()
+
         // Show toast
         Toast.makeText(activity, R.string.theatre_mode_enabled, Toast.LENGTH_SHORT).show()
     }
@@ -1303,6 +1348,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         binding.playerSeekBar.visibility = View.VISIBLE
 
         isTheatreMode = false
+        theatreImeOpen = false
 
         // Respect system rotation setting when exiting theatre mode
         // Always force portrait to guarantee the rotation fires even if the device is held
@@ -1681,8 +1727,9 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         // Reset quick emote bar background
         binding.quickEmoteRecyclerView.setBackgroundColor(android.graphics.Color.parseColor("#151515"))
         
-        // Hide bottom gradient
+        // Hide bottom gradient and restore solid styling/shadows across all chat & overlay cards
         binding.theatreBottomGradient.visibility = View.GONE
+        applyChatOverlayAppearance()
 
         // Restore video overlay to original parent
         val overlay = binding.videoOverlay
@@ -2019,11 +2066,16 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
     }
 
     fun onPlayerWindowInsetsChanged(playerScreenView: View, windowInsets: WindowInsetsCompat) {
+        lastWindowInsets = windowInsets
         ensureBaseCutoutPaddingsCaptured()
         val topBarBase = baseVideoTopBarPadding!!
         val overlayBase = baseVideoOverlayPadding!!
         val playPauseBase = basePlayPauseOverlayPadding!!
         val sideChatBase = baseSideChatPadding!!
+        val sideChatOverlayRightInset = ChatOverlayStyleUtils.computeRightControlsOverlapInsetPx(
+            isTransparentSideChatActive = isTransparentSideChatActive(),
+            overlayWidthPx = currentSideChatWidthPx(effectiveRootWidth(playerScreenView.width))
+        )
 
         if (activity.isFullscreen && !isTheatreMode) {
             if (playerScreenView.paddingLeft != 0 ||
@@ -2036,16 +2088,17 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             if (prefs.drawUnderCutout) {
                 val cutout = windowInsets.getInsets(WindowInsetsCompat.Type.displayCutout())
                 val overlayLeft = cutout.left
-                val overlayRight = if (isSideChatVisible) 0 else cutout.right
+                val baseCutoutRight = if (isSideChatVisible) 0 else cutout.right
+                val overlayRight = maxOf(baseCutoutRight, sideChatOverlayRightInset)
                 val sideChatRight = if (isSideChatVisible) cutout.right else 0
                 applyHorizontalPadding(binding.videoTopBar, topBarBase.left + overlayLeft, topBarBase.right + overlayRight)
                 applyHorizontalPadding(binding.videoOverlay, overlayBase.left + overlayLeft, overlayBase.right + overlayRight)
                 applyHorizontalPadding(binding.playPauseOverlay, playPauseBase.left + overlayLeft, playPauseBase.right + overlayRight)
                 applyHorizontalPadding(binding.sideChatContainer, sideChatBase.left, sideChatBase.right + sideChatRight)
             } else {
-                applyHorizontalPadding(binding.videoTopBar, topBarBase.left, topBarBase.right)
-                applyHorizontalPadding(binding.videoOverlay, overlayBase.left, overlayBase.right)
-                applyHorizontalPadding(binding.playPauseOverlay, playPauseBase.left, playPauseBase.right)
+                applyHorizontalPadding(binding.videoTopBar, topBarBase.left, topBarBase.right + sideChatOverlayRightInset)
+                applyHorizontalPadding(binding.videoOverlay, overlayBase.left, overlayBase.right + sideChatOverlayRightInset)
+                applyHorizontalPadding(binding.playPauseOverlay, playPauseBase.left, playPauseBase.right + sideChatOverlayRightInset)
                 applyHorizontalPadding(binding.sideChatContainer, sideChatBase.left, sideChatBase.right)
             }
         } else {
@@ -2058,10 +2111,32 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
                     sys.bottom
                 )
             }
-            applyHorizontalPadding(binding.videoTopBar, topBarBase.left, topBarBase.right)
-            applyHorizontalPadding(binding.videoOverlay, overlayBase.left, overlayBase.right)
-            applyHorizontalPadding(binding.playPauseOverlay, playPauseBase.left, playPauseBase.right)
+            applyHorizontalPadding(binding.videoTopBar, topBarBase.left, topBarBase.right + sideChatOverlayRightInset)
+            applyHorizontalPadding(binding.videoOverlay, overlayBase.left, overlayBase.right + sideChatOverlayRightInset)
+            applyHorizontalPadding(binding.playPauseOverlay, playPauseBase.left, playPauseBase.right + sideChatOverlayRightInset)
             applyHorizontalPadding(binding.sideChatContainer, sideChatBase.left, sideChatBase.right)
+        }
+    }
+
+    private fun refreshPlayerWindowInsets() {
+        val insets = lastWindowInsets ?: ViewCompat.getRootWindowInsets(binding.playerScreenContainer)
+        if (insets != null) {
+            onPlayerWindowInsetsChanged(binding.playerScreenContainer, insets)
+        } else {
+            ensureBaseCutoutPaddingsCaptured()
+            val topBarBase = baseVideoTopBarPadding!!
+            val overlayBase = baseVideoOverlayPadding!!
+            val playPauseBase = basePlayPauseOverlayPadding!!
+            val sideChatBase = baseSideChatPadding!!
+            val sideChatOverlayRightInset = ChatOverlayStyleUtils.computeRightControlsOverlapInsetPx(
+                isTransparentSideChatActive = isTransparentSideChatActive(),
+                overlayWidthPx = currentSideChatWidthPx()
+            )
+            applyHorizontalPadding(binding.videoTopBar, topBarBase.left, topBarBase.right + sideChatOverlayRightInset)
+            applyHorizontalPadding(binding.videoOverlay, overlayBase.left, overlayBase.right + sideChatOverlayRightInset)
+            applyHorizontalPadding(binding.playPauseOverlay, playPauseBase.left, playPauseBase.right + sideChatOverlayRightInset)
+            applyHorizontalPadding(binding.sideChatContainer, sideChatBase.left, sideChatBase.right)
+            ViewCompat.requestApplyInsets(binding.playerScreenContainer)
         }
     }
 
@@ -2086,7 +2161,8 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             isInPip = isInPip,
             isMiniPlayer = isMiniPlayer,
             isSideChatVisible = isSideChatVisible,
-            preferredMode = preferredMode
+            preferredMode = preferredMode,
+            transparentChatOverlayEnabled = prefs.transparentChatOverlayEnabled
         )
         val targetResizeMode = when (effectiveMode) {
             VideoScaleMode.FIT -> com.amazonaws.ivs.player.ResizeMode.FIT
@@ -2097,7 +2173,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             binding.playerView.resizeMode = targetResizeMode
         }
 
-        val showScaleButton = isFullscreen && !isTheatreMode && !isInPip && !isMiniPlayer && !isSideChatVisible
+        val showScaleButton = isFullscreen && !isTheatreMode && !isInPip && !isMiniPlayer && !isDockedSideChatActive()
         binding.fullscreenScaleButton.visibility = if (showScaleButton) View.VISIBLE else View.GONE
         val tintColor = if (effectiveMode == VideoScaleMode.FIT) {
             Color.WHITE
@@ -2182,14 +2258,18 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         
         android.util.Log.d("FullscreenToggle", "showSideChat: isLandscape=$isLandscape, isSideChatVisible=$isSideChatVisible, isTheatreMode=$isTheatreMode, root=${checkWidth}x${checkHeight}")
         
-        // Side-by-side split screen is EXCLUSIVELY for landscape tablet mode
         if (isSideChatVisible || !isLandscape || isTheatreMode) return
+
+        activeSideChatAnimator?.cancel()
+        activeSideChatAnimator = null
         
         val displayMetrics = activity.resources.displayMetrics
+        val density = displayMetrics.density
         val rootWidth = effectiveRootWidth(checkWidth)
         
         val chat = binding.chatContainer
         val isTablet = activity.isTabletOrLargeWindow()
+        val useTransparentOverlay = prefs.transparentChatOverlayEnabled
         
         // Save original parent and params
         originalChatParent = chat.parent as? android.view.ViewGroup
@@ -2233,27 +2313,27 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
                 // Adjust actionBar params for the new LinearLayout parent
                 val aParams = android.widget.LinearLayout.LayoutParams(
                     android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
-                    (44 * activity.resources.displayMetrics.density).toInt()
+                    (44 * density).toInt()
                 )
                 actionBar.layoutParams = aParams
                 actionBar.visibility = View.VISIBLE
                 isActionBarReparentedToSide = true
             }
+            activity.chatRulesManager.updateContainer(binding.sideChatContainer)
         }
         
-        // Ensure background is solid for tablets (split view feel), semi-transparent for phones
-        if (isTablet) {
+        if (useTransparentOverlay) {
+            binding.sideChatContainer.elevation = 180f * density
+            if (isTablet) {
+                binding.infoPanel.visibility = View.GONE
+            }
+        } else if (isTablet) {
             chat.setBackgroundColor(android.graphics.Color.parseColor("#0f0f0f"))
             binding.sideChatContainer.setBackgroundColor(android.graphics.Color.parseColor("#0f0f0f"))
             binding.sideChatContainer.elevation = 0f
             binding.infoPanel.visibility = View.VISIBLE
-            
-            // Update Chat Rules Container to Side Chat
-            activity.chatRulesManager.updateContainer(binding.sideChatContainer)
         } else {
             chat.setBackgroundColor(android.graphics.Color.parseColor("#FF0F0F0F"))
-            // Restore elevation for phones as it's an overlay there
-            val density = activity.resources.displayMetrics.density
             binding.sideChatContainer.elevation = 180f * density
         }
         
@@ -2264,19 +2344,80 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         }
         
         isSideChatVisible = true
+        val chatWidth = computeSideChatWidthPx(rootWidth)
+        val dividerHalfPx = 11f * density
+
+        // Initial setup for chat width before computing window insets
+        binding.sideChatContainer.layoutParams.width = chatWidth
+
+        applyChatOverlayAppearance()
         applyDisplayCutoutMode()
+        refreshPlayerWindowInsets()
         applyEffectiveVideoResizeMode()
         ensureSideChatDividerSetup()
 
-        val chatWidth = computeSideChatWidthPx(rootWidth)
-        val dividerHalfPx = 11f * displayMetrics.density
-
-        // Initial setup for chat
-        binding.sideChatContainer.layoutParams.width = chatWidth
-        
-        // Setup video container for manual sizing
         val videoParams = binding.videoContainer.layoutParams as ConstraintLayout.LayoutParams
+        if (useTransparentOverlay) {
+            // Transparent overlay mode: keep videoContainer full-parent behind chat
+            videoParams.width = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT
+            videoParams.height = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT
+            videoParams.dimensionRatio = null
+            videoParams.topMargin = 0
+            videoParams.bottomMargin = 0
+            videoParams.startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+            videoParams.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+            videoParams.endToStart = ConstraintLayout.LayoutParams.UNSET
+            videoParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+            videoParams.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+            videoParams.verticalBias = 0.5f
+            binding.videoContainer.layoutParams = videoParams
+
+            binding.chatContainer.setPadding(
+                binding.chatContainer.paddingLeft,
+                0,
+                binding.chatContainer.paddingRight,
+                binding.chatContainer.paddingBottom
+            )
+
+            if (skipAnimation) {
+                binding.sideChatContainer.translationX = 0f
+                binding.sideChatDividerHandle.translationX = dividerHalfPx
+                updateSideChatHandleVisibility()
+                return
+            }
+
+            binding.sideChatContainer.translationX = chatWidth.toFloat()
+            binding.sideChatDividerHandle.translationX = chatWidth.toFloat() + dividerHalfPx
+
+            val animator = android.animation.ValueAnimator.ofFloat(0f, 1f)
+            animator.duration = 300
+            animator.interpolator = android.view.animation.DecelerateInterpolator()
+            animator.addUpdateListener { animation ->
+                val fraction = animation.animatedFraction
+                val translation = chatWidth * (1f - fraction)
+                binding.sideChatContainer.translationX = translation
+                binding.sideChatDividerHandle.translationX = translation + dividerHalfPx
+            }
+            animator.addListener(object : android.animation.AnimatorListenerAdapter() {
+                private var cancelled = false
+                override fun onAnimationCancel(animation: android.animation.Animator) {
+                    cancelled = true
+                }
+                override fun onAnimationEnd(animation: android.animation.Animator) {
+                    if (activeSideChatAnimator === animator) activeSideChatAnimator = null
+                    if (cancelled) return
+                    binding.sideChatContainer.translationX = 0f
+                    binding.sideChatDividerHandle.translationX = dividerHalfPx
+                    updateSideChatHandleVisibility()
+                }
+            })
+            activeSideChatAnimator = animator
+            animator.start()
+            updateSideChatHandleVisibility()
+            return
+        }
         
+        // Docked split-screen mode: resize videoContainer alongside chat
         if (isTablet) {
             // For tablets, we maintain 16:9 ratio so info bar is visible below on the left
             videoParams.dimensionRatio = "H,16:9"
@@ -2311,6 +2452,9 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             videoParams.endToEnd = ConstraintLayout.LayoutParams.UNSET
             binding.videoContainer.layoutParams = videoParams
             updateSideChatHandleVisibility()
+            if (!isTablet) {
+                binding.chatContainer.setPadding(binding.chatContainer.paddingLeft, 0, binding.chatContainer.paddingRight, binding.chatContainer.paddingBottom)
+            }
             return
         }
 
@@ -2348,7 +2492,13 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         }
         
         animator.addListener(object : android.animation.AnimatorListenerAdapter() {
+            private var cancelled = false
+            override fun onAnimationCancel(animation: android.animation.Animator) {
+                cancelled = true
+            }
             override fun onAnimationEnd(animation: android.animation.Animator) {
+                if (activeSideChatAnimator === animator) activeSideChatAnimator = null
+                if (cancelled) return
                 binding.sideChatDividerHandle.translationX = dividerHalfPx
                 // Finalize constraints to ensure child views (InfoPanel) resize correctly
                 val vParams = binding.videoContainer.layoutParams as ConstraintLayout.LayoutParams
@@ -2370,6 +2520,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             }
         })
         
+        activeSideChatAnimator = animator
         animator.start()
         updateSideChatHandleVisibility()
         
@@ -2386,10 +2537,13 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
     fun hideSideChat() {
         clearSideChatWidthPreview()
         if (!isSideChatVisible) return
+        activeSideChatAnimator?.cancel()
+        activeSideChatAnimator = null
         hideSideChatDivider()
 
         val chat = binding.chatContainer
         val isTablet = activity.isTabletOrLargeWindow()
+        val wasTransparentOverlay = isTransparentSideChatActive()
         
         // Calculate dimensions
         val rootWidth = effectiveRootWidth()
@@ -2407,20 +2561,22 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         animator.addUpdateListener { animation ->
             val fraction = animation.animatedFraction
             
-            // 1. Update Video Width (Grow back to rootWidth)
-            val newWidth = (currentVideoWidth + ((rootWidth - currentVideoWidth) * fraction)).toInt()
-            val params = binding.videoContainer.layoutParams as ConstraintLayout.LayoutParams
-            if (params.width != newWidth) {
-                params.width = newWidth
-                if (isTablet) {
-                    params.dimensionRatio = "H,16:9"
-                    params.height = 0
-                } else {
-                    params.dimensionRatio = null
-                    params.height = 0 // MATCH_CONSTRAINT
-                    params.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+            // 1. Update Video Width only in docked split-screen mode
+            if (!wasTransparentOverlay) {
+                val newWidth = (currentVideoWidth + ((rootWidth - currentVideoWidth) * fraction)).toInt()
+                val params = binding.videoContainer.layoutParams as ConstraintLayout.LayoutParams
+                if (params.width != newWidth) {
+                    params.width = newWidth
+                    if (isTablet) {
+                        params.dimensionRatio = "H,16:9"
+                        params.height = 0
+                    } else {
+                        params.dimensionRatio = null
+                        params.height = 0 // MATCH_CONSTRAINT
+                        params.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                    }
+                    binding.videoContainer.layoutParams = params
                 }
-                binding.videoContainer.layoutParams = params
             }
             
             // 2. Update Chat Translation (Slide out)
@@ -2429,7 +2585,14 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         }
         
         animator.addListener(object : android.animation.AnimatorListenerAdapter() {
+            private var cancelled = false
+            override fun onAnimationCancel(animation: android.animation.Animator) {
+                cancelled = true
+            }
             override fun onAnimationEnd(animation: android.animation.Animator) {
+                if (activeSideChatAnimator === animator) activeSideChatAnimator = null
+                if (cancelled) return
+                binding.sideChatContainer.translationX = 0f
                 binding.sideChatContainer.visibility = View.GONE
                 binding.sideChatContainer.removeView(chat)
                 chat.setOnTouchListener(null)
@@ -2465,10 +2628,9 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
                 if (activity.isFullscreen && !isTheatreMode) {
                     chat.visibility = View.GONE
                 } else {
-                    // Portrait - restore background
-                    chat.setBackgroundColor(android.graphics.Color.parseColor("#0f0f0f"))
                     chat.visibility = View.VISIBLE
                 }
+                chat.setPadding(chat.paddingLeft, chat.paddingTop, chat.paddingRight, 0)
                 
                 // Restore ActionBar if reparented
                 if (isActionBarReparentedToSide) {
@@ -2489,11 +2651,14 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
                 isSideChatVisible = false
                 originalChatParent = null
                 originalActionBarParent = null
+                applyChatOverlayAppearance()
                 applyDisplayCutoutMode()
+                refreshPlayerWindowInsets()
                 applyEffectiveVideoResizeMode()
             }
         })
         
+        activeSideChatAnimator = animator
         animator.start()
     }
     fun onEnterPipMode() {
@@ -2654,7 +2819,13 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         if (!isSideChatVisible) return
         updateSideChatHandleVisibility(overlayVisible = isOverlayVisible)
         val isTablet = activity.isTabletOrLargeWindow()
-        if (isTablet) return 
+        if (isTablet) {
+            if (isTransparentSideChatActive()) {
+                binding.infoPanel.visibility = View.GONE
+            }
+            applyChatOverlayAppearance()
+            return
+        }
         
         // Only apply this logic in Landscape mode (Fullscreen on phone)
         // In Portrait, ActionBar is in normal position, not side container
@@ -2717,6 +2888,263 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             chatParams.weight = 0f
             chatParams.setMargins(0, 0, 0, 0)
             chat.layoutParams = chatParams
+        }
+        applyChatOverlayAppearance()
+    }
+
+    /**
+     * Dynamically switches between Transparent Chat Overlay mode and Docked Split-Screen mode
+     * when `prefs.transparentChatOverlayEnabled` is toggled at runtime.
+     */
+    fun onTransparentChatOverlaySettingChanged() {
+        if (isSideChatVisible) {
+            activeSideChatAnimator?.cancel()
+            activeSideChatAnimator = null
+
+            val density = activity.resources.displayMetrics.density
+            val isTablet = activity.isTabletOrLargeWindow()
+            val rootWidth = effectiveRootWidth()
+            val chatWidth = computeSideChatWidthPx(rootWidth)
+
+            binding.sideChatContainer.translationX = 0f
+            binding.sideChatDividerHandle.translationX = 11f * density
+            if (binding.sideChatContainer.layoutParams.width != chatWidth) {
+                binding.sideChatContainer.layoutParams.width = chatWidth
+                binding.sideChatContainer.requestLayout()
+            }
+
+            val videoParams = binding.videoContainer.layoutParams as ConstraintLayout.LayoutParams
+            if (prefs.transparentChatOverlayEnabled) {
+                binding.sideChatContainer.elevation = 180f * density
+                if (isTablet) {
+                    binding.infoPanel.visibility = View.GONE
+                }
+                videoParams.width = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT
+                videoParams.height = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT
+                videoParams.dimensionRatio = null
+                videoParams.topMargin = 0
+                videoParams.bottomMargin = 0
+                videoParams.startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                videoParams.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                videoParams.endToStart = ConstraintLayout.LayoutParams.UNSET
+                videoParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                videoParams.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                videoParams.verticalBias = 0.5f
+            } else {
+                if (isTablet) {
+                    binding.sideChatContainer.elevation = 0f
+                    binding.infoPanel.visibility = View.VISIBLE
+                    videoParams.width = (rootWidth - chatWidth).coerceAtLeast(1)
+                    videoParams.height = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT
+                    videoParams.dimensionRatio = "H,16:9"
+                    videoParams.verticalBias = 0.0f
+                } else {
+                    binding.sideChatContainer.elevation = 180f * density
+                    videoParams.width = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT
+                    videoParams.height = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT
+                    videoParams.dimensionRatio = null
+                    videoParams.verticalBias = 0.5f
+                }
+                videoParams.startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                videoParams.endToStart = R.id.sideChatContainer
+                videoParams.endToEnd = ConstraintLayout.LayoutParams.UNSET
+                videoParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                videoParams.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+            }
+            binding.videoContainer.layoutParams = videoParams
+
+            sideChatWidthPreviewLine?.let { line ->
+                line.elevation = kotlin.math.max(120f, binding.sideChatContainer.elevation + 14f * density)
+            }
+
+            refreshPlayerWindowInsets()
+            applyEffectiveVideoResizeMode()
+            applyChatOverlayAppearance()
+            updateSideChatHandleVisibility()
+        } else {
+            applyEffectiveVideoResizeMode()
+            applyChatOverlayAppearance()
+        }
+    }
+
+    /**
+     * Applies background opacity, border styling, and text shadows across Landscape Transparent
+     * Side Chat, Portrait Theatre Mode, or restores Solid/Docked defaults.
+     *
+     * @param overrideOpacityPercent Optional live preview opacity (0..100) while dragging SeekBar.
+     */
+    fun applyChatOverlayAppearance(overrideOpacityPercent: Int? = null) {
+        val rawOpacity = overrideOpacityPercent ?: prefs.chatOverlayOpacityPercent
+        val opacity = ChatOverlayStyleUtils.clampOpacityPercent(rawOpacity)
+
+        if (isTransparentSideChatActive()) {
+            // 1. Landscape Transparent Side Chat Overlay
+            binding.sideChatContainer.setBackgroundColor(
+                ChatOverlayStyleUtils.argbWithOpacity(0x000000, opacity)
+            )
+            binding.chatContainer.setBackgroundColor(Color.TRANSPARENT)
+            binding.chatListContainer.setBackgroundColor(Color.TRANSPARENT)
+            binding.chatRecyclerView.setBackgroundColor(Color.TRANSPARENT)
+            binding.actionBar.setBackgroundColor(
+                ChatOverlayStyleUtils.argbWithOpacity(0x121212, opacity)
+            )
+            binding.chatInputRoot.setBackgroundColor(
+                ChatOverlayStyleUtils.argbWithOpacity(0x1A1A1A, opacity)
+            )
+            binding.quickEmoteRecyclerView.setBackgroundColor(
+                ChatOverlayStyleUtils.argbWithOpacity(0x151515, opacity)
+            )
+            binding.commandSuggestionsRecycler.setBackgroundColor(
+                ChatOverlayStyleUtils.argbWithOpacity(0x1A1A1A, maxOf(opacity, 50))
+            )
+            binding.replyContainer.setBackgroundColor(
+                ChatOverlayStyleUtils.argbWithOpacity(0x222222, opacity)
+            )
+            applyLoginAndBannedOverlayBackgrounds(opacityPercent = opacity, translucent = true)
+            applyChatInputBackground(opacityPercent = opacity, forceSolid = false)
+
+            binding.pinnedGiftsBlur.setBackgroundColor(
+                ChatOverlayStyleUtils.argbWithOpacity(0x0F0F0F, opacity)
+            )
+            val cardOpacity = maxOf(opacity, 35)
+            binding.pinnedBlurView.setBackgroundColor(
+                ChatOverlayStyleUtils.argbWithOpacity(0x1A1A1A, cardOpacity)
+            )
+            binding.pollContainer.setCardBackgroundColor(
+                ChatOverlayStyleUtils.argbWithOpacity(0x1A1A1A, cardOpacity)
+            )
+            binding.predictionContainer.setCardBackgroundColor(
+                ChatOverlayStyleUtils.argbWithOpacity(0x1A1A1A, cardOpacity)
+            )
+
+            applyOverlayTextShadows(
+                ChatOverlayStyleUtils.shouldUseTextShadow(isTransparentOverlayActive = true, opacityPercent = opacity)
+            )
+        } else if (isTheatreMode) {
+            // 2. Portrait Theatre Mode
+            val effectiveOpacity = ChatOverlayStyleUtils.effectiveTheatreKeyboardOpacity(opacity, theatreImeOpen)
+            binding.chatContainer.setBackgroundColor(
+                ChatOverlayStyleUtils.argbWithOpacity(0x000000, effectiveOpacity)
+            )
+            binding.chatListContainer.setBackgroundColor(Color.TRANSPARENT)
+            binding.chatRecyclerView.setBackgroundColor(Color.TRANSPARENT)
+            binding.theatreBottomGradient.alpha = ChatOverlayStyleUtils.theatreGradientAlpha(effectiveOpacity)
+            binding.actionBar.setBackgroundColor(
+                ChatOverlayStyleUtils.argbWithOpacity(0x121212, maxOf(opacity, 65))
+            )
+            binding.chatInputRoot.setBackgroundColor(Color.TRANSPARENT)
+            binding.quickEmoteRecyclerView.setBackgroundColor(Color.TRANSPARENT)
+            binding.commandSuggestionsRecycler.setBackgroundColor(
+                ChatOverlayStyleUtils.argbWithOpacity(0x1A1A1A, maxOf(effectiveOpacity, 60))
+            )
+            binding.replyContainer.setBackgroundColor(
+                ChatOverlayStyleUtils.argbWithOpacity(0x222222, effectiveOpacity)
+            )
+            applyLoginAndBannedOverlayBackgrounds(opacityPercent = effectiveOpacity, translucent = true)
+            applyChatInputBackground(opacityPercent = effectiveOpacity, forceSolid = false)
+
+            binding.pinnedGiftsBlur.setBackgroundColor(
+                ChatOverlayStyleUtils.argbWithOpacity(0x0F0F0F, maxOf(opacity, 35))
+            )
+            val cardOpacity = maxOf(opacity, 35)
+            binding.pinnedBlurView.setBackgroundColor(
+                ChatOverlayStyleUtils.argbWithOpacity(0x1A1A1A, cardOpacity)
+            )
+            binding.pollContainer.setCardBackgroundColor(
+                ChatOverlayStyleUtils.argbWithOpacity(0x1A1A1A, cardOpacity)
+            )
+            binding.predictionContainer.setCardBackgroundColor(
+                ChatOverlayStyleUtils.argbWithOpacity(0x1A1A1A, cardOpacity)
+            )
+
+            applyOverlayTextShadows(
+                ChatOverlayStyleUtils.shouldUseTextShadow(
+                    isTransparentOverlayActive = true,
+                    opacityPercent = effectiveOpacity
+                )
+            )
+        } else {
+            // 3. Solid / Docked / Normal Mode — restore exact XML & dark UI defaults
+            binding.sideChatContainer.setBackgroundColor(Color.parseColor("#0f0f0f"))
+            binding.chatContainer.setBackgroundColor(Color.parseColor("#0f0f0f"))
+            binding.chatListContainer.setBackgroundColor(Color.TRANSPARENT)
+            binding.chatRecyclerView.setBackgroundColor(Color.TRANSPARENT)
+            binding.theatreBottomGradient.alpha = 1f
+            binding.actionBar.setBackgroundColor(Color.parseColor("#CC1a1a1a"))
+            binding.chatInputRoot.setBackgroundColor(Color.parseColor("#1a1a1a"))
+            binding.quickEmoteRecyclerView.setBackgroundColor(Color.parseColor("#151515"))
+            binding.commandSuggestionsRecycler.setBackgroundColor(Color.parseColor("#1A1A1A"))
+            binding.replyContainer.setBackgroundColor(Color.parseColor("#222222"))
+            applyLoginAndBannedOverlayBackgrounds(opacityPercent = 100, translucent = false)
+            applyChatInputBackground(opacityPercent = 100, forceSolid = true)
+
+            binding.pinnedGiftsBlur.setBackgroundColor(Color.parseColor("#CC0f0f0f"))
+            binding.pinnedBlurView.setBackgroundColor(Color.parseColor("#EB1A1A1A"))
+            binding.pollContainer.setCardBackgroundColor(Color.parseColor("#F21A1A1A"))
+            binding.predictionContainer.setCardBackgroundColor(Color.parseColor("#F21A1A1A"))
+
+            applyOverlayTextShadows(false)
+        }
+    }
+
+    private fun applyChatInputBackground(opacityPercent: Int, forceSolid: Boolean) {
+        if (!forceSolid &&
+            ChatOverlayStyleUtils.clampOpacityPercent(opacityPercent) < ChatOverlayStyleUtils.TEXT_SHADOW_OPACITY_THRESHOLD
+        ) {
+            val density = activity.resources.displayMetrics.density
+            binding.chatInput.background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                cornerRadius = 8f * density
+                setColor(ChatOverlayStyleUtils.argbWithOpacity(0x2A2A2A, opacityPercent))
+                setStroke((1f * density).toInt().coerceAtLeast(1), Color.parseColor("#33FFFFFF"))
+            }
+        } else {
+            binding.chatInput.setBackgroundResource(R.drawable.bg_chat_input)
+        }
+    }
+
+    private fun applyLoginAndBannedOverlayBackgrounds(opacityPercent: Int, translucent: Boolean) {
+        if (translucent) {
+            val density = activity.resources.displayMetrics.density
+            // Keep login pill opaque enough to cover underlying chatInput hint while matching rounded pill style
+            binding.chatLoginOverlay.background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                cornerRadius = 8f * density
+                setColor(ChatOverlayStyleUtils.argbWithOpacity(0x1A1A1A, maxOf(opacityPercent, 85)))
+                setStroke((1f * density).toInt().coerceAtLeast(1), Color.parseColor("#33FFFFFF"))
+            }
+            binding.chatBannedOverlay.setBackgroundColor(
+                ChatOverlayStyleUtils.argbWithOpacity(0x1A1A1A, opacityPercent)
+            )
+        } else {
+            binding.chatLoginOverlay.setBackgroundColor(Color.parseColor("#1a1a1a"))
+            binding.chatBannedOverlay.setBackgroundColor(Color.parseColor("#1a1a1a"))
+        }
+    }
+
+    private fun applyOverlayTextShadows(enabled: Boolean) {
+        try {
+            activity.chatAdapter.setTransparentOverlayMode(enabled)
+        } catch (e: Exception) {
+            Log.w("FullscreenToggleManager", "applyOverlayTextShadows adapter not ready: ${e.message}")
+        }
+        val density = activity.resources.displayMetrics.density
+        val shadowViews = listOf(
+            binding.emptyChatText,
+            binding.chatLoginPromptPrefix,
+            binding.chatBannedText
+        )
+        if (enabled) {
+            val radius = 3f * density
+            val dy = 1f * density
+            val shadowColor = 0xE6000000.toInt()
+            shadowViews.forEach { it.setShadowLayer(radius, 0f, dy, shadowColor) }
+            binding.emptyChatText.setTextColor(Color.parseColor("#B0B0B0"))
+            binding.chatLoginPromptPrefix.setTextColor(Color.parseColor("#CCCCCC"))
+        } else {
+            shadowViews.forEach { it.setShadowLayer(0f, 0f, 0f, 0) }
+            binding.emptyChatText.setTextColor(Color.parseColor("#666666"))
+            binding.chatLoginPromptPrefix.setTextColor(Color.parseColor("#808080"))
         }
     }
 }

@@ -182,6 +182,26 @@ class SettingsPanelManager(
                 getFullscreenScaleModeValue()) {
                 showFullscreenScaleModeDialog()
             }
+
+            // Transparent Chat Overlay Toggle
+            addToggleSetting(container, R.drawable.ic_chat,
+                activity.getString(R.string.setting_transparent_chat_overlay),
+                activity.getString(R.string.setting_transparent_chat_overlay_desc),
+                prefs.transparentChatOverlayEnabled) { isEnabled ->
+                prefs.transparentChatOverlayEnabled = isEnabled
+                activity.fullscreenToggleManager.onTransparentChatOverlaySettingChanged()
+            }
+
+            // Overlay Background Opacity
+            val overlayOpacity = prefs.chatOverlayOpacityPercent.coerceIn(
+                AppPreferences.CHAT_OVERLAY_OPACITY_MIN,
+                AppPreferences.CHAT_OVERLAY_OPACITY_MAX
+            )
+            addSettingItem(container, R.drawable.ic_visibility,
+                activity.getString(R.string.setting_chat_overlay_opacity),
+                "${overlayOpacity}%") {
+                showChatOverlayOpacityDialog()
+            }
         }
     }
     
@@ -1034,6 +1054,28 @@ class SettingsPanelManager(
             .setSingleChoiceItems(options, currentIndex) { dialog, which ->
                 prefs.fullscreenResizeMode = modes[which].prefValue
                 activity.fullscreenToggleManager.applyEffectiveVideoResizeMode()
+                dialog.dismiss()
+                detailDialog?.dismiss()
+                showPlayerSettings()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showChatOverlayOpacityDialog() {
+        val presets = intArrayOf(0, 25, 40, 50, 65, 80, 100)
+        val labels = presets.map { "$it%" }.toTypedArray()
+        val currentOpacity = prefs.chatOverlayOpacityPercent.coerceIn(
+            AppPreferences.CHAT_OVERLAY_OPACITY_MIN,
+            AppPreferences.CHAT_OVERLAY_OPACITY_MAX
+        )
+        val currentIndex = presets.indexOf(currentOpacity)
+
+        AlertDialog.Builder(activity)
+            .setTitle(R.string.setting_chat_overlay_opacity)
+            .setSingleChoiceItems(labels, currentIndex) { dialog, which ->
+                prefs.chatOverlayOpacityPercent = presets[which]
+                activity.fullscreenToggleManager.applyChatOverlayAppearance()
                 dialog.dismiss()
                 detailDialog?.dismiss()
                 showPlayerSettings()

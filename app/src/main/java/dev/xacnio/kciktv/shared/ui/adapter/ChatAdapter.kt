@@ -419,6 +419,24 @@ class ChatAdapter(
         }
     }
 
+    private var useTransparentOverlayShadow: Boolean = false
+
+    fun setTransparentOverlayMode(enabled: Boolean) {
+        if (useTransparentOverlayShadow == enabled) return
+        useTransparentOverlayShadow = enabled
+        notifyDataSetChanged()
+    }
+
+    private fun applyOverlayTextShadow(tv: TextView?) {
+        if (tv == null) return
+        if (useTransparentOverlayShadow) {
+            val density = tv.resources.displayMetrics.density
+            tv.setShadowLayer(3f * density, 0f, 1f * density, 0xE6000000.toInt())
+        } else {
+            tv.setShadowLayer(0f, 0f, 0f, 0)
+        }
+    }
+
     private fun applyRowSpacing(
         itemView: View,
         textView: TextView? = null,
@@ -747,6 +765,9 @@ class ChatAdapter(
 
     private fun bindGiftMessage(holder: GiftViewHolder, message: ChatMessage) {
         applyRowSpacing(holder.itemView, null, itemHorizontalDp = 0f)
+        applyOverlayTextShadow(holder.giftHeaderText)
+        applyOverlayTextShadow(holder.giftMessageText)
+        applyOverlayTextShadow(holder.amountText)
         val containerMarginV = dpScaled(holder.itemView, 3f)
         setScaledMargins(holder.itemView, topPx = containerMarginV, bottomPx = containerMarginV)
         val data = message.giftData ?: return
@@ -841,6 +862,10 @@ class ChatAdapter(
 
     private fun bindRewardMessage(holder: RewardViewHolder, message: ChatMessage) {
         applyRowSpacing(holder.itemView, null, itemHorizontalDp = 4f)
+        applyOverlayTextShadow(holder.rewardHeader)
+        applyOverlayTextShadow(holder.rewardTitle)
+        applyOverlayTextShadow(holder.rewardInput)
+        applyOverlayTextShadow(holder.rewardCost)
         holder.cardContainer.radius = dpScaled(holder.itemView, 8f, minPx = 1).toFloat()
         setScaledSize(holder.accentStripe, heightPx = dpScaled(holder.itemView, 3f, minPx = 1))
         val contentPad = dpScaled(holder.itemView, 10f)
@@ -956,6 +981,10 @@ class ChatAdapter(
         dev.xacnio.kciktv.shared.ui.utils.EmoteManager.unregisterViewer(holder.messageText)
         holder.clear()
         applyRowSpacing(holder.itemView, null, itemHorizontalDp = 0f)
+        applyOverlayTextShadow(holder.celebrationUser)
+        applyOverlayTextShadow(holder.celebrationTitle)
+        applyOverlayTextShadow(holder.celebrationSubTitle)
+        applyOverlayTextShadow(holder.messageText)
         val cardMarginV = dpScaled(holder.itemView, 4f)
         setScaledMargins(holder.itemView, topPx = cardMarginV, bottomPx = cardMarginV)
         holder.cardContainer.radius = dpScaled(holder.itemView, 4f, minPx = 1).toFloat()
@@ -1346,6 +1375,7 @@ class ChatAdapter(
     }
 
     private fun applyRestoreButtonScaling(holder: RestoreButtonViewHolder) {
+        applyOverlayTextShadow(holder.restoreButton)
         val outerPad = dpScaled(holder.itemView, 8f)
         holder.itemView.setPadding(outerPad, outerPad, outerPad, outerPad)
 
@@ -1385,6 +1415,7 @@ class ChatAdapter(
 
     private fun bindDivider(holder: DividerViewHolder, message: ChatMessage) {
         applyRowSpacing(holder.itemView, null, itemHorizontalDp = 16f)
+        applyOverlayTextShadow(holder.dividerText)
         holder.dividerText.text = message.content
         holder.dividerText.textSize = spScaled(11f)
         val marginH = dpScaled(holder.itemView, 12f)
@@ -1404,6 +1435,7 @@ class ChatAdapter(
 
     private fun bindInfoMessage(holder: InfoViewHolder, message: ChatMessage) {
         applyRowSpacing(holder.itemView, null, itemHorizontalDp = 12f)
+        applyOverlayTextShadow(holder.infoMessageText)
         val content = message.content
         val htmlRes = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
             android.text.Html.fromHtml(content, android.text.Html.FROM_HTML_MODE_COMPACT)
@@ -1444,6 +1476,7 @@ class ChatAdapter(
 
     private fun bindSystemMessage(holder: SystemViewHolder, message: ChatMessage) {
         applyRowSpacing(holder.itemView, null, itemHorizontalDp = 0f)
+        applyOverlayTextShadow(holder.systemMessageText)
         val boxPadH = dpScaled(holder.itemView, 12f)
         val boxPadV = dpScaled(holder.itemView, 8f)
         holder.systemContentLayout.setPadding(boxPadH, boxPadV, boxPadH, boxPadV)
@@ -1679,6 +1712,11 @@ class ChatAdapter(
 
     private fun bindChatMessage(holder: ChatViewHolder, message: ChatMessage) {
         applyRowSpacing(holder.itemView, holder.messageText, itemHorizontalDp = 8f, textHorizontalDp = 4f)
+        applyOverlayTextShadow(holder.messageText)
+        applyOverlayTextShadow(holder.clipTitle)
+        applyOverlayTextShadow(holder.clipChannel)
+        applyOverlayTextShadow(holder.clipViews)
+        applyOverlayTextShadow(holder.clipDuration)
         dev.xacnio.kciktv.shared.ui.utils.EmoteManager.unregisterViewer(holder.messageText)
         
         // ABSOLUTELY CRITICAL: Clear text and spans immediately to stop any 

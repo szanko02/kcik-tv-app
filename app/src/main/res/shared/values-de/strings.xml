@@ -1464,4 +1464,9 @@
     <string name="video_scale_zoom">Zoomen (Aussparung füllen)</string>
     <string name="video_scale_fill">Strecken</string>
     <string name="video_scale_mode_toast">Videoskalierung: %1$s</string>
+
+    <!-- Transparent Chat Overlay -->
+    <string name="setting_transparent_chat_overlay">Transparenter Chat-Overlay</string>
+    <string name="setting_transparent_chat_overlay_desc">Halbtransparenten Chat im Querformat über dem Vollbildvideo einblenden</string>
+    <string name="setting_chat_overlay_opacity">Deckkraft des Overlay-Hintergrunds</string>
 </resources>

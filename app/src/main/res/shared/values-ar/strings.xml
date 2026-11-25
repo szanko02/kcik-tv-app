@@ -1464,4 +1464,9 @@
     <string name="video_scale_zoom">تكبير (ملء الشاشة)</string>
     <string name="video_scale_fill">تمديد</string>
     <string name="video_scale_mode_toast">تحجيم الفيديو: %1$s</string>
+
+    <!-- Transparent Chat Overlay -->
+    <string name="setting_transparent_chat_overlay">دردشة شفافة فوق الفيديو</string>
+    <string name="setting_transparent_chat_overlay_desc">عرض الدردشة شبه الشفافة فوق الفيديو بملء الشاشة في الوضع الأفقي</string>
+    <string name="setting_chat_overlay_opacity">عتامة خلفية الدردشة</string>
 </resources>

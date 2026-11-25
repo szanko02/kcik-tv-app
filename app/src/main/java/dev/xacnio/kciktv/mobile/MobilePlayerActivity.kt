@@ -2246,6 +2246,7 @@ class MobilePlayerActivity : FragmentActivity() {
                      fullscreenToggleManager.enterFullscreen()
                  } else {
                      applyFullscreenCutoutAndResizeModeIfReady()
+                     fullscreenToggleManager.applyChatOverlayAppearance()
                  }
              } else {
                  // STEP 1: Clean up any existing side chat state

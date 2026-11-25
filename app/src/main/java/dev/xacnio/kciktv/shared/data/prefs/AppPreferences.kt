@@ -34,6 +34,9 @@ class AppPreferences(private val context: Context) {
         const val SIDE_CHAT_WIDTH_MIN = 15
         const val SIDE_CHAT_WIDTH_MAX = 70
         const val SIDE_CHAT_WIDTH_DEFAULT = 35
+        const val CHAT_OVERLAY_OPACITY_MIN = 0
+        const val CHAT_OVERLAY_OPACITY_MAX = 100
+        const val CHAT_OVERLAY_OPACITY_DEFAULT = 50
         const val CHAT_SCALE_MIN = 50
         const val CHAT_SCALE_MAX = 200
         const val CHAT_SCALE_DEFAULT = 100
@@ -927,6 +930,18 @@ class AppPreferences(private val context: Context) {
     var sideChatResizeHandleEnabled: Boolean
         get() = prefs.getBoolean("side_chat_resize_handle_enabled", true)
         set(value) = prefs.edit().putBoolean("side_chat_resize_handle_enabled", value).apply()
+
+    var transparentChatOverlayEnabled: Boolean
+        get() = prefs.getBoolean("transparent_chat_overlay_enabled", false)
+        set(value) = prefs.edit().putBoolean("transparent_chat_overlay_enabled", value).apply()
+
+    var chatOverlayOpacityPercent: Int
+        get() = prefs.getInt("chat_overlay_opacity_percent", CHAT_OVERLAY_OPACITY_DEFAULT)
+            .coerceIn(CHAT_OVERLAY_OPACITY_MIN, CHAT_OVERLAY_OPACITY_MAX)
+        set(value) = prefs.edit().putInt(
+            "chat_overlay_opacity_percent",
+            value.coerceIn(CHAT_OVERLAY_OPACITY_MIN, CHAT_OVERLAY_OPACITY_MAX)
+        ).apply()
 
     var chatMessageScale: Int
         get() = prefs.getInt("chat_message_scale", CHAT_SCALE_DEFAULT).coerceIn(CHAT_SCALE_MIN, CHAT_SCALE_MAX)

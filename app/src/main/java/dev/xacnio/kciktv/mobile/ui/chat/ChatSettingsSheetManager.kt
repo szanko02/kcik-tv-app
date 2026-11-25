@@ -302,6 +302,9 @@ class ChatSettingsSheetManager(
         val textValueMessageSpacing = view.findViewById<TextView>(R.id.textValueMessageSpacing)
         val seekBarSideChatWidth = view.findViewById<SeekBar>(R.id.seekBarSideChatWidth)
         val textValueSideChatWidth = view.findViewById<TextView>(R.id.textValueSideChatWidth)
+        val switchTransparentChatOverlay = view.findViewById<SwitchCompat>(R.id.switchTransparentChatOverlay)
+        val seekBarChatOverlayOpacity = view.findViewById<SeekBar>(R.id.seekBarChatOverlayOpacity)
+        val textValueChatOverlayOpacity = view.findViewById<TextView>(R.id.textValueChatOverlayOpacity)
         val switchPinnedGifts = view.findViewById<SwitchCompat>(R.id.switchPinnedGifts)
         val switchEmoteCombo = view.findViewById<SwitchCompat>(R.id.switchEmoteCombo)
         val switchFloatingEmotes = view.findViewById<SwitchCompat>(R.id.switchFloatingEmotes)
@@ -311,6 +314,7 @@ class ChatSettingsSheetManager(
         listOf(
             switchTimestamps,
             switchSeconds,
+            switchTransparentChatOverlay,
             switchPinnedGifts,
             switchEmoteCombo,
             switchFloatingEmotes,
@@ -327,7 +331,8 @@ class ChatSettingsSheetManager(
             seekBarEmoteSize,
             seekBarMessageScale,
             seekBarMessageSpacing,
-            seekBarSideChatWidth
+            seekBarSideChatWidth,
+            seekBarChatOverlayOpacity
         ).forEach { seekBar ->
             seekBar.progressTintList = themeColorStateListSingle
             seekBar.thumbTintList = themeColorStateListSingle
@@ -442,6 +447,44 @@ class ChatSettingsSheetManager(
                 isTrackingSideChatWidth = false
                 activity.fullscreenToggleManager.clearSideChatWidthPreview()
                 activity.fullscreenToggleManager.applySideChatWidthPercent(currentSideChatWidth, persist = true)
+            }
+        })
+
+        // Transparent Chat Overlay
+        switchTransparentChatOverlay.isChecked = prefs.transparentChatOverlayEnabled
+        switchTransparentChatOverlay.setOnCheckedChangeListener { _, isChecked ->
+            prefs.transparentChatOverlayEnabled = isChecked
+            activity.fullscreenToggleManager.onTransparentChatOverlaySettingChanged()
+        }
+
+        // Overlay Background Opacity Slider (0% to 100%)
+        val initialOverlayOpacity = prefs.chatOverlayOpacityPercent.coerceIn(
+            AppPreferences.CHAT_OVERLAY_OPACITY_MIN,
+            AppPreferences.CHAT_OVERLAY_OPACITY_MAX
+        )
+        seekBarChatOverlayOpacity.max = AppPreferences.CHAT_OVERLAY_OPACITY_MAX
+        seekBarChatOverlayOpacity.progress = initialOverlayOpacity
+        textValueChatOverlayOpacity.text = "${initialOverlayOpacity}%"
+
+        seekBarChatOverlayOpacity.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                val clamped = progress.coerceIn(
+                    AppPreferences.CHAT_OVERLAY_OPACITY_MIN,
+                    AppPreferences.CHAT_OVERLAY_OPACITY_MAX
+                )
+                textValueChatOverlayOpacity.text = "${clamped}%"
+                if (fromUser) {
+                    activity.fullscreenToggleManager.applyChatOverlayAppearance(clamped)
+                }
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                val finalOpacity = (seekBar?.progress ?: prefs.chatOverlayOpacityPercent).coerceIn(
+                    AppPreferences.CHAT_OVERLAY_OPACITY_MIN,
+                    AppPreferences.CHAT_OVERLAY_OPACITY_MAX
+                )
+                prefs.chatOverlayOpacityPercent = finalOpacity
+                activity.fullscreenToggleManager.applyChatOverlayAppearance()
             }
         })
 

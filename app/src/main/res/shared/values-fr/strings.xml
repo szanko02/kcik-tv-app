@@ -1464,4 +1464,9 @@
     <string name="video_scale_zoom">Zoom (remplir l\'encoche)</string>
     <string name="video_scale_fill">Étirer</string>
     <string name="video_scale_mode_toast">Mise à l\'échelle vidéo : %1$s</string>
+
+    <!-- Transparent Chat Overlay -->
+    <string name="setting_transparent_chat_overlay">Chat transparent en superposition</string>
+    <string name="setting_transparent_chat_overlay_desc">Superposer le chat semi-transparent sur la vidéo plein écran en mode paysage</string>
+    <string name="setting_chat_overlay_opacity">Opacité de l\'arrière-plan du chat</string>
 </resources>
