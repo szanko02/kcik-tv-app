@@ -1453,11 +1453,8 @@
     <string name="setting_fullscreen_sensor_rotation">Im Vollbild drehen</string>
     <string name="setting_fullscreen_sensor_rotation_desc">Bildschirm im Vollbild auch drehen, wenn die automatische Drehung des Systems aus ist</string>
 
-    <!-- Dual Update Source -->
-    <string name="setting_update_source">Update-Quelle</string>
-    <string name="update_source_fork">Fork (szanko02)</string>
-    <string name="update_source_upstream">Upstream (xacnio)</string>
-    <string name="whats_new_empty">Für diese Update-Quelle wurden noch keine Releases veröffentlicht.</string>
+    <!-- Updates -->
+    <string name="whats_new_empty">Es wurden noch keine Releases veröffentlicht.</string>
 
     <!-- Fullscreen Cutout & Video Scaling -->
     <string name="setting_draw_under_cutout">Unter Kamera-Aussparung zeichnen</string>

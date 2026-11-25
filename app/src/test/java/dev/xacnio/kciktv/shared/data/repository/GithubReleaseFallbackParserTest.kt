@@ -184,7 +184,7 @@ class GithubReleaseFallbackParserTest {
             clockMs = { nowMs }
         )
 
-        val first = repo.getLatestRelease("stable", UpdateSource.FORK)
+        val first = repo.getLatestRelease("stable")
         assertTrue(first.isSuccess)
         val release = first.getOrNull()
         assertNotNull(release)
@@ -198,13 +198,13 @@ class GithubReleaseFallbackParserTest {
 
         // Second call within 30s hits cache (zero extra network calls)
         nowMs += 5_000L
-        val cached = repo.getAllReleases(UpdateSource.FORK)
+        val cached = repo.getAllReleases()
         assertTrue(cached.isSuccess)
         assertEquals(1, apiCalls)
         assertEquals(1, atomCalls)
 
         // Manual check with forceRefresh=true bypasses cache
-        val forced = repo.getLatestRelease("stable", UpdateSource.FORK, forceRefresh = true)
+        val forced = repo.getLatestRelease("stable", forceRefresh = true)
         assertTrue(forced.isSuccess)
         assertEquals(2, apiCalls)
         assertEquals(2, atomCalls)

@@ -3,11 +3,11 @@
 [![CI](https://github.com/szanko02/kcik-tv-app/actions/workflows/ci.yml/badge.svg)](https://github.com/szanko02/kcik-tv-app/actions/workflows/ci.yml)
 [![Build and Release](https://github.com/szanko02/kcik-tv-app/actions/workflows/release.yml/badge.svg)](https://github.com/szanko02/kcik-tv-app/actions/workflows/release.yml)
 
-Мобильный неофициальный Android-клиент для **Kick.com** — форк [`xacnio/kcik-tv-app`](https://github.com/xacnio/kcik-tv-app) с удалённым TV-интерфейсом, доработками чата и плеера по мотивам **ReTwitch**, исправлением чата в VOD и поддержкой обновлений как из форка, так и из upstream.
+Мобильный неофициальный Android-клиент для **Kick.com** — самостоятельная сборка на базе KCIKTV с удалённым TV-интерфейсом, доработками чата и плеера по мотивам **ReTwitch**, исправлением чата в VOD и собственным каналом автообновлений (`szanko02/kcik-tv-app`).
 
 > **Отказ от ответственности:** неофициальный проект, не связанный с Kick.com или Blerp. Все торговые марки принадлежат их владельцам.
 
-## Основные изменения форка
+## Основные изменения
 
 - **Только мобильный интерфейс:** удалены Leanback / Android TV активности, ресурсы и переключение режимов (`tv/PlayerActivity`, `ChannelSidebarAdapter`, зависимости `androidx.leanback`).
 - **Настройки бокового чата и отображения (ReTwitch):**
@@ -19,7 +19,7 @@
   - Переработанный буфер реплея чата VOD (`VodChatReplayBuffer`) со строгим 5-секундным шагом страниц, упреждающим буфером 15 с (до 20 с), защитой от пропусков на пустых страницах, корректной обработкой перемотки и экспоненциальным backoff.
   - Убран лишний пустой отступ снизу в чате VOD и исправлено схлопывание поля ввода при узком боковом чате в лайв-стримах.
   - Исправлено обновление (refresh) при просмотре VOD/клипа: больше не сбрасывается на лайв-стрим (`Stream Offline`), сохраняются позиция и скорость воспроизведения.
-- **Двойной источник обновлений:** выбор источника релизов и списка «Что нового» в настройках (`Fork (szanko02)` или `Upstream (xacnio)`).
+- **Собственный канал обновлений:** встроенные обновления и «Что нового» привязаны исключительно к релизам `szanko02/kcik-tv-app` с поддержкой прокси и fallback через `releases.atom`.
 
 Подробная история изменений — в [CHANGELOG.md](CHANGELOG.md).  
 Каталог всех функций ReTwitch и их статус для порта на Kick — в [RETWITCH_FEATURES.md](RETWITCH_FEATURES.md).
@@ -59,8 +59,8 @@
 Workflow [`.github/workflows/release.yml`](.github/workflows/release.yml) запускается при пуше тега вида `v*` или вручную через `workflow_dispatch`:
 
 ```bash
-git tag v2.4.5-fork.1
-git push --tags
+git tag v2.5.3
+git push origin v2.5.3
 ```
 
 При наличии секретов подписи (`SIGNING_KEY`, `ALIAS`, `KEY_STORE_PASSWORD`, `KEY_PASSWORD`) публикуется подписанный `KCIKTV-${VERSION}.apk`, иначе — `KCIKTV-${VERSION}-debug.apk` для прямой установки и работы встроенного автообновления форка.

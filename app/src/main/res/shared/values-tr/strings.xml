@@ -1453,11 +1453,8 @@
     <string name="setting_fullscreen_sensor_rotation">Tam Ekranda Döndür</string>
     <string name="setting_fullscreen_sensor_rotation_desc">Sistem otomatik döndürme kapalıyken bile tam ekranda ekranı çevirmeye izin ver</string>
 
-    <!-- Dual Update Source -->
-    <string name="setting_update_source">Güncelleme Kaynağı</string>
-    <string name="update_source_fork">Fork (szanko02)</string>
-    <string name="update_source_upstream">Upstream (xacnio)</string>
-    <string name="whats_new_empty">Bu güncelleme kaynağında henüz yayınlanmış sürüm yok.</string>
+    <!-- Updates -->
+    <string name="whats_new_empty">Henüz yayınlanmış sürüm yok.</string>
 
     <!-- Fullscreen Cutout & Video Scaling -->
     <string name="setting_draw_under_cutout">Kamera Çentiğinin Altına Uzat</string>

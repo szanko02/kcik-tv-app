@@ -40,8 +40,6 @@ class AppPreferences(private val context: Context) {
         const val CHAT_SPACING_MIN = 0
         const val CHAT_SPACING_MAX = 16
         const val CHAT_SPACING_DEFAULT = 4
-        const val UPDATE_SOURCE_FORK = "fork"
-        const val UPDATE_SOURCE_UPSTREAM = "upstream"
         const val RESIZE_MODE_FIT = "FIT"
         const val RESIZE_MODE_ZOOM = "ZOOM"
         const val RESIZE_MODE_FILL = "FILL"
@@ -122,16 +120,6 @@ class AppPreferences(private val context: Context) {
             }
         }
         set(value) = prefs.edit().putString("update_channel", value).apply()
-
-    var updateSource: String
-        get() {
-            val saved = prefs.getString("update_source", UPDATE_SOURCE_FORK)
-            return if (saved == UPDATE_SOURCE_UPSTREAM) UPDATE_SOURCE_UPSTREAM else UPDATE_SOURCE_FORK
-        }
-        set(value) {
-            val normalized = if (value == UPDATE_SOURCE_UPSTREAM) UPDATE_SOURCE_UPSTREAM else UPDATE_SOURCE_FORK
-            prefs.edit().putString("update_source", normalized).apply()
-        }
 
     var language: String
         get() = prefs.getString("language", "system") ?: "system"

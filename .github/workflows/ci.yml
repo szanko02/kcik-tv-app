@@ -9,7 +9,7 @@ on:
       - '.gitignore'
       - 'LICENSE'
   pull_request:
-    branches: [master, develop]
+    branches: [master]
     paths-ignore:
       - '**.md'
       - 'docs/**'

@@ -34,7 +34,6 @@ import dev.xacnio.kciktv.R
 import dev.xacnio.kciktv.shared.data.prefs.AppPreferences
 import dev.xacnio.kciktv.shared.data.repository.UpdateReleaseSelector
 import dev.xacnio.kciktv.shared.data.repository.UpdateRepository
-import dev.xacnio.kciktv.shared.data.repository.UpdateSource
 import dev.xacnio.kciktv.databinding.ActivityMobilePlayerBinding
 import dev.xacnio.kciktv.shared.util.SupportedLanguages
 import kotlinx.coroutines.Dispatchers
@@ -232,14 +231,6 @@ class SettingsPanelManager(
                 activity.getString(R.string.setting_auto_update_desc),
                 prefs.autoUpdateEnabled) { isEnabled ->
                 prefs.autoUpdateEnabled = isEnabled
-            }
-
-            // Update Source
-            val updateSource = UpdateSource.fromKey(prefs.updateSource)
-            addSettingItem(container, R.drawable.ic_settings,
-                activity.getString(R.string.setting_update_source),
-                getUpdateSourceDisplayName(updateSource)) {
-                showUpdateSourceDialog()
             }
 
             // Update Channel
@@ -1270,34 +1261,6 @@ class SettingsPanelManager(
             .setNegativeButton(R.string.cancel, null)
             .show()
     }
-    
-    private fun getUpdateSourceDisplayName(source: UpdateSource): String {
-        return when (source) {
-            UpdateSource.FORK -> activity.getString(R.string.update_source_fork)
-            UpdateSource.UPSTREAM -> activity.getString(R.string.update_source_upstream)
-        }
-    }
-
-    private fun showUpdateSourceDialog() {
-        val options = arrayOf(
-            "${activity.getString(R.string.update_source_fork)} (szanko02/kcik-tv-app)",
-            "${activity.getString(R.string.update_source_upstream)} (xacnio/kcik-tv-app)"
-        )
-        val values = arrayOf(UpdateSource.FORK.key, UpdateSource.UPSTREAM.key)
-        val currentIndex = if (UpdateSource.fromKey(prefs.updateSource) == UpdateSource.UPSTREAM) 1 else 0
-
-        AlertDialog.Builder(activity)
-            .setTitle(R.string.setting_update_source)
-            .setSingleChoiceItems(options, currentIndex) { dialog, which ->
-                prefs.updateSource = values[which]
-                dialog.dismiss()
-                // Refresh detail sheet
-                detailDialog?.dismiss()
-                showAppSettings()
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
-    }
 
     private fun showUpdateChannelDialog() {
         val options = arrayOf(
@@ -1357,12 +1320,11 @@ class SettingsPanelManager(
             Toast.makeText(activity, R.string.checking_updates, Toast.LENGTH_SHORT).show()
         }
 
-        val source = UpdateSource.fromKey(prefs.updateSource)
         val channel = prefs.updateChannel
 
         activity.lifecycleScope.launch {
             val result = try {
-                updateRepository.getLatestRelease(channel, source, forceRefresh = !isSilent)
+                updateRepository.getLatestRelease(channel, forceRefresh = !isSilent)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -1379,7 +1341,7 @@ class SettingsPanelManager(
 
                     if (UpdateReleaseSelector.isNewerRelease(currentVersion, releaseTag)) {
                         try {
-                            showModernUpdateDialog(release, currentVersion, newVersion, source)
+                            showModernUpdateDialog(release, currentVersion, newVersion)
                         } catch (uiError: Exception) {
                             android.util.Log.e("SettingsPanelManager", "Failed to render update dialog for $releaseTag", uiError)
                             if (!isSilent) {
@@ -1400,7 +1362,7 @@ class SettingsPanelManager(
             }.onFailure { error ->
                 android.util.Log.e(
                     "SettingsPanelManager",
-                    "Update check failed (source=${source.key}, channel=$channel, silent=$isSilent)",
+                    "Update check failed (channel=$channel, silent=$isSilent)",
                     error
                 )
                 if (!isSilent) {
@@ -1427,8 +1389,7 @@ class SettingsPanelManager(
     private fun showModernUpdateDialog(
         release: dev.xacnio.kciktv.shared.data.model.GithubRelease,
         currentVersion: String,
-        newVersion: String,
-        source: UpdateSource
+        newVersion: String
     ) {
         val dialogView = LayoutInflater.from(activity).inflate(R.layout.dialog_update, null)
 
@@ -1451,7 +1412,7 @@ class SettingsPanelManager(
 
         // Set content
         titleView.text = activity.getString(R.string.update_available_title)
-        versionView.text = "${activity.getString(R.string.update_version_format, currentVersion, newVersion)} · ${getUpdateSourceDisplayName(source)}"
+        versionView.text = activity.getString(R.string.update_version_format, currentVersion, newVersion)
 
         // Parse and format changelog (markdown body from GitHub)
         val changelog = release.safeBody.trim()

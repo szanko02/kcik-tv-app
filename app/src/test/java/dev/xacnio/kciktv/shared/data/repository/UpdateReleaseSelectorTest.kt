@@ -23,19 +23,9 @@ class UpdateReleaseSelectorTest {
     )
 
     @Test
-    fun updateSource_fromKey_mapsUpstreamAndFallsBackToFork() {
-        assertEquals(UpdateSource.UPSTREAM, UpdateSource.fromKey("upstream"))
-        assertEquals("xacnio", UpdateSource.UPSTREAM.owner)
-        assertEquals("kcik-tv-app", UpdateSource.UPSTREAM.repo)
-
-        assertEquals(UpdateSource.FORK, UpdateSource.fromKey("fork"))
-        assertEquals("szanko02", UpdateSource.FORK.owner)
-        assertEquals("kcik-tv-app", UpdateSource.FORK.repo)
-
-        assertEquals(UpdateSource.FORK, UpdateSource.fromKey(null))
-        assertEquals(UpdateSource.FORK, UpdateSource.fromKey(""))
-        assertEquals(UpdateSource.FORK, UpdateSource.fromKey("unknown"))
-        assertEquals(UpdateSource.FORK, UpdateSource.fromKey("UPSTREAM"))
+    fun updateRepository_targetsForkRepositoryExclusively() {
+        assertEquals("szanko02", UpdateRepository.REPO_OWNER)
+        assertEquals("kcik-tv-app", UpdateRepository.REPO_NAME)
     }
 
     @Test

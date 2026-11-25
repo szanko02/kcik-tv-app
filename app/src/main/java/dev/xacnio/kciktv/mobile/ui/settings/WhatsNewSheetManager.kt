@@ -30,7 +30,6 @@ import dev.xacnio.kciktv.R
 import dev.xacnio.kciktv.mobile.MobilePlayerActivity
 import dev.xacnio.kciktv.shared.data.model.GithubRelease
 import dev.xacnio.kciktv.shared.data.repository.UpdateRepository
-import dev.xacnio.kciktv.shared.data.repository.UpdateSource
 import kotlinx.coroutines.launch
 
 class WhatsNewSheetManager(
@@ -38,8 +37,8 @@ class WhatsNewSheetManager(
     private val repository: UpdateRepository
 ) {
     private companion object {
-        // Assumed last seen when nothing usable is stored (older builds didn't track it reliably)
-        const val DEFAULT_LAST_SEEN_VERSION = "2.4.4-beta-66f66fc"
+        // Assumed last seen when nothing usable is stored
+        const val DEFAULT_LAST_SEEN_VERSION = "2.5.0"
     }
 
     private var activeDialog: Dialog? = null
@@ -48,9 +47,8 @@ class WhatsNewSheetManager(
         if (activeDialog?.isShowing == true) return
 
         if (isAutoPopup) {
-            val source = UpdateSource.fromKey(activity.prefs.updateSource)
             activity.lifecycleScope.launch {
-                val result = repository.getAllReleases(source)
+                val result = repository.getAllReleases()
                 if (activity.isFinishing || activity.isDestroyed) return@launch
                 if (result.isSuccess) {
                     val currentVer = BuildConfig.VERSION_NAME
@@ -161,9 +159,8 @@ class WhatsNewSheetManager(
             webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
         } else {
             progressBar.visibility = View.VISIBLE
-            val source = UpdateSource.fromKey(activity.prefs.updateSource)
             activity.lifecycleScope.launch {
-                val result = repository.getAllReleases(source)
+                val result = repository.getAllReleases()
                 if (activity.isFinishing || activity.isDestroyed) return@launch
                 if (result.isSuccess) {
                     var releases = result.getOrNull().orEmpty()

@@ -1453,11 +1453,8 @@
     <string name="setting_fullscreen_sensor_rotation">Rotation en plein écran</string>
     <string name="setting_fullscreen_sensor_rotation_desc">Autoriser la rotation de l\'écran en plein écran même si la rotation automatique du système est désactivée</string>
 
-    <!-- Dual Update Source -->
-    <string name="setting_update_source">Source des mises à jour</string>
-    <string name="update_source_fork">Fork (szanko02)</string>
-    <string name="update_source_upstream">Upstream (xacnio)</string>
-    <string name="whats_new_empty">Aucune version n\'a encore été publiée sur cette source de mises à jour.</string>
+    <!-- Updates -->
+    <string name="whats_new_empty">Aucune version n\'a encore été publiée.</string>
 
     <!-- Fullscreen Cutout & Video Scaling -->
     <string name="setting_draw_under_cutout">Afficher sous l\'encoche caméra</string>

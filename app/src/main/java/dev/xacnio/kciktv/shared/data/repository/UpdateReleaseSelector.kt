@@ -3,16 +3,6 @@ package dev.xacnio.kciktv.shared.data.repository
 import dev.xacnio.kciktv.shared.data.model.GithubRelease
 import kotlin.math.max
 
-enum class UpdateSource(val key: String, val owner: String, val repo: String) {
-    FORK("fork", "szanko02", "kcik-tv-app"),
-    UPSTREAM("upstream", "xacnio", "kcik-tv-app");
-
-    companion object {
-        fun fromKey(key: String?): UpdateSource =
-            if (key == UPSTREAM.key) UPSTREAM else FORK
-    }
-}
-
 object UpdateReleaseSelector {
     private val DEBUG_SUFFIX_REGEX = Regex("(?i)-debug$")
     private val GIT_HASH_ONLY_REGEX = Regex("(?i)^[0-9a-f]{7,40}$")

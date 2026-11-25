@@ -20,7 +20,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
 import java.net.URLEncoder
-import java.util.concurrent.ConcurrentHashMap
 
 class UpdateRepository(
     private val githubService: GithubApiService = RetrofitClient.githubService,
@@ -34,64 +33,64 @@ class UpdateRepository(
 
     companion object {
         private const val TAG = "UpdateRepository"
+        const val REPO_OWNER = "szanko02"
+        const val REPO_NAME = "kcik-tv-app"
         internal const val CACHE_TTL_MS = 30_000L
 
-        private val sharedCache = ConcurrentHashMap<UpdateSource, CacheEntry>()
+        @Volatile
+        private var sharedCache: CacheEntry? = null
         private val fetchMutex = Mutex()
 
         internal fun clearCacheForTesting() {
-            sharedCache.clear()
+            sharedCache = null
         }
     }
 
     suspend fun getLatestRelease(
         channel: String,
-        source: UpdateSource = UpdateSource.FORK,
         forceRefresh: Boolean = false
     ): Result<GithubRelease?> = withContext(Dispatchers.IO) {
         try {
-            val releases = fetchReleasesWithCacheAndFallback(source, forceRefresh)
+            val releases = fetchReleasesWithCacheAndFallback(forceRefresh)
             Result.success(UpdateReleaseSelector.selectLatest(releases, channel))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            safeLogE("getLatestRelease failed for ${source.owner}/${source.repo} ($channel)", e)
+            safeLogE("getLatestRelease failed for $REPO_OWNER/$REPO_NAME ($channel)", e)
             Result.failure(e)
         }
     }
 
     suspend fun getAllReleases(
-        source: UpdateSource = UpdateSource.FORK,
         forceRefresh: Boolean = false
     ): Result<List<GithubRelease>?> = withContext(Dispatchers.IO) {
         try {
-            val releases = fetchReleasesWithCacheAndFallback(source, forceRefresh)
+            val releases = fetchReleasesWithCacheAndFallback(forceRefresh)
             Result.success(releases)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            safeLogE("getAllReleases failed for ${source.owner}/${source.repo}", e)
+            safeLogE("getAllReleases failed for $REPO_OWNER/$REPO_NAME", e)
             Result.failure(e)
         }
     }
 
     private suspend fun fetchReleasesWithCacheAndFallback(
-        source: UpdateSource,
         forceRefresh: Boolean
     ): List<GithubRelease> = fetchMutex.withLock {
         val now = clockMs()
         if (!forceRefresh) {
-            val cached = sharedCache[source]
+            val cached = sharedCache
             if (cached != null && now - cached.fetchedAtMs in 0 until CACHE_TTL_MS) {
                 return@withLock cached.releases
             }
         }
 
         val apiFailureSummary: String = try {
-            val response = githubService.getReleases(source.owner, source.repo)
+            val response = githubService.getReleases(REPO_OWNER, REPO_NAME)
             if (response.isSuccessful) {
                 val releases = response.body().orEmpty()
-                sharedCache[source] = CacheEntry(releases, clockMs())
+                sharedCache = CacheEntry(releases, clockMs())
                 return@withLock releases
             }
             "API HTTP ${response.code()}"
@@ -101,20 +100,20 @@ class UpdateRepository(
             "API ${e.javaClass.simpleName}: ${e.message ?: "error"}"
         }
 
-        safeLogW("GitHub REST releases failed ($apiFailureSummary) for ${source.owner}/${source.repo}; falling back to releases.atom")
+        safeLogW("GitHub REST releases failed ($apiFailureSummary) for $REPO_OWNER/$REPO_NAME; falling back to releases.atom")
 
         val fallbackReleases = try {
-            fetchViaAtomFallback(source)
+            fetchViaAtomFallback()
         } catch (fallbackError: Exception) {
             throw IOException("$apiFailureSummary; Atom fallback ${fallbackError.message ?: fallbackError.javaClass.simpleName}", fallbackError)
         }
 
-        sharedCache[source] = CacheEntry(fallbackReleases, clockMs())
+        sharedCache = CacheEntry(fallbackReleases, clockMs())
         fallbackReleases
     }
 
-    private fun fetchViaAtomFallback(source: UpdateSource): List<GithubRelease> {
-        val atomUrl = "https://github.com/${source.owner}/${source.repo}/releases.atom"
+    private fun fetchViaAtomFallback(): List<GithubRelease> {
+        val atomUrl = "https://github.com/$REPO_OWNER/$REPO_NAME/releases.atom"
         val atomRequest = Request.Builder()
             .url(atomUrl)
             .header("Accept", "application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.8")
@@ -127,11 +126,11 @@ class UpdateRepository(
             response.body?.string().orEmpty()
         }
 
-        val initialReleases = GithubReleaseFallbackParser.parseAtomFeed(atomXml, source.owner, source.repo)
+        val initialReleases = GithubReleaseFallbackParser.parseAtomFeed(atomXml, REPO_OWNER, REPO_NAME)
         if (initialReleases.isEmpty()) return emptyList()
 
         // Enrich top releases (overall latest + latest stable) via expanded_assets so exact APK
-        // filenames are resolved for both Fork and Upstream without extra API rate-limit cost.
+        // filenames are resolved without extra GitHub REST API rate-limit cost.
         val tagsToEnrich = LinkedHashSet<String>()
         initialReleases.take(2).forEach { release ->
             if (release.safeTagName.isNotBlank()) tagsToEnrich.add(release.safeTagName)
@@ -143,11 +142,11 @@ class UpdateRepository(
         return initialReleases.map { release ->
             val tag = release.safeTagName
             if (tag in tagsToEnrich) {
-                val expandedHtml = fetchExpandedAssetsHtml(source.owner, source.repo, tag)
+                val expandedHtml = fetchExpandedAssetsHtml(REPO_OWNER, REPO_NAME, tag)
                 val resolvedAssets = GithubReleaseFallbackParser.resolveAssetsOrFallback(
                     expandedAssetsHtml = expandedHtml,
-                    owner = source.owner,
-                    repo = source.repo,
+                    owner = REPO_OWNER,
+                    repo = REPO_NAME,
                     tag = tag
                 )
                 release.copy(assets = resolvedAssets)
