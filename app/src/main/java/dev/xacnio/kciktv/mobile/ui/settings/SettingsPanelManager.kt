@@ -41,11 +41,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import dev.xacnio.kciktv.mobile.InternalBrowserSheet
+import dev.xacnio.kciktv.shared.data.api.RetrofitClient
 import dev.xacnio.kciktv.shared.ui.font.FontManager
-import okhttp3.OkHttpClient
+import kotlinx.coroutines.CancellationException
 import okhttp3.Request
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.IOException
 
 /**
  * Manages the settings panel UI as a bottom sheet with category navigation.
@@ -58,6 +61,8 @@ class SettingsPanelManager(
 ) {
     var isSettingsVisible = false
         private set
+
+    private var pendingInstallApkFile: File? = null
     
     private var currentDialog: BottomSheetDialog? = null
     private var detailDialog: BottomSheetDialog? = null
@@ -1353,41 +1358,72 @@ class SettingsPanelManager(
         }
 
         val source = UpdateSource.fromKey(prefs.updateSource)
-        
+        val channel = prefs.updateChannel
+
         activity.lifecycleScope.launch {
-            try {
-                updateRepository.getLatestRelease(prefs.updateChannel, source).onSuccess { release ->
-                    activity.runOnUiThread {
-                        if (release != null) {
-                            val currentVersion = BuildConfig.VERSION_NAME
-                            val newVersion = UpdateReleaseSelector.normalizeVersion(release.tagName)
-                            
-                            if (UpdateReleaseSelector.isNewerRelease(currentVersion, release.tagName)) {
-                                showModernUpdateDialog(release, currentVersion, newVersion, source)
-                            } else if (!isSilent) {
-                                Toast.makeText(activity, R.string.no_updates, Toast.LENGTH_SHORT).show()
-                            }
-                        } else if (!isSilent) {
-                            Toast.makeText(activity, R.string.no_updates, Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                }.onFailure {
-                    activity.runOnUiThread {
-                        if (!isSilent) {
-                            Toast.makeText(activity, R.string.update_check_failed, Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                }
+            val result = try {
+                updateRepository.getLatestRelease(channel, source, forceRefresh = !isSilent)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                activity.runOnUiThread {
-                    if (!isSilent) {
-                        Toast.makeText(activity, R.string.update_check_failed, Toast.LENGTH_SHORT).show()
+                Result.failure(e)
+            }
+
+            if (activity.isFinishing || activity.isDestroyed) return@launch
+
+            result.onSuccess { release ->
+                if (release != null) {
+                    val currentVersion = BuildConfig.VERSION_NAME
+                    val releaseTag = release.safeTagName
+                    val newVersion = UpdateReleaseSelector.normalizeVersion(releaseTag)
+
+                    if (UpdateReleaseSelector.isNewerRelease(currentVersion, releaseTag)) {
+                        try {
+                            showModernUpdateDialog(release, currentVersion, newVersion, source)
+                        } catch (uiError: Exception) {
+                            android.util.Log.e("SettingsPanelManager", "Failed to render update dialog for $releaseTag", uiError)
+                            if (!isSilent) {
+                                val errSummary = summarizeUpdateError(uiError)
+                                Toast.makeText(
+                                    activity,
+                                    "${activity.getString(R.string.update_check_failed)} ($errSummary)",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        }
+                    } else if (!isSilent) {
+                        Toast.makeText(activity, R.string.no_updates, Toast.LENGTH_SHORT).show()
                     }
+                } else if (!isSilent) {
+                    Toast.makeText(activity, R.string.no_updates, Toast.LENGTH_SHORT).show()
+                }
+            }.onFailure { error ->
+                android.util.Log.e(
+                    "SettingsPanelManager",
+                    "Update check failed (source=${source.key}, channel=$channel, silent=$isSilent)",
+                    error
+                )
+                if (!isSilent) {
+                    val errSummary = summarizeUpdateError(error)
+                    Toast.makeText(
+                        activity,
+                        "${activity.getString(R.string.update_check_failed)} ($errSummary)",
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
         }
     }
-    
+
+    private fun summarizeUpdateError(error: Throwable): String {
+        val raw = error.message?.trim().orEmpty()
+        return if (raw.isNotEmpty()) {
+            if (raw.length > 90) raw.take(87) + "..." else raw
+        } else {
+            error.javaClass.simpleName
+        }
+    }
+
     private fun showModernUpdateDialog(
         release: dev.xacnio.kciktv.shared.data.model.GithubRelease,
         currentVersion: String,
@@ -1395,12 +1431,12 @@ class SettingsPanelManager(
         source: UpdateSource
     ) {
         val dialogView = LayoutInflater.from(activity).inflate(R.layout.dialog_update, null)
-        
+
         val dialog = AlertDialog.Builder(activity, R.style.TransparentAlertDialog)
             .setView(dialogView)
             .setCancelable(true)
             .create()
-        
+
         // Setup views
         val titleView = dialogView.findViewById<TextView>(R.id.updateTitle)
         val versionView = dialogView.findViewById<TextView>(R.id.updateVersion)
@@ -1412,13 +1448,13 @@ class SettingsPanelManager(
         val progressPercent = dialogView.findViewById<TextView>(R.id.progressPercent)
         val downloadSize = dialogView.findViewById<TextView>(R.id.downloadSize)
         val downloadSpeed = dialogView.findViewById<TextView>(R.id.downloadSpeed)
-        
+
         // Set content
         titleView.text = activity.getString(R.string.update_available_title)
         versionView.text = "${activity.getString(R.string.update_version_format, currentVersion, newVersion)} · ${getUpdateSourceDisplayName(source)}"
-        
+
         // Parse and format changelog (markdown body from GitHub)
-        val changelog = release.body.trim()
+        val changelog = release.safeBody.trim()
         if (changelog.isNotEmpty()) {
             // Simple markdown parsing for bullet points
             val formattedChangelog = changelog
@@ -1432,135 +1468,241 @@ class SettingsPanelManager(
             changelogView.text = activity.getString(R.string.update_available_msg, newVersion)
         }
         dev.xacnio.kciktv.mobile.util.DialogUtils.setupClickableLinks(changelogView)
-        
+
         // Button actions
         btnLater.setOnClickListener {
             dialog.dismiss()
         }
-        
+
         var isDownloading = false
-        
+
+        fun setButtonsEnabled(enabled: Boolean) {
+            isDownloading = !enabled
+            btnUpdateNow.isEnabled = enabled
+            btnLater.isEnabled = enabled
+            val alpha = if (enabled) 1.0f else 0.5f
+            btnUpdateNow.alpha = alpha
+            btnLater.alpha = alpha
+        }
+
         btnUpdateNow.setOnClickListener {
             if (isDownloading) return@setOnClickListener
-            isDownloading = true
-            btnUpdateNow.isEnabled = false
-            btnLater.isEnabled = false
-            btnUpdateNow.alpha = 0.5f
-            btnLater.alpha = 0.5f
-            
+
+            val asset = release.safeAssets.firstOrNull {
+                it.safeName.endsWith(".apk", ignoreCase = true) && it.safeDownloadUrl.isNotBlank()
+            }
+            if (asset == null) {
+                Toast.makeText(activity, activity.getString(R.string.apk_not_found), Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            setButtonsEnabled(false)
             progressSection.visibility = View.VISIBLE
             progressBar.progress = 0
             progressPercent.text = "0%"
             downloadSize.text = ""
             downloadSpeed.text = ""
-            
-            // Start download
-            val asset = release.assets.firstOrNull { it.name.endsWith(".apk") }
-            if (asset != null) {
-                downloadAndInstallApk(asset.downloadUrl, asset.size) { progress, downloadedBytes, totalBytes, speed ->
-                    activity.runOnUiThread {
-                        if (progress >= 0) {
+
+            downloadAndInstallApk(asset.safeDownloadUrl, asset.size) { progress, downloadedBytes, totalBytes, speed ->
+                activity.runOnUiThread {
+                    if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
+                    when {
+                        progress >= 0 -> {
                             progressBar.progress = progress
                             progressPercent.text = "$progress%"
-                            downloadSize.text = "${formatFileSize(downloadedBytes)} / ${formatFileSize(totalBytes)}"
+                            downloadSize.text = if (totalBytes > 0) {
+                                "${formatFileSize(downloadedBytes)} / ${formatFileSize(totalBytes)}"
+                            } else {
+                                formatFileSize(downloadedBytes)
+                            }
                             if (speed > 0) {
                                 downloadSpeed.text = "${formatFileSize(speed.toLong())}/s"
                             }
-                        } else {
-                            // Download failed or completed with install
-                            if (progress == -1) {
-                                dialog.dismiss()
+                            if (progress >= 100) {
+                                setButtonsEnabled(true)
                             }
+                        }
+                        progress == -1 -> {
+                            // Keep dialog open and re-enable buttons so user can retry immediately
+                            setButtonsEnabled(true)
+                            progressSection.visibility = View.GONE
                         }
                     }
                 }
-            } else {
-                Toast.makeText(activity, activity.getString(R.string.apk_not_found), Toast.LENGTH_SHORT).show()
-                dialog.dismiss()
             }
         }
-        
+
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
         dialog.show()
     }
-    
+
     private fun downloadAndInstallApk(
-        url: String, 
+        url: String,
         totalSize: Long,
         onProgress: (progress: Int, downloadedBytes: Long, totalBytes: Long, speed: Float) -> Unit
     ) {
         activity.lifecycleScope.launch(Dispatchers.IO) {
+            val partFile = File(activity.cacheDir, "update.apk.part")
+            val apkFile = File(activity.cacheDir, "update.apk")
             try {
-                val client = OkHttpClient()
+                if (partFile.exists()) {
+                    partFile.delete()
+                }
+
                 val request = Request.Builder().url(url).build()
-                val response = client.newCall(request).execute()
-                
-                if (response.isSuccessful && response.body != null) {
-                    val body = response.body!!
-                    val contentLength = if (body.contentLength() > 0) body.contentLength() else totalSize
-                    val inputStream = body.byteStream()
-                    val apkFile = File(activity.cacheDir, "update.apk")
-                    val outputStream = FileOutputStream(apkFile)
-                    
-                    val buffer = ByteArray(8 * 1024)
-                    var bytesRead: Int
-                    var totalBytesRead: Long = 0
+                RetrofitClient.githubHttpClient.newCall(request).execute().use { response ->
+                    val body = response.body
+                    if (!response.isSuccessful || body == null) {
+                        throw IOException("HTTP ${response.code}")
+                    }
+
+                    val responseLength = body.contentLength()
+                    val expectedLength = if (responseLength > 0L) responseLength else totalSize
+                    var totalBytesRead = 0L
                     var lastProgressTime = System.currentTimeMillis()
-                    var lastBytesRead: Long = 0
-                    var currentSpeed: Float = 0f
-                    
-                    while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                        outputStream.write(buffer, 0, bytesRead)
-                        totalBytesRead += bytesRead
-                        
-                        val currentTime = System.currentTimeMillis()
-                        val elapsedTime = currentTime - lastProgressTime
-                        
-                        // Calculate speed every 500ms
-                        if (elapsedTime >= 500) {
-                            val bytesInInterval = totalBytesRead - lastBytesRead
-                            currentSpeed = (bytesInInterval * 1000f) / elapsedTime
-                            lastProgressTime = currentTime
-                            lastBytesRead = totalBytesRead
-                        }
-                        
-                        if (contentLength > 0) {
-                            val progress = (totalBytesRead * 100 / contentLength).toInt()
-                            onProgress(progress, totalBytesRead, contentLength, currentSpeed)
+                    var lastBytesRead = 0L
+                    var currentSpeed = 0f
+
+                    body.byteStream().use { inputStream ->
+                        FileOutputStream(partFile).use { outputStream ->
+                            val buffer = ByteArray(16 * 1024)
+                            var bytesRead: Int
+                            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                                outputStream.write(buffer, 0, bytesRead)
+                                totalBytesRead += bytesRead
+
+                                val currentTime = System.currentTimeMillis()
+                                val elapsedTime = currentTime - lastProgressTime
+                                if (elapsedTime >= 500) {
+                                    val bytesInInterval = totalBytesRead - lastBytesRead
+                                    currentSpeed = (bytesInInterval * 1000f) / elapsedTime
+                                    lastProgressTime = currentTime
+                                    lastBytesRead = totalBytesRead
+                                }
+
+                                if (expectedLength > 0L) {
+                                    val progress = ((totalBytesRead * 100L) / expectedLength).toInt().coerceIn(0, 99)
+                                    onProgress(progress, totalBytesRead, expectedLength, currentSpeed)
+                                } else {
+                                    onProgress(0, totalBytesRead, 0L, currentSpeed)
+                                }
+                            }
+                            outputStream.flush()
                         }
                     }
-                    
-                    outputStream.flush()
-                    outputStream.close()
-                    inputStream.close()
-                    
+
+                    if (totalBytesRead <= 4L) {
+                        throw IOException("Downloaded APK is empty")
+                    }
+                    if (expectedLength > 0L && totalBytesRead != expectedLength) {
+                        throw IOException("Incomplete APK ($totalBytesRead / $expectedLength bytes)")
+                    }
+                    if (!hasZipMagicHeader(partFile)) {
+                        throw IOException("Downloaded file is not a valid APK archive")
+                    }
+
+                    if (apkFile.exists() && !apkFile.delete()) {
+                        android.util.Log.w("SettingsPanelManager", "Failed to delete previous update.apk before replace")
+                    }
+                    if (!partFile.renameTo(apkFile)) {
+                        partFile.copyTo(apkFile, overwrite = true)
+                        partFile.delete()
+                    }
+
+                    val finalTotal = if (expectedLength > 0L) expectedLength else totalBytesRead
                     withContext(Dispatchers.Main) {
-                        onProgress(100, totalBytesRead, contentLength, currentSpeed)
+                        onProgress(100, totalBytesRead, finalTotal, currentSpeed)
                         installApk(apkFile)
                     }
-                } else {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(activity, R.string.download_failed, Toast.LENGTH_SHORT).show()
-                        onProgress(-1, 0, 0, 0f)
-                    }
                 }
+            } catch (e: CancellationException) {
+                partFile.delete()
+                throw e
             } catch (e: Exception) {
+                partFile.delete()
+                android.util.Log.e("SettingsPanelManager", "APK download failed from $url", e)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(activity, activity.getString(R.string.download_failed) + ": ${e.message}", Toast.LENGTH_SHORT).show()
+                    val summary = summarizeUpdateError(e)
+                    Toast.makeText(
+                        activity,
+                        "${activity.getString(R.string.download_failed)}: $summary",
+                        Toast.LENGTH_LONG
+                    ).show()
                     onProgress(-1, 0, 0, 0f)
                 }
             }
         }
     }
-    
-    private fun installApk(file: File) {
-        val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.fileprovider", file)
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    private fun hasZipMagicHeader(file: File): Boolean {
+        if (!file.exists() || file.length() < 4L) return false
+        return try {
+            val header = ByteArray(4)
+            val read = FileInputStream(file).use { it.read(header) }
+            read == 4 &&
+                header[0] == 0x50.toByte() &&
+                header[1] == 0x4B.toByte() &&
+                header[2] == 0x03.toByte() &&
+                header[3] == 0x04.toByte()
+        } catch (_: Exception) {
+            false
         }
-        activity.startActivity(intent)
+    }
+
+    internal fun resumePendingApkInstallIfAllowed() {
+        val pendingFile = pendingInstallApkFile ?: return
+        if (!pendingFile.exists() || pendingFile.length() <= 4L) {
+            pendingInstallApkFile = null
+            return
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
+            activity.packageManager.canRequestPackageInstalls()
+        ) {
+            pendingInstallApkFile = null
+            installApk(pendingFile)
+        }
+    }
+
+    private fun installApk(file: File) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            !activity.packageManager.canRequestPackageInstalls()
+        ) {
+            pendingInstallApkFile = file
+            try {
+                val settingsIntent = Intent(
+                    android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    android.net.Uri.parse("package:${activity.packageName}")
+                )
+                activity.startActivity(settingsIntent)
+                return
+            } catch (e: Exception) {
+                android.util.Log.w("SettingsPanelManager", "Package-scoped unknown sources settings failed, trying generic", e)
+                try {
+                    activity.startActivity(Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES))
+                    return
+                } catch (fallbackError: Exception) {
+                    android.util.Log.e("SettingsPanelManager", "Unable to open unknown app sources settings", fallbackError)
+                }
+            }
+        }
+
+        pendingInstallApkFile = null
+        try {
+            val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.fileprovider", file)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            activity.startActivity(intent)
+        } catch (e: Exception) {
+            android.util.Log.e("SettingsPanelManager", "Failed to launch package installer for ${file.absolutePath}", e)
+            Toast.makeText(
+                activity,
+                "${activity.getString(R.string.download_failed)}: ${summarizeUpdateError(e)}",
+                Toast.LENGTH_LONG
+            ).show()
+        }
     }
     
     private fun formatFileSize(bytes: Long): String {

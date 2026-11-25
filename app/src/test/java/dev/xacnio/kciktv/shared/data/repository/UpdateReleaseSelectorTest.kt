@@ -76,13 +76,61 @@ class UpdateReleaseSelectorTest {
     }
 
     @Test
-    fun isNewerRelease_comparesNormalizedVersionsCaseInsensitively() {
+    fun isNewerRelease_upgradesAcrossSemverCoreVersions() {
+        assertTrue(UpdateReleaseSelector.isNewerRelease("2.5.0", "v2.5.1"))
+        assertTrue(UpdateReleaseSelector.isNewerRelease("2.5.1", "v2.5.2"))
+        assertTrue(UpdateReleaseSelector.isNewerRelease("v2.4.5-beta-d96786c", "v2.5.0"))
+        assertTrue(UpdateReleaseSelector.isNewerRelease("2.5.1-debug", "v2.5.2"))
+        assertTrue(UpdateReleaseSelector.isNewerRelease("2.5.1-756b8a6-debug", "v2.5.2"))
+        assertTrue(UpdateReleaseSelector.isNewerRelease("2.9.9", "v2.10.0"))
+        assertTrue(UpdateReleaseSelector.isNewerRelease("2.10.0", "v3.0.0"))
+    }
+
+    @Test
+    fun isNewerRelease_blocksDowngradesIncludingUpstreamOlderBeta() {
+        // Fork 2.5.1 / 2.5.2 must NOT offer Upstream 2.4.5-beta as an "update"
+        assertFalse(UpdateReleaseSelector.isNewerRelease("2.5.1", "v2.4.5-beta-d96786c"))
+        assertFalse(UpdateReleaseSelector.isNewerRelease("2.5.2", "v2.4.5-beta-d96786c"))
+        assertFalse(UpdateReleaseSelector.isNewerRelease("2.5.2", "v2.5.1"))
+        assertFalse(UpdateReleaseSelector.isNewerRelease("2.5.1", "v2.5.0"))
+        assertFalse(UpdateReleaseSelector.isNewerRelease("3.0.0", "v2.9.9"))
+    }
+
+    @Test
+    fun isNewerRelease_handlesEqualDebugLocalGitShaAndPrereleaseToStable() {
+        // Equal versions (with/without v prefix and -debug suffix)
+        assertFalse(UpdateReleaseSelector.isNewerRelease("2.5.1", "v2.5.1"))
+        assertFalse(UpdateReleaseSelector.isNewerRelease("2.5.1-debug", "v2.5.1"))
         assertFalse(UpdateReleaseSelector.isNewerRelease("2.4.5-beta-1v2b3c4", "v2.4.5-beta-1v2b3c4"))
         assertFalse(UpdateReleaseSelector.isNewerRelease("v2.4.5-beta-1v2b3c4", "V2.4.5-BETA-1V2B3C4"))
         assertFalse(UpdateReleaseSelector.isNewerRelease("2.4.5", ""))
         assertFalse(UpdateReleaseSelector.isNewerRelease("2.4.5", "v"))
 
+        // Local build `2.5.1-<sha>` vs release `2.5.1` -> false
+        assertFalse(UpdateReleaseSelector.isNewerRelease("2.5.1-756b8a6", "v2.5.1"))
+        assertFalse(UpdateReleaseSelector.isNewerRelease("2.5.1-756b8a6-debug", "v2.5.1"))
+
+        // Pre-release -> Stable on same core version -> true; Stable -> Pre-release -> false
+        assertTrue(UpdateReleaseSelector.isNewerRelease("2.5.1-beta.1", "v2.5.1"))
+        assertTrue(UpdateReleaseSelector.isNewerRelease("2.5.1-rc1", "v2.5.1"))
+        assertFalse(UpdateReleaseSelector.isNewerRelease("2.5.1", "v2.5.1-beta.1"))
+        assertFalse(UpdateReleaseSelector.isNewerRelease("2.5.1", "v2.5.1-rc.1"))
+    }
+
+    @Test
+    fun isNewerRelease_handlesPrereleaseOrderingAndUpstreamGitHashUpdates() {
+        // Pre-release stage & numeric ordering
+        assertTrue(UpdateReleaseSelector.isNewerRelease("2.5.1-alpha.1", "v2.5.1-beta.1"))
+        assertTrue(UpdateReleaseSelector.isNewerRelease("2.5.1-beta.2", "v2.5.1-beta.10"))
+        assertFalse(UpdateReleaseSelector.isNewerRelease("2.5.1-beta.10", "v2.5.1-beta.2"))
+        assertTrue(UpdateReleaseSelector.isNewerRelease("2.5.1-beta.3", "v2.5.1-rc.1"))
+
+        // Upstream same pre-release base with different 7+ hex git hash (both directions of hex char!)
+        assertTrue(UpdateReleaseSelector.isNewerRelease("2.4.5-beta-756b8a6", "v2.4.5-beta-d96786c"))
+        assertTrue(UpdateReleaseSelector.isNewerRelease("2.4.5-beta-d96786c", "v2.4.5-beta-756b8a6"))
+        assertFalse(UpdateReleaseSelector.isNewerRelease("2.4.5-beta-d96786c", "v2.4.5-beta-D96786C"))
+
+        // Alphanumeric pre-release suffix fallback
         assertTrue(UpdateReleaseSelector.isNewerRelease("2.4.5-beta-1v2b3c4", "v2.4.5-beta-9z8y7x6"))
-        assertTrue(UpdateReleaseSelector.isNewerRelease("2.4.5", "v2.4.6"))
     }
 }

@@ -2996,6 +2996,10 @@ class MobilePlayerActivity : FragmentActivity() {
         super.onResume()
         homeScreenManager.onResume()
 
+        if (::settingsPanelManager.isInitialized) {
+            settingsPanelManager.resumePendingApkInstallIfAllowed()
+        }
+
         // Dismiss lingering mention notifications — user is back in the app and will see them
         mentionsManager.clearMentionNotifications()
 

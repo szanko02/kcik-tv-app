@@ -42,7 +42,11 @@ object RetrofitClient {
     private const val BLERP_BASE_URL = "https://api.blerp.com/"
     
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
-        level = HttpLoggingInterceptor.Level.BODY
+        level = if (dev.xacnio.kciktv.BuildConfig.DEBUG) {
+            HttpLoggingInterceptor.Level.BODY
+        } else {
+            HttpLoggingInterceptor.Level.NONE
+        }
     }
 
     /**
@@ -138,17 +142,87 @@ object RetrofitClient {
         })
     }
 
+    private val httpProxyAuthenticator = okhttp3.Authenticator { _, response ->
+        val user = ProxyConfig.username
+        if (ProxyConfig.type != ProxyConfig.TYPE_HTTP || user.isNullOrBlank()) return@Authenticator null
+        if (response.request.header("Proxy-Authorization") != null) return@Authenticator null
+        response.request.newBuilder()
+            .header("Proxy-Authorization", okhttp3.Credentials.basic(user, ProxyConfig.password ?: ""))
+            .build()
+    }
+
     // Same pipeline as okHttpClient, but always dialed through ProxyConfig. Only reached via
     // proxiedOkHttpClient's routing interceptor below — never used directly by Retrofit.
     private val proxyBackendClient: OkHttpClient = okHttpClient.newBuilder()
         .proxySelector(proxySelector)
-        .proxyAuthenticator { _, response ->
-            val user = ProxyConfig.username
-            if (ProxyConfig.type != ProxyConfig.TYPE_HTTP || user.isNullOrBlank()) return@proxyAuthenticator null
-            if (response.request.header("Proxy-Authorization") != null) return@proxyAuthenticator null
-            response.request.newBuilder()
-                .header("Proxy-Authorization", okhttp3.Credentials.basic(user, ProxyConfig.password ?: ""))
-                .build()
+        .proxyAuthenticator(httpProxyAuthenticator)
+        .build()
+
+    // Dedicated GitHub client (REST API, Atom feed fallback, and binary APK downloads):
+    // - No HttpLoggingInterceptor body buffering (prevents OOM on 60MB+ APK streams).
+    // - Sends standard GitHub User-Agent and Accept headers.
+    // - Automatic ProxyConfig failover: uses proxy first when SCOPE_ALL, or falls back to proxy
+    //   when direct GitHub is blocked/throttled (IOException or HTTP 403/429).
+    private val githubHeaderInterceptor = okhttp3.Interceptor { chain ->
+        val original = chain.request()
+        val builder = original.newBuilder()
+            .header("User-Agent", "KCIKTV-Android/${dev.xacnio.kciktv.BuildConfig.VERSION_NAME}")
+        if (original.url.host.equals("api.github.com", ignoreCase = true)) {
+            builder.header("Accept", "application/vnd.github+json")
+        }
+        chain.proceed(builder.build())
+    }
+
+    private val directGithubClient: OkHttpClient = newOkHttpClientBuilder()
+        .addInterceptor(githubHeaderInterceptor)
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(45, TimeUnit.SECONDS)
+        .writeTimeout(15, TimeUnit.SECONDS)
+        .build()
+
+    private val proxiedGithubClient: OkHttpClient = directGithubClient.newBuilder()
+        .proxySelector(proxySelector)
+        .proxyAuthenticator(httpProxyAuthenticator)
+        .build()
+
+    val githubHttpClient: OkHttpClient = newOkHttpClientBuilder()
+        .addInterceptor(dev.xacnio.kciktv.shared.data.mock.MockInterceptor())
+        .addInterceptor { chain ->
+            val request = chain.request()
+            if (ProxyConfig.isConfigured && ProxyConfig.scope == ProxyConfig.SCOPE_ALL) {
+                try {
+                    proxiedGithubClient.newCall(request).execute()
+                } catch (e: java.io.IOException) {
+                    runCatching {
+                        android.util.Log.w("RetrofitClient", "Proxied GitHub request failed (${e.javaClass.simpleName}), falling back to direct: ${request.url}")
+                    }
+                    directGithubClient.newCall(request).execute()
+                }
+            } else {
+                try {
+                    val response = directGithubClient.newCall(request).execute()
+                    if ((response.code == 403 || response.code == 429) && ProxyConfig.isConfigured) {
+                        runCatching {
+                            android.util.Log.w("RetrofitClient", "Direct GitHub returned HTTP ${response.code}, retrying via proxy: ${request.url}")
+                        }
+                        response.close()
+                        proxiedGithubClient.newCall(request).execute()
+                    } else {
+                        response
+                    }
+                } catch (e: java.io.IOException) {
+                    if (ProxyConfig.isConfigured) {
+                        runCatching {
+                            android.util.Log.w("RetrofitClient", "Direct GitHub failed (${e.javaClass.simpleName}), retrying via proxy: ${request.url}")
+                        }
+                        proxiedGithubClient.newCall(request).execute()
+                    } else {
+                        throw e
+                    }
+                }
+            }
         }
         .build()
 
@@ -178,6 +252,7 @@ object RetrofitClient {
         ProxyConfig.syncFrom(prefs)
         proxyBackendClient.dispatcher.executorService.execute {
             proxyBackendClient.connectionPool.evictAll()
+            proxiedGithubClient.connectionPool.evictAll()
         }
     }
 
@@ -208,7 +283,7 @@ object RetrofitClient {
     // Retrofit instance for GitHub API
     private val githubRetrofit: Retrofit = Retrofit.Builder()
         .baseUrl(GITHUB_BASE_URL)
-        .client(okHttpClient)
+        .client(githubHttpClient)
         .addConverterFactory(GsonConverterFactory.create())
         .build()
 
