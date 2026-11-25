@@ -20,6 +20,10 @@ class PlaybackService : Service() {
 
     companion object {
         const val ACTION_STOP_PLAYBACK = "dev.xacnio.kciktv.STOP_PLAYBACK"
+        @Volatile
+        var pendingNotification: Notification? = null
+        @Volatile
+        var pendingNotificationId: Int = 43
     }
 
     private var lastNotification: Notification? = null
@@ -27,10 +31,28 @@ class PlaybackService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    private fun startForegroundCompat(id: Int, notification: Notification) {
+        val type = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+        } else {
+            0
+        }
+        androidx.core.app.ServiceCompat.startForeground(this, id, notification, type)
+    }
+
+    private fun createMinimalFallbackNotification(): Notification {
+        return androidx.core.app.NotificationCompat.Builder(this, "kciktv_mobile_playback")
+            .setSmallIcon(dev.xacnio.kciktv.R.drawable.ic_notification)
+            .setContentTitle("KCIKTV")
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_LOW)
+            .build()
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Handle STOP action (from notification delete intent)
         if (intent?.action == "STOP") {
             Log.d("PlaybackService", "STOP action received - stopping service")
+            pendingNotification = null
             notifyStopPlayback()
             stopSelf()
             return START_NOT_STICKY
@@ -41,23 +63,39 @@ class PlaybackService : Service() {
             val notif = lastNotification
             if (notif != null) {
                 Log.d("PlaybackService", "REPOST_CHAT - reposting chat notification")
-                startForeground(lastNotificationId, notif)
+                startForegroundCompat(lastNotificationId, notif)
+            } else {
+                startForegroundCompat(lastNotificationId, createMinimalFallbackNotification())
+                stopSelf()
             }
             return START_NOT_STICKY
         }
 
-        val notification = if (android.os.Build.VERSION.SDK_INT >= 33) {
+        val inMemoryNotification = pendingNotification?.also { pendingNotification = null }
+        val notification = inMemoryNotification ?: if (android.os.Build.VERSION.SDK_INT >= 33) {
             intent?.getParcelableExtra("notification", Notification::class.java)
         } else {
             @Suppress("DEPRECATION")
             intent?.getParcelableExtra<Notification>("notification")
         }
-        val notificationId = intent?.getIntExtra("notificationId", 42) ?: 42
+        val notificationId = if (inMemoryNotification != null) {
+            pendingNotificationId
+        } else {
+            intent?.getIntExtra("notificationId", 42) ?: 42
+        }
 
         if (notification != null) {
             lastNotification = notification
             lastNotificationId = notificationId
-            startForeground(notificationId, notification)
+            startForegroundCompat(notificationId, notification)
+        } else {
+            val fallback = lastNotification
+            if (fallback != null) {
+                startForegroundCompat(lastNotificationId, fallback)
+            } else {
+                startForegroundCompat(notificationId, createMinimalFallbackNotification())
+                stopSelf()
+            }
         }
 
         return START_NOT_STICKY
@@ -85,6 +123,7 @@ class PlaybackService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        pendingNotification = null
         Log.d("PlaybackService", "Service destroyed - stopping playback")
         notifyStopPlayback()
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {

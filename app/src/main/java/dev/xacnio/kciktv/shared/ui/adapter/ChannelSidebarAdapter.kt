@@ -148,11 +148,10 @@ class ChannelSidebarAdapter(
             holder.selectionIndicator.visibility = if (isPlaying) View.VISIBLE else View.GONE
             holder.channelName.setTextColor(if (isPlaying) themeColor else Color.WHITE)
             
-            // Apply Focus Theme & Marquee
-            holder.itemView.setOnFocusChangeListener { view, hasFocus ->
+            fun applyFocusStyle(view: View, hasFocus: Boolean) {
                 val bg = GradientDrawable()
                 val density = view.resources.displayMetrics.density
-                bg.cornerRadius = 16f * density 
+                bg.cornerRadius = 16f * density
 
                 if (hasFocus) {
                     val alphaColor = (themeColor and 0x00FFFFFF) or 0x4D000000 // 30% alpha
@@ -163,12 +162,18 @@ class ChannelSidebarAdapter(
                     bg.setStroke(0, Color.TRANSPARENT)
                 }
                 view.background = bg
-                
+
                 // Marquee only when focused
                 holder.channelName.isSelected = hasFocus
                 holder.streamTitle.isSelected = hasFocus
                 holder.categoryName.isSelected = hasFocus
             }
+
+            // Apply Focus Theme & Marquee (sync immediately for recycled holders)
+            holder.itemView.setOnFocusChangeListener { view, hasFocus ->
+                applyFocusStyle(view, hasFocus)
+            }
+            applyFocusStyle(holder.itemView, holder.itemView.hasFocus())
 
             holder.itemView.setOnClickListener { 
                 if (position == currentIndex) {
@@ -183,13 +188,12 @@ class ChannelSidebarAdapter(
             }
         } else if (holder is LoadMoreViewHolder) {
             holder.txtLoadMore.text = holder.itemView.context.getString(R.string.load_more)
-            holder.txtLoadMore.setTextColor(themeColor)
-            
-            holder.itemView.setOnFocusChangeListener { view, hasFocus ->
+
+            fun applyLoadMoreFocusStyle(view: View, hasFocus: Boolean) {
                 val bg = GradientDrawable()
                 val density = view.resources.displayMetrics.density
                 bg.cornerRadius = 14f * density // Consistent with drawer buttons
-                
+
                 if (hasFocus) {
                     val alphaColor = (themeColor and 0x00FFFFFF) or 0x4D000000 // 30% alpha
                     bg.setColor(alphaColor)
@@ -202,9 +206,14 @@ class ChannelSidebarAdapter(
                     holder.txtLoadMore.setTextColor(themeColor)
                     holder.txtLoadMore.typeface = android.graphics.Typeface.DEFAULT
                 }
-                
+
                 view.background = bg
             }
+
+            holder.itemView.setOnFocusChangeListener { view, hasFocus ->
+                applyLoadMoreFocusStyle(view, hasFocus)
+            }
+            applyLoadMoreFocusStyle(holder.itemView, holder.itemView.hasFocus())
 
             holder.itemView.setOnClickListener { onLoadMore() }
         }

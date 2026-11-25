@@ -43,6 +43,8 @@ import dev.xacnio.kciktv.mobile.InternalBrowserSheet
 import dev.xacnio.kciktv.shared.data.api.RetrofitClient
 import dev.xacnio.kciktv.shared.ui.font.FontManager
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import okhttp3.Request
 import java.io.File
 import java.io.FileInputStream
@@ -62,6 +64,8 @@ class SettingsPanelManager(
         private set
 
     private var pendingInstallApkFile: File? = null
+    private var activeUpdateJob: kotlinx.coroutines.Job? = null
+    private var activeUpdateDialog: AlertDialog? = null
     
     private var currentDialog: BottomSheetDialog? = null
     private var detailDialog: BottomSheetDialog? = null
@@ -269,6 +273,7 @@ class SettingsPanelManager(
                 prefs.uiMode = AppPreferences.UI_MODE_TV
                 detailDialog?.dismiss()
                 currentDialog?.dismiss()
+                activity.stopPlaybackForUiSwitch()
                 val intent = Intent(activity, dev.xacnio.kciktv.tv.PlayerActivity::class.java).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
                 }
@@ -537,13 +542,18 @@ class SettingsPanelManager(
         Toast.makeText(activity, R.string.proxy_testing, Toast.LENGTH_SHORT).show()
 
         activity.lifecycleScope.launch(Dispatchers.IO) {
+            dev.xacnio.kciktv.shared.data.api.ProxyConfig.syncFrom(prefs)
             val proxyType = if (prefs.proxyType == dev.xacnio.kciktv.shared.data.api.ProxyConfig.TYPE_SOCKS5) {
                 java.net.Proxy.Type.SOCKS
             } else {
                 java.net.Proxy.Type.HTTP
             }
             val proxy = java.net.Proxy(proxyType, java.net.InetSocketAddress.createUnresolved(host, port))
-            val testClient = dev.xacnio.kciktv.shared.data.api.RetrofitClient.buildProxyTestClient(proxy)
+            val testClient = dev.xacnio.kciktv.shared.data.api.RetrofitClient.buildProxyTestClient(
+                proxy = proxy,
+                username = prefs.proxyUsername,
+                password = prefs.proxyPassword
+            )
 
             val startTime = System.currentTimeMillis()
             try {
@@ -554,7 +564,7 @@ class SettingsPanelManager(
                 testClient.newCall(request).execute().use { response ->
                     val elapsedMs = System.currentTimeMillis() - startTime
                     withContext(Dispatchers.Main) {
-                        if (response.isSuccessful || response.code in 200..499) {
+                        if (response.code in 200..399 || response.code == 404 || response.code == 405) {
                             Toast.makeText(activity, activity.getString(R.string.proxy_test_success, elapsedMs), Toast.LENGTH_LONG).show()
                         } else {
                             Toast.makeText(activity, activity.getString(R.string.proxy_test_failed, "HTTP ${response.code}"), Toast.LENGTH_LONG).show()
@@ -1497,12 +1507,24 @@ class SettingsPanelManager(
         currentVersion: String,
         newVersion: String
     ) {
+        activeUpdateJob?.cancel()
+        activeUpdateJob = null
+        activeUpdateDialog?.dismiss()
+
         val dialogView = LayoutInflater.from(activity).inflate(R.layout.dialog_update, null)
 
         val dialog = AlertDialog.Builder(activity, R.style.TransparentAlertDialog)
             .setView(dialogView)
             .setCancelable(true)
             .create()
+        activeUpdateDialog = dialog
+        dialog.setOnDismissListener {
+            activeUpdateJob?.cancel()
+            activeUpdateJob = null
+            if (activeUpdateDialog === dialog) {
+                activeUpdateDialog = null
+            }
+        }
 
         // Setup views
         val titleView = dialogView.findViewById<TextView>(R.id.updateTitle)
@@ -1608,9 +1630,11 @@ class SettingsPanelManager(
         totalSize: Long,
         onProgress: (progress: Int, downloadedBytes: Long, totalBytes: Long, speed: Float) -> Unit
     ) {
-        activity.lifecycleScope.launch(Dispatchers.IO) {
-            val partFile = File(activity.cacheDir, "update.apk.part")
-            val apkFile = File(activity.cacheDir, "update.apk")
+        activeUpdateJob?.cancel()
+        activeUpdateJob = activity.lifecycleScope.launch(Dispatchers.IO) {
+            val otaDir = File(activity.cacheDir, "ota").apply { mkdirs() }
+            val partFile = File(otaDir, "update.apk.part")
+            val apkFile = File(otaDir, "update.apk")
             try {
                 if (partFile.exists()) {
                     partFile.delete()
@@ -1635,6 +1659,7 @@ class SettingsPanelManager(
                             val buffer = ByteArray(16 * 1024)
                             var bytesRead: Int
                             while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                                currentCoroutineContext().ensureActive()
                                 outputStream.write(buffer, 0, bytesRead)
                                 totalBytesRead += bytesRead
 
@@ -1645,13 +1670,13 @@ class SettingsPanelManager(
                                     currentSpeed = (bytesInInterval * 1000f) / elapsedTime
                                     lastProgressTime = currentTime
                                     lastBytesRead = totalBytesRead
-                                }
 
-                                if (expectedLength > 0L) {
-                                    val progress = ((totalBytesRead * 100L) / expectedLength).toInt().coerceIn(0, 99)
-                                    onProgress(progress, totalBytesRead, expectedLength, currentSpeed)
-                                } else {
-                                    onProgress(0, totalBytesRead, 0L, currentSpeed)
+                                    if (expectedLength > 0L) {
+                                        val progress = ((totalBytesRead * 100L) / expectedLength).toInt().coerceIn(0, 99)
+                                        onProgress(progress, totalBytesRead, expectedLength, currentSpeed)
+                                    } else {
+                                        onProgress(0, totalBytesRead, 0L, currentSpeed)
+                                    }
                                 }
                             }
                             outputStream.flush()
@@ -1667,6 +1692,7 @@ class SettingsPanelManager(
                     if (!hasZipMagicHeader(partFile)) {
                         throw IOException("Downloaded file is not a valid APK archive")
                     }
+                    validateDownloadedApk(partFile)
 
                     if (apkFile.exists() && !apkFile.delete()) {
                         android.util.Log.w("SettingsPanelManager", "Failed to delete previous update.apk before replace")
@@ -1713,6 +1739,38 @@ class SettingsPanelManager(
                 header[3] == 0x04.toByte()
         } catch (_: Exception) {
             false
+        }
+    }
+
+    private fun validateDownloadedApk(file: File) {
+        val pm = activity.packageManager
+        val archiveInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            pm.getPackageArchiveInfo(
+                file.absolutePath,
+                android.content.pm.PackageManager.PackageInfoFlags.of(0)
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            pm.getPackageArchiveInfo(file.absolutePath, 0)
+        } ?: throw IOException("Corrupted APK archive")
+
+        if (archiveInfo.packageName != activity.packageName) {
+            throw IOException("APK package mismatch (${archiveInfo.packageName})")
+        }
+
+        val currentInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            pm.getPackageInfo(
+                activity.packageName,
+                android.content.pm.PackageManager.PackageInfoFlags.of(0)
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            pm.getPackageInfo(activity.packageName, 0)
+        }
+        val archiveCode = androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(archiveInfo)
+        val currentCode = androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(currentInfo)
+        if (archiveCode < currentCode) {
+            throw IOException("APK version downgrade blocked ($archiveCode < $currentCode)")
         }
     }
 

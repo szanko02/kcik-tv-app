@@ -21,5 +21,7 @@ target_compile_options(rnnoise_nr PRIVATE
         -O3 -fvisibility=hidden -DNDEBUG
         -Wno-unused -Wno-absolute-value)
 
+target_link_options(rnnoise_nr PRIVATE "-Wl,-z,max-page-size=16384")
+
 find_library(log-lib log)
 target_link_libraries(rnnoise_nr ${log-lib})

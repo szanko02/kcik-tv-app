@@ -37,7 +37,11 @@ class MobilePlayerBroadcastManager(private val activity: MobilePlayerActivity) {
                         val willPlay = activity.ivsPlayer?.state != Player.State.PLAYING
 
                         if (willPlay) {
-                            activity.ivsPlayer?.seekTo(activity.ivsPlayer?.duration ?: 0L)
+                            val isDvrActive = activity.dvrPlaybackUrl != null &&
+                                activity.currentStreamUrl == activity.dvrPlaybackUrl
+                            if (activity.vodManager.currentPlaybackMode == VodManager.PlaybackMode.LIVE && !isDvrActive) {
+                                activity.ivsPlayer?.seekTo(activity.ivsPlayer?.duration ?: 0L)
+                            }
                             activity.ivsPlayer?.play()
                         } else {
                             activity.ivsPlayer?.pause()
@@ -128,12 +132,12 @@ class MobilePlayerBroadcastManager(private val activity: MobilePlayerActivity) {
 
         val pipFilter = IntentFilter(activity.PIP_CONTROL_ACTION)
         ContextCompat.registerReceiver(
-            activity, pipReceiver, pipFilter, ContextCompat.RECEIVER_EXPORTED
+            activity, pipReceiver, pipFilter, ContextCompat.RECEIVER_NOT_EXPORTED
         )
 
         val stopFilter = IntentFilter(PlaybackService.ACTION_STOP_PLAYBACK)
         ContextCompat.registerReceiver(
-            activity, stopPlaybackReceiver, stopFilter, ContextCompat.RECEIVER_EXPORTED
+            activity, stopPlaybackReceiver, stopFilter, ContextCompat.RECEIVER_NOT_EXPORTED
         )
 
         // SCREEN_ON/OFF are protected broadcasts that can only be received by a

@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
-    <cache-path name="my_cache" path="." />
-    <external-cache-path name="my_ext_cache" path="." />
+    <cache-path name="ota_apk" path="ota/" />
 </paths>

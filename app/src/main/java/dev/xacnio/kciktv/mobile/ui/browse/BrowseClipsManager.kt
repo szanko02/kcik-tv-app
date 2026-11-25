@@ -383,8 +383,7 @@ class BrowseClipsManager(private val activity: MobilePlayerActivity) {
     }
     
     private fun playClipDirectly(clip: BrowseClip) {
-        // Hide browse screen and play clip directly in main player
-        binding.browseScreenContainer.root.visibility = View.GONE
+        // vodManager.playClip hides browseScreenContainer once playback details succeed
         activity.vodManager.playClipById(clip.id)
     }
     

@@ -90,9 +90,21 @@ class WebViewManager(
     // Track whether the authWebView has been deep suspended (about:blank loaded)
     private var isDeepSuspended = false
 
+    // Queue concurrent wake requests while reloading from deep suspend
+    private var isWakingFromDeepSuspend = false
+    private val pendingWakeCallbacks = mutableListOf<() -> Unit>()
+
+    // Handler for polling KPSDK readiness
+    private val kpsdkPollHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
     // Handler for scheduling deep suspend after idle timeout
     private val deepSuspendHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val deepSuspendRunnable = Runnable { deepSuspendAuthWebView() }
+
+    private fun jsQuote(value: String): String =
+        org.json.JSONObject.quote(value)
+            .replace("\u2028", "\\u2028")
+            .replace("\u2029", "\\u2029")
 
     /**
      * Suspends the authWebView to conserve RAM when not in use.
@@ -132,6 +144,9 @@ class WebViewManager(
     fun resetForAuthStateChange() {
         // Cancel any pending deep-suspend so we don't trip over ourselves.
         deepSuspendHandler.removeCallbacks(deepSuspendRunnable)
+        kpsdkPollHandler.removeCallbacksAndMessages(null)
+        isWakingFromDeepSuspend = false
+        pendingWakeCallbacks.clear()
         try {
             val webView = activity.binding.authWebView
             // onResume first so loadUrl actually progresses if we were light-suspended.
@@ -179,10 +194,17 @@ class WebViewManager(
         // Cancel any pending deep suspend — we're about to use the WebView
         deepSuspendHandler.removeCallbacks(deepSuspendRunnable)
 
+        if (isWakingFromDeepSuspend) {
+            pendingWakeCallbacks.add(onReady)
+            return
+        }
+
         if (isDeepSuspended) {
             // Deep suspended — need full reload
             Log.d(TAG, "Waking from deep suspend — reloading WebView")
             isDeepSuspended = false
+            isWakingFromDeepSuspend = true
+            pendingWakeCallbacks.add(onReady)
             isAuthWebViewSuspended = false
             isAuthWebViewReady = false
             isBridgeInjected = false
@@ -215,7 +237,10 @@ class WebViewManager(
                             isAuthWebViewReady = true
                         }
                         cookieManager.flush()
-                        onReady()
+                        isWakingFromDeepSuspend = false
+                        val callbacks = pendingWakeCallbacks.toList()
+                        pendingWakeCallbacks.clear()
+                        callbacks.forEach { it() }
                     }
                 }
             }
@@ -495,7 +520,7 @@ class WebViewManager(
         Log.d(TAG, "  KPSDK ct=${kpsdkCt?.take(20)}… cd=${kpsdkCd?.take(20)}… xsrf=${xsrf?.take(10)}…")
 
         return try {
-            val client = okhttp3.OkHttpClient.Builder()
+            val client = dev.xacnio.kciktv.shared.data.api.RetrofitClient.proxiedOkHttpClient.newBuilder()
                 .connectionSpecs(listOf(okhttp3.ConnectionSpec.RESTRICTED_TLS, okhttp3.ConnectionSpec.CLEARTEXT))
                 .protocols(listOf(okhttp3.Protocol.HTTP_2, okhttp3.Protocol.HTTP_1_1))
                 .followRedirects(true)
@@ -533,34 +558,35 @@ class WebViewManager(
             auth?.let { rb.header("Authorization", it) }
             cookieStr?.let { rb.header("Cookie", it) }
 
-            val response = client.newCall(rb.build()).execute()
-            var bodyBytes = response.body?.bytes() ?: ByteArray(0)
+            client.newCall(rb.build()).execute().use { response ->
+                var bodyBytes = response.body?.bytes() ?: ByteArray(0)
 
-            // We disabled OkHttp's transparent gzip by setting Accept-Encoding ourselves;
-            // decode here so the WebView sees plain JSON.
-            if (response.header("Content-Encoding")?.equals("gzip", ignoreCase = true) == true) {
-                try {
-                    bodyBytes = java.util.zip.GZIPInputStream(java.io.ByteArrayInputStream(bodyBytes))
-                        .use { it.readBytes() }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to decode gzip follow response", e)
+                // We disabled OkHttp's transparent gzip by setting Accept-Encoding ourselves;
+                // decode here so the WebView sees plain JSON.
+                if (response.header("Content-Encoding")?.equals("gzip", ignoreCase = true) == true) {
+                    try {
+                        bodyBytes = java.util.zip.GZIPInputStream(java.io.ByteArrayInputStream(bodyBytes))
+                            .use { it.readBytes() }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to decode gzip follow response", e)
+                    }
                 }
+
+                Log.d(TAG, "Follow intercept response: ${response.code} (${bodyBytes.size}B)")
+
+                android.webkit.WebResourceResponse(
+                    "application/json",
+                    "UTF-8",
+                    response.code,
+                    response.message.ifEmpty { "OK" },
+                    mapOf(
+                        "Content-Type" to "application/json",
+                        "Access-Control-Allow-Origin" to "*",
+                        "Access-Control-Allow-Credentials" to "true"
+                    ),
+                    java.io.ByteArrayInputStream(bodyBytes)
+                )
             }
-
-            Log.d(TAG, "Follow intercept response: ${response.code} (${bodyBytes.size}B)")
-
-            android.webkit.WebResourceResponse(
-                "application/json",
-                "UTF-8",
-                response.code,
-                response.message.ifEmpty { "OK" },
-                mapOf(
-                    "Content-Type" to "application/json",
-                    "Access-Control-Allow-Origin" to "*",
-                    "Access-Control-Allow-Credentials" to "true"
-                ),
-                java.io.ByteArrayInputStream(bodyBytes)
-            )
         } catch (e: Exception) {
             Log.e(TAG, "Follow intercept failed — falling back to WebView fetch", e)
             null
@@ -661,14 +687,17 @@ class WebViewManager(
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     suspend fun fetchHistoryViaWebView(channelId: Long, userId: Long, cursor: String?): Result<dev.xacnio.kciktv.shared.data.model.ChatHistoryResponse> = kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
-        val safeCursor = cursor ?: ""
+        val safeCursor = android.net.Uri.encode(cursor ?: "")
         val url = "https://kick.com/api/v2/channels/$channelId/users/$userId/messages?cursor=$safeCursor"
         val token = prefs.authToken ?: ""
 
         Log.d(TAG, "Starting WebView fetch for history: $url")
 
-        // Set callback
-        historyCallback = { result ->
+        lateinit var currentCallback: (Result<String>) -> Unit
+        currentCallback = { result ->
+            if (historyCallback === currentCallback) {
+                historyCallback = null
+            }
             if (continuation.isActive) {
                 result.onSuccess { json ->
                     try {
@@ -684,23 +713,41 @@ class WebViewManager(
             }
         }
 
+        // Fail any superseded in-flight request instead of leaving its coroutine suspended forever
+        historyCallback?.invoke(Result.failure(kotlinx.coroutines.CancellationException("Superseded by newer history request")))
+        historyCallback = currentCallback
+
+        continuation.invokeOnCancellation {
+            if (historyCallback === currentCallback) {
+                historyCallback = null
+            }
+        }
+
         activity.runOnUiThread {
-            if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
+            if (activity.isFinishing || activity.isDestroyed) {
+                currentCallback(Result.failure(IllegalStateException("Activity is finishing or destroyed")))
+                return@runOnUiThread
+            }
             ensureAuthWebViewReady {
+                if (activity.isFinishing || activity.isDestroyed) {
+                    currentCallback(Result.failure(IllegalStateException("Activity is finishing or destroyed")))
+                    return@ensureAuthWebViewReady
+                }
                 restoreSavedCookies()
                 try {
+                    val quotedUrl = jsQuote(url)
+                    val quotedToken = jsQuote(token)
                     // Use bridge if available, otherwise fallback to inline script
                     if (isBridgeInjected) {
-                        val escapedUrl = url.replace("'", "\\'")
                         activity.binding.authWebView.evaluateJavascript(
-                            "window.AppBridge.fetchHistory('$escapedUrl', '$token');", null
+                            "window.AppBridge.fetchHistory($quotedUrl, $quotedToken);", null
                         )
                     } else {
                         val script = """
-                            fetch('$url', {
+                            fetch($quotedUrl, {
                                 method: 'GET',
                                 headers: {
-                                    'Authorization': 'Bearer $token',
+                                    'Authorization': 'Bearer ' + $quotedToken,
                                     'Accept': 'application/json',
                                     'X-Requested-With': 'XMLHttpRequest',
                                     'Cache-Control': 'no-cache'
@@ -718,6 +765,7 @@ class WebViewManager(
                     }
                 } catch (t: Throwable) {
                     Log.e(TAG, "Failed to execute history fetch script", t)
+                    currentCallback(Result.failure(t))
                     suspendAuthWebView()
                 }
             }
@@ -754,11 +802,14 @@ class WebViewManager(
                 }
 
                 try {
+                    val quotedSlug = jsQuote(slug)
+                    val quotedMethod = jsQuote(method)
+                    val quotedToken = jsQuote(token)
                     if (isBridgeInjected) {
                         // Fast path: call pre-injected bridge function directly
                         Log.d(TAG, "Follow via AppBridge: $method /channels/$slug/follow")
                         activity.binding.authWebView.evaluateJavascript(
-                            "window.AppBridge.followChannel('$slug', '$method', '$token');", null
+                            "window.AppBridge.followChannel($quotedSlug, $quotedMethod, $quotedToken);", null
                         )
                     } else {
                         // Fallback: inline script (bridge not ready yet, extremely rare)
@@ -767,7 +818,7 @@ class WebViewManager(
                             (function() {
                                 var headers = {
                                     'Content-Type': 'application/json',
-                                    'Authorization': 'Bearer $token',
+                                    'Authorization': 'Bearer ' + $quotedToken,
                                     'Accept': 'application/json'
                                 };
                                 var cookies = document.cookie.split(';');
@@ -778,11 +829,11 @@ class WebViewManager(
                                         break;
                                     }
                                 }
-                                fetch('https://kick.com/api/v2/channels/$slug/follow', {
-                                    method: '$method',
+                                fetch('https://kick.com/api/v2/channels/' + encodeURIComponent($quotedSlug) + '/follow', {
+                                    method: $quotedMethod,
                                     headers: headers,
                                     credentials: 'include',
-                                    body: '$method' === 'POST' ? '{}' : null
+                                    body: $quotedMethod === 'POST' ? '{}' : null
                                 })
                                 .then(function(r) { return r.text().then(function(t) { return {ok: r.ok, code: r.status, body: t}; }); })
                                 .then(function(res) { AndroidBridge.onFollowResult(JSON.stringify(res)); })
@@ -893,7 +944,7 @@ class WebViewManager(
      */
     private fun pollKpsdkAndExecute(view: android.webkit.WebView?, onReady: () -> Unit) {
         val startTime = System.currentTimeMillis()
-        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        kpsdkPollHandler.removeCallbacksAndMessages(null)
         
         fun isWebViewValid(): Boolean {
             if (view == null) return false
@@ -932,7 +983,7 @@ class WebViewManager(
                         Log.d(TAG, "KPSDK detected ready after ${elapsed}ms")
                         onReady()
                     } else {
-                        handler.postDelayed({ poll() }, KPSDK_POLL_INTERVAL_MS)
+                        kpsdkPollHandler.postDelayed({ poll() }, KPSDK_POLL_INTERVAL_MS)
                     }
                 }
             } catch (t: Throwable) {
@@ -940,7 +991,7 @@ class WebViewManager(
             }
         }
         
-        handler.postDelayed({ poll() }, KPSDK_MIN_WAIT_MS)
+        kpsdkPollHandler.postDelayed({ poll() }, KPSDK_MIN_WAIT_MS)
     }
 
     // ==================== VIEWER TOKEN FETCHING ====================
@@ -1008,7 +1059,7 @@ class WebViewManager(
 
                     if (isBridgeInjected) {
                         activity.binding.authWebView.evaluateJavascript(
-                            "window.AppBridge.fetchToken('$authToken', '$CLIENT_TOKEN', '$requestId');", null
+                            "window.AppBridge.fetchToken(${jsQuote(authToken)}, ${jsQuote(CLIENT_TOKEN)}, ${jsQuote(requestId)});", null
                         )
                     } else {
                         executeViewerTokenScript(activity.binding.authWebView)
@@ -1032,16 +1083,20 @@ class WebViewManager(
         val randomStr = (1..6).map { chars.random() }.joinToString("")
         val requestId = "${System.currentTimeMillis()}.$randomStr"
 
+        val quotedAuthToken = jsQuote(authToken)
+        val quotedClientToken = jsQuote(CLIENT_TOKEN)
+        val quotedRequestId = jsQuote(requestId)
+
         val script = """
             fetch('https://websockets.kick.com/viewer/v1/token', {
                 method: 'GET',
                 headers: {
-                    'Authorization': 'Bearer $authToken',
+                    'Authorization': 'Bearer ' + $quotedAuthToken,
                     'Accept': 'application/json',
                     'Origin': 'https://kick.com',
                     'Referer': 'https://kick.com/',
-                    'x-client-token': '$CLIENT_TOKEN',
-                    'x-request-id': '$requestId'
+                    'x-client-token': $quotedClientToken,
+                    'x-request-id': $quotedRequestId
                 }
             })
               .then(response => response.json())
@@ -1065,7 +1120,7 @@ class WebViewManager(
      * Returns the token string or null if parsing fails.
      */
     private fun parseTokenFromJson(json: String): String? {
-        Log.d(TAG, "Token received via JS: $json")
+        Log.d(TAG, "Viewer token response received (length=${json.length})")
         return try {
             val obj = org.json.JSONObject(json)
             val token = if (obj.has("data") && !obj.isNull("data") && obj.getJSONObject("data").has("token")) {
@@ -1077,7 +1132,7 @@ class WebViewManager(
                 Log.d(TAG, "Viewer token obtained successfully")
                 token
             } else {
-                Log.e(TAG, "No token in JS response: $json")
+                Log.e(TAG, "No token in JS response (length=${json.length})")
                 null
             }
         } catch (e: Exception) {
@@ -1103,11 +1158,13 @@ class WebViewManager(
                 }
 
                 try {
-                    val escapedBody = body.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n")
+                    val quotedUrl = jsQuote(url)
+                    val quotedBody = jsQuote(body)
+                    val quotedToken = jsQuote(token)
                     if (isBridgeInjected) {
                         Log.d(TAG, "createClip via AppBridge: $url")
                         activity.binding.authWebView.evaluateJavascript(
-                            "window.AppBridge.createClip('$url', '$escapedBody', '$token');", null
+                            "window.AppBridge.createClip($quotedUrl, $quotedBody, $quotedToken);", null
                         )
                     } else {
                         // Inline fallback
@@ -1116,7 +1173,7 @@ class WebViewManager(
                             (function() {
                                 var headers = {
                                     'Content-Type': 'application/json',
-                                    'Authorization': 'Bearer $token',
+                                    'Authorization': 'Bearer ' + $quotedToken,
                                     'Accept': 'application/json'
                                 };
                                 var cookies = document.cookie.split(';');
@@ -1127,10 +1184,10 @@ class WebViewManager(
                                         break;
                                     }
                                 }
-                                fetch('$url', {
+                                fetch($quotedUrl, {
                                     method: 'POST',
                                     headers: headers,
-                                    body: '$escapedBody'
+                                    body: $quotedBody
                                 })
                                 .then(function(r) { return r.text().then(function(t) { return {ok: r.ok, code: r.status, body: t}; }); })
                                 .then(function(res) { AndroidBridge.onClipCreateResult(JSON.stringify(res)); })
@@ -1163,11 +1220,13 @@ class WebViewManager(
                 }
 
                 try {
-                    val escapedBody = body.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n")
+                    val quotedUrl = jsQuote(url)
+                    val quotedBody = jsQuote(body)
+                    val quotedToken = jsQuote(token)
                     if (isBridgeInjected) {
                         Log.d(TAG, "finalizeClip via AppBridge: $url")
                         activity.binding.authWebView.evaluateJavascript(
-                            "window.AppBridge.finalizeClip('$url', '$escapedBody', '$token');", null
+                            "window.AppBridge.finalizeClip($quotedUrl, $quotedBody, $quotedToken);", null
                         )
                     } else {
                         // Inline fallback
@@ -1176,7 +1235,7 @@ class WebViewManager(
                             (function() {
                                 var headers = {
                                     'Content-Type': 'application/json',
-                                    'Authorization': 'Bearer $token',
+                                    'Authorization': 'Bearer ' + $quotedToken,
                                     'Accept': 'application/json'
                                 };
                                 var cookies = document.cookie.split(';');
@@ -1187,10 +1246,10 @@ class WebViewManager(
                                         break;
                                     }
                                 }
-                                fetch('$url', {
+                                fetch($quotedUrl, {
                                     method: 'POST',
                                     headers: headers,
-                                    body: '$escapedBody'
+                                    body: $quotedBody
                                 })
                                 .then(function(r) { return r.text().then(function(t) { return {ok: r.ok, code: r.status, body: t}; }); })
                                 .then(function(res) { AndroidBridge.onClipFinalizeResult(JSON.stringify(res)); })
@@ -1206,5 +1265,35 @@ class WebViewManager(
                 }
             }
         }
+    }
+
+    fun destroy() {
+        deepSuspendHandler.removeCallbacksAndMessages(null)
+        kpsdkPollHandler.removeCallbacksAndMessages(null)
+        isWakingFromDeepSuspend = false
+        pendingWakeCallbacks.clear()
+
+        val cancelled = IllegalStateException("WebViewManager destroyed")
+        historyCallback?.invoke(Result.failure(cancelled))
+        historyCallback = null
+        clipCreateCallback?.invoke(Result.failure(cancelled))
+        clipCreateCallback = null
+        clipFinalizeCallback?.invoke(Result.failure(cancelled))
+        clipFinalizeCallback = null
+        viewerTokenCallback = null
+        followResultCallback = null
+
+        isBridgeInjected = false
+        isAuthWebViewReady = false
+        try {
+            val webView = activity.binding.authWebView
+            webView.stopLoading()
+            webView.loadUrl("about:blank")
+            webView.onPause()
+            webView.removeJavascriptInterface("Android")
+            webView.removeJavascriptInterface("AndroidToken")
+            webView.removeJavascriptInterface("AndroidBridge")
+            webView.destroy()
+        } catch (_: Throwable) {}
     }
 }

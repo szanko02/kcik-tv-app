@@ -84,6 +84,7 @@ class LiveDvrManager(
             activity.currentDvrTitle = activity.currentChannel?.title ?: activity.binding.infoStreamTitle.text.toString()
 
             try {
+                activity.playerManager.ensurePlayerViewAttached()
                 // Disable Low Latency for DVR to allow larger buffer
                 activity.ivsPlayer?.setRebufferToLive(false)
                 activity.ivsPlayer?.load(android.net.Uri.parse(dvrPlaybackUrl))

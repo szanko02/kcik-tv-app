@@ -27,27 +27,27 @@ class KickViewerWebSocket(client: OkHttpClient) {
         .pingInterval(30, TimeUnit.SECONDS)
         .build()
 
-    private var webSocket: WebSocket? = null
+    @Volatile private var webSocket: WebSocket? = null
     private val TAG = "KickViewerWS"
-    private var pingTimer: Timer? = null
-    private var handshakeTimer: Timer? = null
-    private var watchEventTimer: Timer? = null
+    @Volatile private var pingTimer: Timer? = null
+    @Volatile private var handshakeTimer: Timer? = null
+    @Volatile private var watchEventTimer: Timer? = null
     
     // Store connection parameters for reconnection
-    private var currentToken: String? = null
-    private var currentChannelId: String? = null
-    private var currentLivestreamId: String? = null
+    @Volatile private var currentToken: String? = null
+    @Volatile private var currentChannelId: String? = null
+    @Volatile private var currentLivestreamId: String? = null
     
     // Auto-reconnect state
     private val shouldReconnect = AtomicBoolean(true)
-    private var reconnectAttempt = 0
+    @Volatile private var reconnectAttempt = 0
     // No max limit for viewer websocket - keep retrying forever
     private val baseReconnectDelayMs = 1000L
     private val maxReconnectDelayMs = 8000L
     private val reconnectHandler = Handler(Looper.getMainLooper())
     private var reconnectRunnable: Runnable? = null
-    private var isConnected = false
-    private var hasEverConnected = false  // Track if we've ever successfully connected
+    @Volatile private var isConnected = false
+    @Volatile private var hasEverConnected = false  // Track if we've ever successfully connected
     private var wasDisconnectedAfterConnect = false  // Track if we disconnected after initial connection
     
     // Connection state callback - (isConnected, isFirstConnection)
@@ -77,14 +77,16 @@ class KickViewerWebSocket(client: OkHttpClient) {
         
         disconnect(intentional = false) // Close existing if any, but allow reconnects
         
+        val encodedToken = java.net.URLEncoder.encode(token, "UTF-8")
         val request = Request.Builder()
              // Note: Added pusher protocol query param which is standard for Kick
-            .url("wss://websockets.kick.com/viewer/v1/connect?token=$token")
+            .url("wss://websockets.kick.com/viewer/v1/connect?token=$encodedToken")
             .build()
             
         webSocket = wsClient.newWebSocket(request, object : WebSocketListener() {
 
     override fun onOpen(webSocket: WebSocket, response: Response) {
+        if (webSocket !== this@KickViewerWebSocket.webSocket) return
         Log.d(TAG, "Viewer WS Connected")
         val isFirstConnect = !hasEverConnected
         isConnected = true
@@ -101,6 +103,7 @@ class KickViewerWebSocket(client: OkHttpClient) {
     }
 
     override fun onMessage(webSocket: WebSocket, text: String) {
+        if (webSocket !== this@KickViewerWebSocket.webSocket) return
         try {
             val json = JSONObject(text)
             val event = json.optString("event")
@@ -114,6 +117,7 @@ class KickViewerWebSocket(client: OkHttpClient) {
     }
     
     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+        if (webSocket !== this@KickViewerWebSocket.webSocket) return
         Log.e(TAG, "Viewer WS Failed", t)
         isConnected = false
         stopPing()
@@ -127,12 +131,14 @@ class KickViewerWebSocket(client: OkHttpClient) {
     }
     
     override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+        if (webSocket !== this@KickViewerWebSocket.webSocket) return
          stopPing()
          stopHandshakeLoop()
          stopWatchEventLoop()
     }
     
     override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+        if (webSocket !== this@KickViewerWebSocket.webSocket) return
         Log.d(TAG, "Viewer WS Closed: $reason")
         isConnected = false
         stopPing()

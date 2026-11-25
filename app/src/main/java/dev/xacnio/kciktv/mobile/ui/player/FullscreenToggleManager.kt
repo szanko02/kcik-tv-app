@@ -199,6 +199,9 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
     fun isDockedSideChatActive(): Boolean =
         ChatOverlayStyleUtils.isDockedSideChat(isSideChatVisible, prefs.transparentChatOverlayEnabled)
 
+    private fun useTabletSplitInfoLayout(isTablet: Boolean = activity.isTabletOrLargeWindow()): Boolean =
+        isTablet && !activity.isFullscreen
+
     private fun effectiveRootWidth(rootWidth: Int = binding.playerScreenContainer.width): Int {
         if (rootWidth > 0) return rootWidth
         if (binding.root.width > 0) return binding.root.width
@@ -342,7 +345,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         sideParams.bottomMargin = 0
         binding.sideChatContainer.layoutParams = sideParams
 
-        if (isTablet) {
+        if (useTabletSplitInfoLayout(isTablet)) {
             binding.sideChatContainer.elevation = 0f
             binding.infoPanel.visibility = View.VISIBLE
             videoParams.width = (rootWidth - chatWidth).coerceAtLeast(1)
@@ -351,6 +354,9 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             videoParams.verticalBias = 0.0f
         } else {
             binding.sideChatContainer.elevation = 180f * density
+            if (isTablet && binding.videoOverlay.visibility != View.VISIBLE) {
+                binding.infoPanel.visibility = View.GONE
+            }
             videoParams.width = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT
             videoParams.dimensionRatio = null
             videoParams.height = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT
@@ -726,7 +732,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             params.width = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT
             params.height = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT
             
-            val targetRatio = if (currentVideoWidth > 0 && currentVideoHeight > 0 && !isTheatreFitMode) {
+            val targetRatio = if (currentVideoWidth > 0 && currentVideoHeight > 0) {
                 "$currentVideoWidth:$currentVideoHeight"
             } else {
                 originalVideoDimensionRatio ?: "16:9"
@@ -1207,13 +1213,21 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             binding.theatreModeButton.visibility = android.view.View.GONE
             // binding.uptimeDivider.visibility = android.view.View.GONE // Now managed by reparenting
             
-            // Adjust margins
+            // Adjust margins (distinct LayoutParams per view)
             val displayDensity = activity.resources.displayMetrics.density
-            val marginParams = android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                marginStart = (12 * displayDensity).toInt()
+            val marginStartPx = (12 * displayDensity).toInt()
+            clipContainer.layoutParams = android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                marginStart = marginStartPx
             }
-            clipContainer.layoutParams = marginParams
-            muteButton.layoutParams = marginParams
+            muteButton.layoutParams = android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                marginStart = marginStartPx
+            }
         }
 
         // --- Reparent Emote Combo (Top Right) ---
@@ -1489,12 +1503,16 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
     private var theatreModeChatExpandedHeight = 0
     private var chatCollapseHandler: android.os.Handler? = null
     private var chatCollapseRunnable: Runnable? = null
+    private var theatreChatScrollListener: androidx.recyclerview.widget.RecyclerView.OnScrollListener? = null
     
     /**
      * Sets up scroll listener for chat to expand/collapse in Theatre Mode
      */
     private fun setupTheatreModeChatScrollListener() {
-        binding.chatRecyclerView.addOnScrollListener(object : androidx.recyclerview.widget.RecyclerView.OnScrollListener() {
+        theatreChatScrollListener?.let {
+            binding.chatRecyclerView.removeOnScrollListener(it)
+        }
+        val listener = object : androidx.recyclerview.widget.RecyclerView.OnScrollListener() {
             override fun onScrollStateChanged(recyclerView: androidx.recyclerview.widget.RecyclerView, newState: Int) {
                 super.onScrollStateChanged(recyclerView, newState)
                 if (!isTheatreMode) return
@@ -1514,7 +1532,9 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
                     }
                 }
             }
-        })
+        }
+        theatreChatScrollListener = listener
+        binding.chatRecyclerView.addOnScrollListener(listener)
     }
     
     private fun expandTheatreModeChat() {
@@ -1573,8 +1593,12 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
     fun exitTheatreMode() {
         if (!isTheatreMode) return
 
-        // Cancel any pending chat collapse
+        // Cancel any pending chat collapse and detach scroll listener
         cancelChatCollapse()
+        theatreChatScrollListener?.let {
+            binding.chatRecyclerView.removeOnScrollListener(it)
+        }
+        theatreChatScrollListener = null
         
         // Restore original insets listener for chat container
         // This ensures normal behavior when exiting theatre mode
@@ -2088,6 +2112,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
      * Enters fullscreen (landscape) mode.
      */
     fun enterFullscreen() {
+        activity.chatSettingsSheetManager.dismissPanel()
         // Exit theatre mode first if active
         if (isTheatreMode) {
             exitTheatreMode()
@@ -2329,6 +2354,15 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             edgeMarginPx = edgeMarginPx,
             rootWidthPx = rootW
         )
+        val topBarRightInset = if (isTransparentSideChatActive() && rootW > 0) {
+            val density = activity.resources.displayMetrics.density
+            val minTopBarWidthPx = (160f * density).toInt()
+            val desiredInset = (chatW + edgeMarginPx).coerceAtLeast(0)
+            val maxTopBarInset = (rootW - minTopBarWidthPx).coerceAtLeast(0)
+            desiredInset.coerceAtMost(maxTopBarInset)
+        } else {
+            sideChatOverlayRightInset
+        }
 
         if (activity.isFullscreen && !isTheatreMode) {
             if (playerScreenView.paddingLeft != 0 ||
@@ -2342,6 +2376,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
                 val cutout = windowInsets.getInsets(WindowInsetsCompat.Type.displayCutout())
                 val overlayLeft = cutout.left
                 val baseCutoutRight = if (isSideChatVisible) 0 else cutout.right
+                val topBarRight = maxOf(baseCutoutRight, topBarRightInset)
                 val overlayRight = maxOf(baseCutoutRight, sideChatOverlayRightInset)
                 val sideChatRight = if (isSideChatVisible) {
                     ChatOverlayStyleUtils.computeRemainingRightCutoutPaddingPx(
@@ -2351,12 +2386,12 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
                 } else {
                     0
                 }
-                applyHorizontalPadding(binding.videoTopBar, topBarBase.left + overlayLeft, topBarBase.right + overlayRight)
+                applyHorizontalPadding(binding.videoTopBar, topBarBase.left + overlayLeft, topBarBase.right + topBarRight)
                 applyHorizontalPadding(binding.videoOverlay, overlayBase.left + overlayLeft, overlayBase.right + overlayRight)
                 applyHorizontalPadding(binding.playPauseOverlay, playPauseBase.left + overlayLeft, playPauseBase.right + overlayRight)
                 applyHorizontalPadding(binding.sideChatContainer, sideChatBase.left, sideChatBase.right + sideChatRight)
             } else {
-                applyHorizontalPadding(binding.videoTopBar, topBarBase.left, topBarBase.right + sideChatOverlayRightInset)
+                applyHorizontalPadding(binding.videoTopBar, topBarBase.left, topBarBase.right + topBarRightInset)
                 applyHorizontalPadding(binding.videoOverlay, overlayBase.left, overlayBase.right + sideChatOverlayRightInset)
                 applyHorizontalPadding(binding.playPauseOverlay, playPauseBase.left, playPauseBase.right + sideChatOverlayRightInset)
                 applyHorizontalPadding(binding.sideChatContainer, sideChatBase.left, sideChatBase.right)
@@ -2371,7 +2406,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
                     sys.bottom
                 )
             }
-            applyHorizontalPadding(binding.videoTopBar, topBarBase.left, topBarBase.right + sideChatOverlayRightInset)
+            applyHorizontalPadding(binding.videoTopBar, topBarBase.left, topBarBase.right + topBarRightInset)
             applyHorizontalPadding(binding.videoOverlay, overlayBase.left, overlayBase.right + sideChatOverlayRightInset)
             applyHorizontalPadding(binding.playPauseOverlay, playPauseBase.left, playPauseBase.right + sideChatOverlayRightInset)
             applyHorizontalPadding(binding.sideChatContainer, sideChatBase.left, sideChatBase.right)
@@ -2438,7 +2473,12 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             binding.playerView.resizeMode = targetResizeMode
         }
 
-        val showScaleButton = isFullscreen && !isTheatreMode && !isInPip && !isMiniPlayer && !isDockedSideChatActive()
+        val showScaleButton = VideoCutoutScalingPolicy.shouldShowScaleControls(
+            isFullscreen = isFullscreen,
+            isTheatreMode = isTheatreMode,
+            isInPip = isInPip,
+            isMiniPlayer = isMiniPlayer
+        )
         binding.fullscreenScaleButton.visibility = if (showScaleButton) View.VISIBLE else View.GONE
         val tintColor = if (effectiveMode == VideoScaleMode.FIT) {
             Color.WHITE
@@ -2524,6 +2564,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         android.util.Log.d("FullscreenToggle", "showSideChat: isLandscape=$isLandscape, isSideChatVisible=$isSideChatVisible, isTheatreMode=$isTheatreMode, root=${checkWidth}x${checkHeight}")
         
         if (isSideChatVisible || !isLandscape || isTheatreMode) return
+        activity.chatSettingsSheetManager.dismissPanel()
 
         activeSideChatAnimator?.cancel()
         activeSideChatAnimator = null
@@ -2577,18 +2618,23 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
                     (44 * density).toInt()
                 )
                 actionBar.layoutParams = aParams
-                actionBar.visibility = View.VISIBLE
+                actionBar.visibility = if (activity.vodManager.currentPlaybackMode == VodManager.PlaybackMode.LIVE) {
+                    View.VISIBLE
+                } else {
+                    View.GONE
+                }
                 isActionBarReparentedToSide = true
             }
             activity.chatRulesManager.updateContainer(binding.sideChatContainer)
         }
         
+        val useTabletSplitInfo = useTabletSplitInfoLayout(isTablet)
         if (useTransparentOverlay) {
             binding.sideChatContainer.elevation = 180f * density
             if (isTablet) {
                 binding.infoPanel.visibility = View.GONE
             }
-        } else if (isTablet) {
+        } else if (useTabletSplitInfo) {
             chat.setBackgroundColor(android.graphics.Color.parseColor("#0f0f0f"))
             binding.sideChatContainer.setBackgroundColor(android.graphics.Color.parseColor("#0f0f0f"))
             binding.sideChatContainer.elevation = 0f
@@ -2596,6 +2642,9 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         } else {
             chat.setBackgroundColor(android.graphics.Color.parseColor("#FF0F0F0F"))
             binding.sideChatContainer.elevation = 180f * density
+            if (isTablet) {
+                binding.infoPanel.visibility = View.GONE
+            }
         }
         
         // Attach touch listener to chat so we can swipe it away too
@@ -2666,7 +2715,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         }
         
         // Docked split-screen mode: resize videoContainer alongside chat
-        if (isTablet) {
+        if (useTabletSplitInfo) {
             // For tablets, we maintain 16:9 ratio so info bar is visible below on the left
             videoParams.dimensionRatio = "H,16:9"
             videoParams.height = 0 // MATCH_CONSTRAINT
@@ -2691,7 +2740,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             binding.sideChatContainer.translationX = 0f
             binding.sideChatDividerHandle.translationX = dividerHalfPx
             // Use constraints for skipped animation
-            if (isTablet) {
+            if (useTabletSplitInfo) {
                 videoParams.width = (rootWidth - chatWidth).coerceAtLeast(1)
             } else {
                 videoParams.width = 0 // MATCH_CONSTRAINT
@@ -2700,7 +2749,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             videoParams.endToEnd = ConstraintLayout.LayoutParams.UNSET
             binding.videoContainer.layoutParams = videoParams
             updateSideChatHandleVisibility()
-            if (!isTablet) {
+            if (!useTabletSplitInfo) {
                 binding.chatContainer.setPadding(binding.chatContainer.paddingLeft, 0, binding.chatContainer.paddingRight, binding.chatContainer.paddingBottom)
             }
             return
@@ -2722,7 +2771,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             val vParams = binding.videoContainer.layoutParams as ConstraintLayout.LayoutParams
             if (vParams.width != newWidth) {
                 vParams.width = newWidth
-                if (isTablet) {
+                if (useTabletSplitInfo) {
                     vParams.dimensionRatio = "H,16:9"
                     vParams.height = 0
                 } else {
@@ -2750,7 +2799,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
                 binding.sideChatDividerHandle.translationX = dividerHalfPx
                 // Finalize constraints to ensure child views (InfoPanel) resize correctly
                 val vParams = binding.videoContainer.layoutParams as ConstraintLayout.LayoutParams
-                if (isTablet) {
+                if (useTabletSplitInfo) {
                     vParams.width = (rootWidth - chatWidth).coerceAtLeast(1)
                 } else {
                     vParams.width = 0 // MATCH_CONSTRAINT
@@ -2758,7 +2807,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
                 vParams.endToStart = R.id.sideChatContainer
                 vParams.endToEnd = ConstraintLayout.LayoutParams.UNSET
                 
-                if (!isTablet) {
+                if (!useTabletSplitInfo) {
                     vParams.height = 0 // MATCH_CONSTRAINT
                     vParams.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
                 }
@@ -2773,7 +2822,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         updateSideChatHandleVisibility()
         
         // Force chat padding to 0 for phones to avoid gaps from overlay
-        if (!isTablet) {
+        if (!useTabletSplitInfo) {
             binding.chatContainer.setPadding(binding.chatContainer.paddingLeft, 0, binding.chatContainer.paddingRight, binding.chatContainer.paddingBottom)
         }
     }
@@ -2785,6 +2834,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
     fun hideSideChat() {
         clearSideChatWidthPreview()
         if (!isSideChatVisible) return
+        activity.chatSettingsSheetManager.dismissPanel()
         activeSideChatAnimator?.cancel()
         activeSideChatAnimator = null
         hideSideChatDivider()
@@ -2816,7 +2866,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
                 val params = binding.videoContainer.layoutParams as ConstraintLayout.LayoutParams
                 if (params.width != newWidth) {
                     params.width = newWidth
-                    if (isTablet) {
+                    if (useTabletSplitInfoLayout(isTablet)) {
                         params.dimensionRatio = "H,16:9"
                         params.height = 0
                     } else {
@@ -2894,6 +2944,10 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
                 val isPortrait = activity.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT
                 if (isTablet && isPortrait && !isTheatreMode) {
                     binding.infoPanel.visibility = View.VISIBLE
+                } else if (isTablet && isLandscapeNow && !activity.isFullscreen && !isTheatreMode) {
+                    fullscreenManager.isFullscreen = true
+                    binding.infoPanel.visibility = View.GONE
+                    updateFullscreenButtonState()
                 }
 
                 isSideChatVisible = false
@@ -2971,7 +3025,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
     fun onExitPipMode() {
         val isTablet = activity.resources.getBoolean(R.bool.is_tablet)
         val isPortrait = activity.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT
-        if (isTablet && isSideChatVisible) {
+        if (isTablet && isSideChatVisible && activity.vodManager.currentPlaybackMode == VodManager.PlaybackMode.LIVE) {
             binding.actionBar.visibility = View.VISIBLE
         }
         if (isTablet && isPortrait && !isTheatreMode) {
@@ -3090,7 +3144,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         
         val actionBar = binding.actionBar
         
-        if (isOverlayVisible) {
+        if (isOverlayVisible && activity.vodManager.currentPlaybackMode == VodManager.PlaybackMode.LIVE) {
             // Reparent ActionBar to side container if needed
             if (actionBar.parent != binding.sideChatContainer) {
                 if (originalActionBarParent == null) {

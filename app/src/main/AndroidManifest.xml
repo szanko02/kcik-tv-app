@@ -64,6 +64,7 @@
         <activity
             android:name=".shared.LauncherActivity"
             android:exported="true"
+            android:banner="@drawable/app_banner"
             android:theme="@style/Theme.KCIKTV.LauncherTransparent"
             android:launchMode="singleTask" />
 
@@ -72,6 +73,7 @@
             android:name=".LauncherGreen"
             android:enabled="true"
             android:exported="true"
+            android:banner="@drawable/app_banner"
             android:icon="@mipmap/ic_launcher_green"
             android:label="@string/app_name"
             android:targetActivity=".shared.LauncherActivity">

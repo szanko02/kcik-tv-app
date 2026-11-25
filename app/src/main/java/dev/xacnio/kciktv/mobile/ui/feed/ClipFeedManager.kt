@@ -82,8 +82,53 @@ class ClipFeedManager(private val activity: MobilePlayerActivity) {
     private var currentClipsSort = "view" // date, view
     private var currentClipsTime = "day"  // day, week, month, all
     
-    // Cache for last frames
-    private val lastFrameCache = ConcurrentHashMap<Int, Bitmap>()
+    private var activeOriginScreen: MobilePlayerActivity.AppScreen = MobilePlayerActivity.AppScreen.BROWSE
+
+    // Bounded LRU cache for last frames (max 4 bitmaps to avoid OOM)
+    private val lastFrameLock = Any()
+    private val maxLastFrameCacheSize = 4
+    private val lastFrameCache = object : LinkedHashMap<Int, Bitmap>(8, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, Bitmap>?): Boolean {
+            if (size > maxLastFrameCacheSize) {
+                val evicted = eldest?.value
+                if (evicted != null && !evicted.isRecycled) {
+                    evicted.recycle()
+                }
+                return true
+            }
+            return false
+        }
+    }
+
+    private fun putLastFrame(position: Int, bitmap: Bitmap) {
+        synchronized(lastFrameLock) {
+            val prev = lastFrameCache.put(position, bitmap)
+            if (prev != null && prev !== bitmap && !prev.isRecycled) {
+                prev.recycle()
+            }
+        }
+    }
+
+    private fun getLastFrame(position: Int): Bitmap? {
+        synchronized(lastFrameLock) {
+            val bmp = lastFrameCache[position] ?: return null
+            return if (bmp.isRecycled) {
+                lastFrameCache.remove(position)
+                null
+            } else {
+                bmp
+            }
+        }
+    }
+
+    private fun clearLastFrameCache() {
+        synchronized(lastFrameLock) {
+            lastFrameCache.values.forEach { bitmap ->
+                if (!bitmap.isRecycled) bitmap.recycle()
+            }
+            lastFrameCache.clear()
+        }
+    }
     
     // Preload jobs for cancellation
     private var preloadNextJob: Job? = null
@@ -167,6 +212,7 @@ class ClipFeedManager(private val activity: MobilePlayerActivity) {
         clearCaches()
         setupAdapter()
         setupViewPager(startIndex)
+        activeOriginScreen = activity.currentScreen
         setupCategories()
         showFeed()
         activity.setCurrentScreen(MobilePlayerActivity.AppScreen.CLIP_FEED)
@@ -179,10 +225,7 @@ class ClipFeedManager(private val activity: MobilePlayerActivity) {
     }
     
     private fun clearCaches() {
-        lastFrameCache.values.forEach { bitmap ->
-            if (!bitmap.isRecycled) bitmap.recycle()
-        }
-        lastFrameCache.clear()
+        clearLastFrameCache()
     }
     
     /**
@@ -427,8 +470,8 @@ class ClipFeedManager(private val activity: MobilePlayerActivity) {
         val viewHolder = getViewHolder(position)
         
         // Show cached frame or thumbnail
-        val cachedFrame = lastFrameCache[position]
-        if (cachedFrame != null && !cachedFrame.isRecycled) {
+        val cachedFrame = getLastFrame(position)
+        if (cachedFrame != null) {
             viewHolder?.showLastFrame(cachedFrame)
         }
         
@@ -458,9 +501,10 @@ class ClipFeedManager(private val activity: MobilePlayerActivity) {
         }
          // Fallback if strictly all players are somehow locked/null (should not happen with logic above)
         if (playerToUse == null) {
-            player1?.pause()
+            val fallbackPlayer = player1 ?: return
+            fallbackPlayer.pause()
             player1Position = -1
-            playerToUse = 1 to player1!!
+            playerToUse = 1 to fallbackPlayer
         }
         
         val (playerIndex, player) = playerToUse
@@ -558,10 +602,7 @@ class ClipFeedManager(private val activity: MobilePlayerActivity) {
     private fun captureLastFrame(position: Int) {
         getViewHolder(position)?.let { holder ->
             holder.captureCurrentFrame()?.let { bitmap ->
-                lastFrameCache[position]?.let { old ->
-                    if (!old.isRecycled) old.recycle()
-                }
-                lastFrameCache[position] = bitmap
+                putLastFrame(position, bitmap)
             }
         }
     }
@@ -651,8 +692,8 @@ class ClipFeedManager(private val activity: MobilePlayerActivity) {
                 holder.setScaleMode(activity.prefs.isClipContentFullscreen)
 
                 // Show cached frame if available
-                lastFrameCache[position]?.let { bitmap ->
-                    if (!bitmap.isRecycled) holder.showLastFrame(bitmap)
+                getLastFrame(position)?.let { bitmap ->
+                    holder.showLastFrame(bitmap)
                 }
                 
                 if (position == currentPosition) {
@@ -666,10 +707,7 @@ class ClipFeedManager(private val activity: MobilePlayerActivity) {
             },
             onViewDetached = { position, holder ->
                 holder.captureCurrentFrame()?.let { bitmap ->
-                    lastFrameCache[position]?.let { old ->
-                        if (!old.isRecycled) old.recycle()
-                    }
-                    lastFrameCache[position] = bitmap
+                    putLastFrame(position, bitmap)
                 }
                 holder.detachPlayer()
             }
@@ -865,24 +903,45 @@ class ClipFeedManager(private val activity: MobilePlayerActivity) {
         
         // Restore previous state - prioritize Category Details if that was the origin
         val shouldReturnToCategoryDetails = previouslyVisibleView == binding.categoryDetailsContainer.root ||
-                                            activity.browseManager.isCategoryDetailsVisible ||
-                                            currentCategorySlug != "all"
-        
+                                            activity.browseManager.isCategoryDetailsVisible
+
         if (shouldReturnToCategoryDetails) {
             binding.categoryDetailsContainer.root.visibility = View.VISIBLE
             binding.mobileHeader.visibility = View.GONE
             activity.setCurrentScreen(MobilePlayerActivity.AppScreen.CATEGORY_DETAILS)
         } else if (previouslyVisibleView != null) {
-            previouslyVisibleView?.visibility = View.VISIBLE
-            val shouldShowHeader = previouslyVisibleView != binding.channelProfileContainer.root &&
-                                   previouslyVisibleView != binding.playerScreenContainer
+            val prevView = previouslyVisibleView!!
+            prevView.visibility = View.VISIBLE
+            val shouldShowHeader = prevView != binding.channelProfileContainer.root &&
+                                   prevView != binding.playerScreenContainer
             binding.mobileHeader.visibility = if (shouldShowHeader) View.VISIBLE else View.GONE
+            when (prevView) {
+                binding.homeScreenContainer.root -> {
+                    activity.isHomeScreenVisible = true
+                    activity.setCurrentScreen(MobilePlayerActivity.AppScreen.HOME)
+                }
+                binding.followingScreenContainer.root -> {
+                    activity.setCurrentScreen(MobilePlayerActivity.AppScreen.FOLLOWING)
+                }
+                binding.channelProfileContainer.root -> {
+                    activity.setCurrentScreen(MobilePlayerActivity.AppScreen.CHANNEL_PROFILE)
+                }
+                binding.browseScreenContainer.root -> {
+                    activity.setCurrentScreen(MobilePlayerActivity.AppScreen.BROWSE)
+                }
+                else -> {
+                    activity.setCurrentScreen(activeOriginScreen)
+                }
+            }
         } else {
             binding.browseScreenContainer.root.visibility = View.VISIBLE
             binding.mobileHeader.visibility = View.VISIBLE
             activity.setCurrentScreen(MobilePlayerActivity.AppScreen.BROWSE)
         }
-        
+
+        previouslyVisibleView = null
+        currentChannelSlug = null
+        currentCategorySlug = "all"
         clipsList = mutableListOf()
         nextCursor = null
         hasMore = true
@@ -983,7 +1042,7 @@ class ClipFeedManager(private val activity: MobilePlayerActivity) {
                 
                 val outputFile = java.io.File(kcikFolder, filename)
                 
-                val client = okhttp3.OkHttpClient.Builder()
+                val client = RetrofitClient.proxiedOkHttpClient.newBuilder()
                     .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
                     .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
                     .build()
@@ -993,37 +1052,33 @@ class ClipFeedManager(private val activity: MobilePlayerActivity) {
                     .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36")
                     .build()
                 
-                val response = client.newCall(request).execute()
-                
-                if (!response.isSuccessful) {
-                    throw Exception("HTTP ${response.code}")
-                }
-                
-                val body = response.body
-                if (body == null) {
-                    throw Exception("Empty response body")
-                }
-                
-                val contentLength = body.contentLength()
-                android.util.Log.d("ClipFeedManager", "Download size: $contentLength bytes")
-                
-                var downloadedBytes = 0L
-                val buffer = ByteArray(8192)
-                
-                java.io.FileOutputStream(outputFile).use { fos ->
-                    body.byteStream().use { inputStream ->
-                        var bytesRead: Int
-                        var lastProgress = 0
-                        while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                            fos.write(buffer, 0, bytesRead)
-                            downloadedBytes += bytesRead
-                            
-                            // Log progress every 10%
-                            if (contentLength > 0) {
-                                val progress = ((downloadedBytes * 100) / contentLength).toInt()
-                                if (progress >= lastProgress + 10) {
-                                    lastProgress = progress
-                                    android.util.Log.d("ClipFeedManager", "Download progress: $progress%")
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        throw Exception("HTTP ${response.code}")
+                    }
+                    
+                    val body = response.body ?: throw Exception("Empty response body")
+                    val contentLength = body.contentLength()
+                    android.util.Log.d("ClipFeedManager", "Download size: $contentLength bytes")
+                    
+                    var downloadedBytes = 0L
+                    val buffer = ByteArray(8192)
+                    
+                    java.io.FileOutputStream(outputFile).use { fos ->
+                        body.byteStream().use { inputStream ->
+                            var bytesRead: Int
+                            var lastProgress = 0
+                            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                                fos.write(buffer, 0, bytesRead)
+                                downloadedBytes += bytesRead
+                                
+                                // Log progress every 10%
+                                if (contentLength > 0) {
+                                    val progress = ((downloadedBytes * 100) / contentLength).toInt()
+                                    if (progress >= lastProgress + 10) {
+                                        lastProgress = progress
+                                        android.util.Log.d("ClipFeedManager", "Download progress: $progress%")
+                                    }
                                 }
                             }
                         }
@@ -1273,7 +1328,11 @@ class ClipFeedManager(private val activity: MobilePlayerActivity) {
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                      Toast.makeText(activity, activity.getString(R.string.error_format, e.message), Toast.LENGTH_SHORT).show()
-                     feedBinding?.clipFeedLoadingOverlay?.visibility = View.GONE
+                }
+            } finally {
+                withContext(Dispatchers.Main + kotlinx.coroutines.NonCancellable) {
+                    this@ClipFeedManager.isLoading = false
+                    feedBinding?.clipFeedLoadingOverlay?.visibility = View.GONE
                 }
             }
         }
@@ -1359,7 +1418,7 @@ class ClipFeedManager(private val activity: MobilePlayerActivity) {
         player1?.pause(); player2?.pause(); player3?.pause()
         currentPosition = -1
         player1Position = -1; player2Position = -1; player3Position = -1
-        lastFrameCache.clear()
+        clearLastFrameCache()
     }
     
     private fun mapDetailsToChannelClip(details: ClipPlayDetails): dev.xacnio.kciktv.shared.data.model.ChannelClip {

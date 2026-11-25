@@ -98,13 +98,17 @@ object BadgeRenderUtils {
                     .maxOrNull()?.let { subscriberBadges[it] }
                 
                 if (badgeUrl != null) {
+                    imageView.tag = badgeUrl
                     ApngBadgeManager.loadBadge(badgeUrl, size, imageView) { drawable ->
+                        if (imageView.tag != badgeUrl) return@loadBadge
                         if (drawable != null) {
                             imageView.setImageDrawable(drawable)
                             (drawable as? android.graphics.drawable.Animatable)?.start()
                         } else {
                             // APNG failed, fall back to Glide static load
-                            Glide.with(context).load(badgeUrl).into(imageView)
+                            try {
+                                Glide.with(context).load(badgeUrl).into(imageView)
+                            } catch (_: Exception) {}
                         }
                     }
                 } else {

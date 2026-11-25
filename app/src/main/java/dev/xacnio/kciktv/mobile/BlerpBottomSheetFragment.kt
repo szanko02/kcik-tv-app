@@ -130,7 +130,7 @@ class BlerpBottomSheetFragment : BottomSheetDialogFragment() {
             val pm = requireContext().packageManager
             
             // 1. Refresh
-            popup.menu.add("Yenile").setOnMenuItemClickListener {
+            popup.menu.add(getString(R.string.refresh)).setOnMenuItemClickListener {
                 persistentWebView?.reload()
                 true
             }
@@ -227,6 +227,20 @@ class BlerpBottomSheetFragment : BottomSheetDialogFragment() {
 
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                    val uri = request?.url ?: return false
+                    val scheme = uri.scheme?.lowercase()
+                    if (scheme != "http" && scheme != "https") {
+                        return true
+                    }
+                    if (request.isForMainFrame && !isTrustedBlerpFlowHost(uri.host)) {
+                        try {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, uri).apply {
+                                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            startActivity(intent)
+                        } catch (_: Exception) {}
+                        return true
+                    }
                     return false
                 }
                 override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
@@ -418,8 +432,11 @@ class BlerpBottomSheetFragment : BottomSheetDialogFragment() {
                 // Skip if it's just a protocol flag
                 if (key == "path" || key == "domain" || key == "expires" || key == "samesite" || key == "secure" || key == "httponly") return
 
-                // Force SameSite=None; Secure for cross-origin iframe usage (Blerp needs this to read Kick cookies)
-                val baseFlags = "; Domain=.kick.com; Path=/; Secure; SameSite=None"
+                val baseFlags = if (key == "kick_session") {
+                    "; Domain=.kick.com; Path=/; Secure; HttpOnly; SameSite=Lax"
+                } else {
+                    "; Domain=.kick.com; Path=/; Secure; SameSite=Lax"
+                }
                 
                 // Set for multiple common Kick subdomains to ensure coverage
                 cookieManager.setCookie("https://kick.com", nameValue + baseFlags)
@@ -442,14 +459,10 @@ class BlerpBottomSheetFragment : BottomSheetDialogFragment() {
             // 2. Extra Identity Reinforcement (Critical for recognition)
             val authToken = prefs.authToken
             if (!authToken.isNullOrEmpty()) {
-                val baseFlags = "; Domain=.kick.com; Path=/; Secure; SameSite=None"
-                val tokens = listOf("kick_session", "session_token")
                 val domains = listOf("https://kick.com", "https://www.kick.com", "https://account.kick.com")
-                
-                for (tokenKey in tokens) {
-                    for (domain in domains) {
-                        cookieManager.setCookie(domain, "$tokenKey=$authToken$baseFlags")
-                    }
+                for (domain in domains) {
+                    cookieManager.setCookie(domain, "kick_session=$authToken; Domain=.kick.com; Path=/; Secure; HttpOnly; SameSite=Lax")
+                    cookieManager.setCookie(domain, "session_token=$authToken; Domain=.kick.com; Path=/; Secure; SameSite=Lax")
                 }
             }
             
@@ -482,11 +495,29 @@ class BlerpBottomSheetFragment : BottomSheetDialogFragment() {
         }
     }
 
+    private fun isTrustedBlerpFlowHost(host: String?): Boolean {
+        val h = host?.lowercase()?.trim('.') ?: return false
+        return TRUSTED_BLERP_FLOW_HOSTS.any { allowed -> h == allowed || h.endsWith(".$allowed") }
+    }
+
     override fun onDestroyView() {
         super.onDestroyView()
     }
 
     companion object {
+        private val TRUSTED_BLERP_FLOW_HOSTS = setOf(
+            "blerp.com",
+            "kick.com",
+            "google.com",
+            "gstatic.com",
+            "apple.com",
+            "cloudflare.com",
+            "hcaptcha.com",
+            "recaptcha.net",
+            "stripe.com",
+            "paypal.com",
+            "twitch.tv"
+        )
         private const val POINTS_BRIDGE_NAME = "KickTvBlerpBridge"
 
         /**

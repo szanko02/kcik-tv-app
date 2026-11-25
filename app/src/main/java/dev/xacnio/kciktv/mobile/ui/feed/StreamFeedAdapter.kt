@@ -118,10 +118,12 @@ class StreamFeedAdapter(
         private var isCurrentlyFullscreen = false
         private var videoWidth = 0
         private var videoHeight = 0
+        private var lastStatusBarHeight = 0
         
         // TextureView callback
         private val surfaceTextureListener = object : TextureView.SurfaceTextureListener {
             override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
+                currentSurface?.release()
                 val s = Surface(surface)
                 currentSurface = s
                 currentPlayer?.let { player ->
@@ -136,10 +138,10 @@ class StreamFeedAdapter(
             }
 
             override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
-                // Return false to keep the SurfaceTexture alive
-                // This prevents video freeze when views are recycled during scroll
-                // We'll manually clean up in detachPlayer()
-                return false
+                currentPlayer?.setSurface(null)
+                currentSurface?.release()
+                currentSurface = null
+                return true
             }
 
             override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {
@@ -271,12 +273,14 @@ class StreamFeedAdapter(
             // This fixes issues with ViewHolder recycling
             currentPlayer?.setSurface(null)
             currentPlayer = null
+            currentSurface?.release()
             currentSurface = null
             isPlayerActive = false
             
             // Reset view state
             binding.feedPlayerTexture.visibility = View.GONE
             binding.feedPlayerTexture.alpha = 1f
+            binding.lastFrameImage.setImageDrawable(null)
             binding.lastFrameImage.visibility = View.GONE
             binding.playOverlay.visibility = View.GONE
             binding.playOverlay.visibility = View.GONE
@@ -422,6 +426,7 @@ class StreamFeedAdapter(
             
             // Create new Surface from SurfaceTexture
             if (binding.feedPlayerTexture.isAvailable) {
+                currentSurface?.release()
                 val newSurface = Surface(binding.feedPlayerTexture.surfaceTexture)
                 currentSurface = newSurface
                 player.setSurface(newSurface)
@@ -445,10 +450,10 @@ class StreamFeedAdapter(
             
             // Create new Surface from SurfaceTexture
             if (binding.feedPlayerTexture.isAvailable) {
+                currentSurface?.release()
                 val newSurface = Surface(binding.feedPlayerTexture.surfaceTexture)
                 currentSurface = newSurface
                 player.setSurface(newSurface)
-                // Don't release old Surface - it shares SurfaceTexture
             }
         }
 
@@ -555,9 +560,9 @@ class StreamFeedAdapter(
                     params.bottomToBottom = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
                     params.topMargin = 0
                 } else {
-                    // Landscape: Align top with margin (Standard UI)
+                    // Landscape: Align top with margin + status bar height
                     params.bottomToBottom = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.UNSET
-                    params.topMargin = defaultTopMargin
+                    params.topMargin = defaultTopMargin + lastStatusBarHeight
                 }
             }
             
@@ -568,25 +573,34 @@ class StreamFeedAdapter(
          * Applies status bar and navigation bar padding to UI elements
          */
         fun applyInsetsPadding(statusBarHeight: Int, navBarHeight: Int) {
-            // Update top margin for stream preview (status bar padding)
-            binding.streamPreviewContainer.let { container ->
-                val params = container.layoutParams as? androidx.constraintlayout.widget.ConstraintLayout.LayoutParams
-                val density = container.context.resources.displayMetrics.density
-                val defaultTopMargin = (64 * density).toInt()
-                params?.topMargin = defaultTopMargin + statusBarHeight
-                container.layoutParams = params
+            lastStatusBarHeight = statusBarHeight
+            val density = binding.root.context.resources.displayMetrics.density
+
+            // Update top margin for landscape non-fullscreen stream preview (preserve centered portrait & fullscreen)
+            val ratio = if (videoWidth > 0 && videoHeight > 0) {
+                videoWidth.toFloat() / videoHeight.toFloat()
+            } else {
+                16f / 9f
+            }
+            if (!isCurrentlyFullscreen && ratio >= 1.0f) {
+                binding.streamPreviewContainer.let { container ->
+                    val params = container.layoutParams as? androidx.constraintlayout.widget.ConstraintLayout.LayoutParams
+                    val defaultTopMargin = (64 * density).toInt()
+                    params?.topMargin = defaultTopMargin + statusBarHeight
+                    container.layoutParams = params
+                }
             }
 
             // Update bottom margins for UI elements (nav bar padding)
             binding.bottomInfoContainer.let { container ->
                 val params = container.layoutParams as? androidx.constraintlayout.widget.ConstraintLayout.LayoutParams
-                params?.bottomMargin = 32 + navBarHeight // Original 32dp + nav bar
+                params?.bottomMargin = (32 * density).toInt() + navBarHeight // Original 32dp + nav bar
                 container.layoutParams = params
             }
 
             binding.actionsContainer.let { container ->
                 val params = container.layoutParams as? androidx.constraintlayout.widget.ConstraintLayout.LayoutParams
-                params?.bottomMargin = 80 + navBarHeight // Original 80dp + nav bar
+                params?.bottomMargin = (80 * density).toInt() + navBarHeight // Original 80dp + nav bar
                 container.layoutParams = params
             }
         }

@@ -44,6 +44,7 @@ class PlayerControlsManager(private val activity: MobilePlayerActivity) {
                 player.pause()
                 binding.playPauseButton.setImageResource(R.drawable.ic_play_arrow)
             } else {
+                activity.playerManager.ensurePlayerViewAttached()
                 player.play()
                 binding.playPauseButton.setImageResource(R.drawable.ic_pause)
             }

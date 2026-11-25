@@ -707,8 +707,8 @@ class KcikChatWebSocket(
     /** Handles one Kick event. */
     private fun dispatchEvent(event: PusherEvent) {
         val eventName = event.event
-        if (eventName?.contains("ChatMessageEvent") != true) {
-            Log.d(TAG, "WS Msg: $eventName Data: ${event.data}")
+        if (eventName?.contains("ChatMessageEvent") != true && eventName?.contains("SetupTvEvent") != true) {
+            Log.d(TAG, "WS Msg: $eventName")
         }
 
         try {

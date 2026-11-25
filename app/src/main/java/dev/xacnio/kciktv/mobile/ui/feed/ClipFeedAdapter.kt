@@ -107,6 +107,7 @@ class ClipFeedAdapter(
         
         private val surfaceTextureListener = object : TextureView.SurfaceTextureListener {
             override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
+                currentSurface?.release()
                 val s = Surface(surface)
                 currentSurface = s
                 currentPlayer?.let { player ->
@@ -121,7 +122,10 @@ class ClipFeedAdapter(
             }
 
             override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
-                return false  // Keep alive for recycling
+                currentPlayer?.setSurface(null)
+                currentSurface?.release()
+                currentSurface = null
+                return true
             }
 
             override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {
@@ -304,11 +308,17 @@ class ClipFeedAdapter(
                 .into(binding.clipThumbnail)
 
             // Load channel avatar
-            clip.channel?.let { channel ->
+            val channel = clip.channel
+            if (channel != null) {
                 Glide.with(context)
                     .load(channel.getEffectiveProfilePicUrl())
                     .circleCrop()
+                    .placeholder(R.drawable.default_avatar)
+                    .error(R.drawable.default_avatar)
                     .into(binding.channelAvatar)
+            } else {
+                Glide.with(context).clear(binding.channelAvatar)
+                binding.channelAvatar.setImageResource(R.drawable.default_avatar)
             }
             // Clip info
             binding.channelName.text = clip.channel?.username ?: clip.channel?.slug ?: ""
@@ -333,12 +343,13 @@ class ClipFeedAdapter(
             updateMuteIcon(isMuted, false)
             
             // Reset player state
+            currentPlayer?.removeListener(sizeListener)
             currentPlayer?.setSurface(null)
             currentPlayer = null
+            currentSurface?.release()
             currentSurface = null
             isPlayerActive = false
-            videoW = 0
-            videoH = 0
+            isFirstFrameRendered = false
             videoW = 0
             videoH = 0
             
@@ -353,6 +364,7 @@ class ClipFeedAdapter(
             // Reset view state
             binding.clipPlayerTexture.visibility = View.GONE
             binding.clipPlayerTexture.alpha = 1f
+            binding.lastFrameImage.setImageDrawable(null)
             binding.lastFrameImage.visibility = View.GONE
             binding.playOverlay.visibility = View.GONE
             binding.clipSeekBar.progress = 0
@@ -569,7 +581,7 @@ class ClipFeedAdapter(
                 if (width > 0 && height > 0) {
                     videoW = width
                     videoH = height
-                    applyScaleTransform()
+                    binding.root.post { applyScaleTransform() }
                 }
             }
             override fun onStateChanged(state: Player.State) {}
@@ -583,13 +595,14 @@ class ClipFeedAdapter(
         }
 
         fun attachPlayer(player: Player) {
-            if (currentPlayer != player) {
+            val isSamePlayer = (currentPlayer === player)
+            if (!isSamePlayer) {
                 currentPlayer?.removeListener(sizeListener)
                 currentPlayer?.setSurface(null)
+                currentPlayer = player
+                player.addListener(sizeListener)
+                isFirstFrameRendered = false
             }
-            
-            currentPlayer = player
-            player.addListener(sizeListener)
             
             // Check initial size
             player.quality.let { quality ->
@@ -601,18 +614,20 @@ class ClipFeedAdapter(
             applyScaleTransform()
 
             isPlayerActive = true
-            isFirstFrameRendered = false
             
             binding.clipPlayerTexture.alpha = 1f
             binding.clipPlayerTexture.visibility = View.VISIBLE
-            binding.clipThumbnail.visibility = View.GONE
+            binding.clipThumbnail.visibility = if (isFirstFrameRendered) View.GONE else View.VISIBLE
             binding.lastFrameImage.visibility = View.GONE
             binding.playOverlay.visibility = View.GONE
             
             if (binding.clipPlayerTexture.isAvailable) {
-                val newSurface = Surface(binding.clipPlayerTexture.surfaceTexture)
-                currentSurface = newSurface
-                player.setSurface(newSurface)
+                if (!isSamePlayer || currentSurface == null || !currentSurface!!.isValid) {
+                    currentSurface?.release()
+                    val newSurface = Surface(binding.clipPlayerTexture.surfaceTexture)
+                    currentSurface = newSurface
+                    player.setSurface(newSurface)
+                }
             }
         }
 
@@ -630,6 +645,7 @@ class ClipFeedAdapter(
             binding.clipPlayerTexture.visibility = View.VISIBLE
             
             if (binding.clipPlayerTexture.isAvailable) {
+                currentSurface?.release()
                 val newSurface = Surface(binding.clipPlayerTexture.surfaceTexture)
                 currentSurface = newSurface
                 player.setSurface(newSurface)
@@ -652,10 +668,12 @@ class ClipFeedAdapter(
          * Applies status bar and navigation bar padding to UI elements
          */
         fun applyInsetsPadding(statusBarHeight: Int, navBarHeight: Int) {
+            val density = binding.root.context.resources.displayMetrics.density
+
             // Update top margins for header elements (status bar padding)
             binding.ivScaleType.let { view ->
                 val params = view.layoutParams as? androidx.constraintlayout.widget.ConstraintLayout.LayoutParams
-                params?.topMargin = 8 + statusBarHeight // Original 8dp + status bar
+                params?.topMargin = (8 * density).toInt() + statusBarHeight // Original 8dp + status bar
                 view.layoutParams = params
             }
 
@@ -664,13 +682,13 @@ class ClipFeedAdapter(
             // Update bottom margins for UI elements (nav bar padding)
             binding.bottomInfoContainer.let { container ->
                 val params = container.layoutParams as? androidx.constraintlayout.widget.ConstraintLayout.LayoutParams
-                params?.bottomMargin = 4 + navBarHeight // Original 4dp + nav bar
+                params?.bottomMargin = (4 * density).toInt() + navBarHeight // Original 4dp + nav bar
                 container.layoutParams = params
             }
 
             binding.actionsContainer.let { container ->
                 val params = container.layoutParams as? androidx.constraintlayout.widget.ConstraintLayout.LayoutParams
-                params?.bottomMargin = 120 + navBarHeight // Original 120dp + nav bar
+                params?.bottomMargin = (120 * density).toInt() + navBarHeight // Original 120dp + nav bar
                 container.layoutParams = params
             }
 

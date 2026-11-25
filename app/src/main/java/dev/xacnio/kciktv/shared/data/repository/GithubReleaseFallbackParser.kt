@@ -70,17 +70,14 @@ object GithubReleaseFallbackParser {
 
             val pathPart = rawHref.substringBefore("?").substringBefore("#")
             if (!pathPart.endsWith(".apk", ignoreCase = true)) continue
-            if (!pathPart.contains(downloadPrefix, ignoreCase = true) &&
-                !pathPart.contains("/releases/download/", ignoreCase = true)
-            ) {
+            if (!pathPart.contains(downloadPrefix, ignoreCase = true)) {
                 continue
             }
 
             val fullUrl = when {
-                rawHref.startsWith("https://", ignoreCase = true) ||
-                    rawHref.startsWith("http://", ignoreCase = true) -> rawHref
+                rawHref.startsWith("https://github.com/", ignoreCase = true) -> rawHref
                 rawHref.startsWith("/") -> "https://github.com$rawHref"
-                else -> "https://github.com/$rawHref"
+                else -> continue
             }
 
             if (!seenUrls.add(fullUrl)) continue

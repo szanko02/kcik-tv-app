@@ -19,6 +19,7 @@
 #include <jni.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdatomic.h>
 #include <android/log.h>
 #include "rnnoise.h"
 
@@ -41,7 +42,7 @@ typedef struct {
 
 typedef struct {
     int channels;
-    volatile int busy;   /* reentrancy guard: at most one thread in nrProcess per ctx */
+    atomic_flag busy;    /* reentrancy guard: at most one thread in nrProcess per ctx */
     ChanCtx ch[MAXCH];
 } NrCtx;
 
@@ -69,8 +70,16 @@ Java_dev_xacnio_kciktv_mobile_ui_player_AudioNrTap_nrCreate(JNIEnv *env, jobject
     NrCtx *ctx = (NrCtx *) calloc(1, sizeof(NrCtx));
     if (!ctx) return 0;
     ctx->channels = channels;
+    atomic_flag_clear(&ctx->busy);
     for (int c = 0; c < channels; c++) {
         ctx->ch[c].st = rnnoise_create(NULL);
+        if (!ctx->ch[c].st) {
+            for (int k = 0; k < c; k++) {
+                if (ctx->ch[k].st) rnnoise_destroy(ctx->ch[k].st);
+            }
+            free(ctx);
+            return 0;
+        }
         seed_channel(&ctx->ch[c]);
     }
     __android_log_print(ANDROID_LOG_INFO, TAG, "nrCreate channels=%d frameSize=%d", channels, rnnoise_get_frame_size());
@@ -97,10 +106,15 @@ Java_dev_xacnio_kciktv_mobile_ui_player_AudioNrTap_nrProcess(JNIEnv *env, jobjec
     jlong cap = (*env)->GetDirectBufferCapacity(env, buf);
     if (!base) return;
     /* Clamp to the buffer's real capacity so we never write past its memory. */
-    if (cap > 0 && (jlong) startByte + sizeBytes > cap) {
+    if (cap <= 0 || (jlong) startByte >= cap) return;
+    if ((jlong) startByte + sizeBytes > cap) {
         sizeBytes = (jint) (cap - startByte);
     }
     if (sizeBytes <= 0) return;
+
+    if (atomic_flag_test_and_set_explicit(&ctx->busy, memory_order_acquire)) {
+        return;
+    }
 
     short *pcm = (short *) ((char *) base + startByte);
 
@@ -125,6 +139,10 @@ Java_dev_xacnio_kciktv_mobile_ui_player_AudioNrTap_nrProcess(JNIEnv *env, jobjec
             if (cc->accN < 0 || cc->accN >= FRAME) cc->accN = 0; /* defensive bound */
             cc->acc[cc->accN++] = (float) s;
             if (cc->accN == FRAME) {
+                if (!cc->st) {
+                    cc->accN = 0;
+                    continue;
+                }
                 float out[FRAME];
                 float vad = rnnoise_process_frame(cc->st, out, cc->acc);
                 float w = frame_wet(baseWet, vadAdapt, vad, &cc->wSmooth);
@@ -154,4 +172,6 @@ Java_dev_xacnio_kciktv_mobile_ui_player_AudioNrTap_nrProcess(JNIEnv *env, jobjec
             pcm[i * ch + c] = (short) v;
         }
     }
+
+    atomic_flag_clear_explicit(&ctx->busy, memory_order_release);
 }

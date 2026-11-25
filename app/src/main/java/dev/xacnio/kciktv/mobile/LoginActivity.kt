@@ -64,7 +64,7 @@ class LoginActivity : ComponentActivity() {
     inner class LoginJsInterface {
         @android.webkit.JavascriptInterface
         fun onLoginBody(body: String) {
-            Log.d(TAG, "📦 Login body captured from JS: ${body.take(100)}...")
+            Log.d(TAG, "Login body captured from JS")
             capturedLoginBody = body
         }
 
@@ -184,8 +184,8 @@ class LoginActivity : ComponentActivity() {
         cookieManager.removeAllCookies(null)
         cookieManager.flush()
         
-        // Enable WebView debugging
-        WebView.setWebContentsDebuggingEnabled(true)
+        // Enable WebView debugging only in debug builds
+        WebView.setWebContentsDebuggingEnabled(dev.xacnio.kciktv.BuildConfig.DEBUG)
         
         // Enable cookies
         cookieManager.setAcceptCookie(true)
@@ -269,31 +269,12 @@ class LoginActivity : ComponentActivity() {
                     val authorization = headers["authorization"] ?: headers["Authorization"]
                     val contentType = headers["content-type"] ?: headers["Content-Type"] ?: "application/json"
                     
-                    Log.d(TAG, "KPSDK Headers captured:")
-                    Log.d(TAG, "  x-kpsdk-cd: ${kpsdkCd?.take(50)}...")
-                    Log.d(TAG, "  x-kpsdk-ct: $kpsdkCt")
-                    Log.d(TAG, "  x-kpsdk-h: ${kpsdkH?.take(50)}...")
-                    Log.d(TAG, "  x-kpsdk-v: $kpsdkV")
-                    Log.d(TAG, "  x-xsrf-token: ${xsrfToken?.take(30)}...")
-                    Log.d(TAG, "  referer: $referer")
-                    Log.d(TAG, "  authorization: ${authorization?.take(30)}...")
-                    
                     // Use body directly (set by Native Flow before triggering fetch)
                     // No need to wait/sleep, avoiding thread blocking/freezing.
                     val body = capturedLoginBody ?: "{}" 
                     
-                    Log.d(TAG, "📦 Using login body: ${body.take(100)}...")
-                    
                     try {
-                        val client = okhttp3.OkHttpClient.Builder()
-                            .connectionSpecs(listOf(okhttp3.ConnectionSpec.RESTRICTED_TLS, okhttp3.ConnectionSpec.CLEARTEXT))
-                            .protocols(listOf(okhttp3.Protocol.HTTP_2, okhttp3.Protocol.HTTP_1_1))
-                            .followRedirects(true)
-                            .followSslRedirects(true)
-                            .cookieJar(okhttp3.CookieJar.NO_COOKIES)
-                            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                            .build()
+                        val client = buildLoginHttpClient()
                         
                         val requestBuilder = Request.Builder()
                             .url(url)
@@ -367,19 +348,22 @@ class LoginActivity : ComponentActivity() {
 
                         val builtRequest = requestBuilder.build()
                         
-                        Log.d(TAG, "--- OkHttp Login Request Headers ---")
-                        builtRequest.headers.forEach {
-                            Log.d(TAG, "${it.first}: ${it.second}")
+                        val responseCode: Int
+                        val responseMessage: String
+                        val contentEncoding: String?
+                        val responseCookies: List<String>
+                        var responseBodyBytes: ByteArray
+                        client.newCall(builtRequest).execute().use { response ->
+                            responseCode = response.code
+                            responseMessage = response.message
+                            contentEncoding = response.header("Content-Encoding")
+                            responseCookies = response.headers("Set-Cookie")
+                            responseBodyBytes = response.body?.bytes() ?: ByteArray(0)
                         }
                         
-                        val response = client.newCall(builtRequest).execute()
-                        
-                        Log.d(TAG, "✅ OkHttp Login Response: ${response.code}")
-                        
-                        var responseBodyBytes = response.body?.bytes() ?: ByteArray(0)
+                        Log.d(TAG, "✅ OkHttp Login Response: $responseCode")
                         
                         // Manually decompress GZIP if Header exists (because we disabled OkHttp's transparent GZIP by setting Accept-Encoding)
-                        val contentEncoding = response.header("Content-Encoding")
                         if (contentEncoding?.equals("gzip", ignoreCase = true) == true) {
                             try {
                                 val gzipStream = java.util.zip.GZIPInputStream(java.io.ByteArrayInputStream(responseBodyBytes))
@@ -392,10 +376,9 @@ class LoginActivity : ComponentActivity() {
                         }
                         
                         val responseBodyString = String(responseBodyBytes)
-                        Log.d(TAG, "Login Response Body: ${if (responseBodyString.length > 1000) responseBodyString.take(1000) + "..." else responseBodyString}")
 
                         // If successful login, save token immediately
-                        if (response.code in 200..299) {
+                        if (responseCode in 200..299) {
                             
                             // 2FA Check
                             if (responseBodyString.contains("\"2fa_required\":true") || responseBodyString.contains("\"otp_required\":true")) {
@@ -437,45 +420,41 @@ class LoginActivity : ComponentActivity() {
                                                 .header("Cookie", cookieStr ?: "") 
                                                 .build()
                                                 
-                                            val userRes = client.newCall(userReq).execute()
-                                            if (userRes.isSuccessful) {
-                                                val userBody = userRes.body?.string() ?: "{}"
-                                                val userJson = org.json.JSONObject(userBody)
-                                                
-                                                username = userJson.optString("username", username)
-                                                userId = userJson.optLong("id", userId)
-                                                profilePic = if (userJson.has("profilepic") && !userJson.isNull("profilepic")) {
-                                                    userJson.getString("profilepic")
+                                            client.newCall(userReq).execute().use { userRes ->
+                                                if (userRes.isSuccessful) {
+                                                    val userBody = userRes.body?.string() ?: "{}"
+                                                    val userJson = org.json.JSONObject(userBody)
+                                                    
+                                                    username = userJson.optString("username", username)
+                                                    userId = userJson.optLong("id", userId)
+                                                    profilePic = if (userJson.has("profilepic") && !userJson.isNull("profilepic")) {
+                                                        userJson.getString("profilepic")
+                                                    } else {
+                                                        profilePic
+                                                    }
+                                                    val chatColor = userJson.optString("chat_color").takeIf { it.isNotEmpty() }
+                                                    
+                                                    val streamerChannel = userJson.optJSONObject("streamer_channel")
+                                                    slug = streamerChannel?.optString("slug")
+                                                    if (slug.isNullOrEmpty()) slug = username
+                                                    
+                                                    Log.d(TAG, "✅ User Details Fetched: $username (ID: $userId, Slug: $slug, Color: $chatColor)")
+                                                    
+                                                    // Save Auth with color
+                                                    prefs.saveAuth(token, username, profilePic, userId, slug, chatColor)
                                                 } else {
-                                                    profilePic
+                                                    Log.w(TAG, "⚠️ Failed to fetch user details: ${userRes.code}")
+                                                    prefs.saveAuth(token, username, profilePic, userId, slug)
                                                 }
-                                                val chatColor = userJson.optString("chat_color").takeIf { it.isNotEmpty() }
-                                                
-                                                val streamerChannel = userJson.optJSONObject("streamer_channel")
-                                                slug = streamerChannel?.optString("slug")
-                                                if (slug.isNullOrEmpty()) slug = username
-                                                
-                                                Log.d(TAG, "✅ User Details Fetched: $username (ID: $userId, Slug: $slug, Color: $chatColor)")
-                                                
-                                                // Save Auth with color
-                                                prefs.saveAuth(token, username, profilePic, userId, slug, chatColor)
-                                            } else {
-                                                Log.w(TAG, "⚠️ Failed to fetch user details: ${userRes.code}")
-                                                prefs.saveAuth(token, username, profilePic, userId, slug)
                                             }
                                         } catch (e: Exception) {
                                             Log.e(TAG, "Error fetching user details", e)
                                         }
 
-                                        // Wait until userRes is finished and check it
-                                        // This check is already handled inside the try block for better safety.
-                                        // I'll remove the redundant check here which was causing 'Unresolved reference: userRes'.
-                                        
                                         // Sync Set-Cookie from login response into the WebView cookie store first,
                                         // so the snapshot we take next includes anything fresh from this response
                                         // (XSRF-TOKEN rotation, kick_session, etc.) plus everything KPSDK accumulated
                                         // during page navigation. getCookie() returns HttpOnly cookies as well.
-                                        val responseCookies = response.headers("Set-Cookie")
                                         for (c in responseCookies) {
                                             cookieManager.setCookie("https://kick.com", c)
                                         }
@@ -511,14 +490,14 @@ class LoginActivity : ComponentActivity() {
                             }
                         } else {
                              // LOGIN FAILED (422, 401, etc)
-                            Log.e(TAG, "❌ Login Failed (${response.code}) Body: $responseBodyString")
+                            Log.e(TAG, "❌ Login Failed ($responseCode)")
                             
                             runOnUiThread {
                                 binding.loginSubmitButton.isEnabled = true
                                 binding.loginSubmitText.text = getString(R.string.login_button_label)
                                 binding.loginLoadingSpinner.visibility = View.GONE
                                 
-                                var errorMsg = getString(R.string.login_failed_code, response.code)
+                                var errorMsg = getString(R.string.login_failed_code, responseCode)
                                 try {
                                     val json = org.json.JSONObject(responseBodyString)
                                     if (json.has("message")) errorMsg = json.getString("message")
@@ -543,8 +522,8 @@ class LoginActivity : ComponentActivity() {
                         return android.webkit.WebResourceResponse(
                             "application/json",
                             "UTF-8",
-                            response.code,
-                            response.message.ifEmpty { "OK" },
+                            responseCode,
+                            responseMessage.ifEmpty { "OK" },
                             mapOf(
                                 "Content-Type" to "application/json",
                                 "Access-Control-Allow-Origin" to "*",
@@ -607,7 +586,7 @@ class LoginActivity : ComponentActivity() {
                             if (window.KPSDK || document.querySelector('script[src*="fp"]')) {
                                 console.log('[KCIKTV] KPSDK Found!');
                                 clearInterval(checkInterval);
-                                try { window.AndroidLogin.onKpsdkReady(); } catch(e) {}
+                                try { window.KCIKTVLogin.onKpsdkReady(); } catch(e) {}
                             }
                         }, 500);
 
@@ -621,8 +600,8 @@ class LoginActivity : ComponentActivity() {
             }
             
             override fun onReceivedSslError(view: WebView?, handler: android.webkit.SslErrorHandler?, error: android.net.http.SslError?) {
-                Log.w(TAG, "SSL Error: ${error?.toString()}")
-                handler?.proceed()
+                Log.w(TAG, "SSL Error: ${error?.primaryError}")
+                handler?.cancel()
             }
             
             override fun onReceivedHttpError(view: WebView?, request: WebResourceRequest?, errorResponse: android.webkit.WebResourceResponse?) {
@@ -689,20 +668,24 @@ class LoginActivity : ComponentActivity() {
         fetchInitialTokens(webView)
     }
     
+    private fun buildLoginHttpClient(): okhttp3.OkHttpClient {
+        return dev.xacnio.kciktv.shared.data.api.RetrofitClient.proxiedOkHttpClient.newBuilder()
+            .connectionSpecs(listOf(okhttp3.ConnectionSpec.RESTRICTED_TLS, okhttp3.ConnectionSpec.CLEARTEXT))
+            .protocols(listOf(okhttp3.Protocol.HTTP_2, okhttp3.Protocol.HTTP_1_1))
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .cookieJar(okhttp3.CookieJar.NO_COOKIES)
+            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+    }
+
     private fun fetchInitialTokens(webView: WebView) {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 Log.d(TAG, "🚀 Fetching initial tokens from provider...")
                 
-                // Create Chrome-like OkHttp Client
-                val client = okhttp3.OkHttpClient.Builder()
-                    .connectionSpecs(listOf(okhttp3.ConnectionSpec.RESTRICTED_TLS, okhttp3.ConnectionSpec.CLEARTEXT))
-                    .protocols(listOf(okhttp3.Protocol.HTTP_2, okhttp3.Protocol.HTTP_1_1))
-                    .followRedirects(true)
-                    .followSslRedirects(true)
-                    .cookieJar(okhttp3.CookieJar.NO_COOKIES)
-                    .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                    .build()
+                val client = buildLoginHttpClient()
 
                 val request = Request.Builder()
                     .url("https://kick.com/kick-token-provider")
@@ -721,21 +704,14 @@ class LoginActivity : ComponentActivity() {
                     .header("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.6834.163 Mobile Safari/537.36")
                     .build()
 
-                val response = client.newCall(request).execute()
-                Log.d(TAG, "Token Provider Response: ${response.code}")
-                
-                // Log Headers
-                Log.d(TAG, "--- Token Provider Headers ---")
-                response.headers.forEach { (name, value) ->
-                    Log.d(TAG, "$name: $value")
+                val responseCode: Int
+                val cookies: List<String>
+                client.newCall(request).execute().use { response ->
+                    responseCode = response.code
+                    cookies = response.headers("Set-Cookie")
                 }
-                
-                // Log Body (Use peekBody to not consume stream unexpectedly, though we don't use it elsewhere)
-                val responseBodyStr = response.peekBody(Long.MAX_VALUE).string()
-                Log.d(TAG, "--- Token Provider Body ---")
-                Log.d(TAG, responseBodyStr)
+                Log.d(TAG, "Token Provider Response: $responseCode")
 
-                val cookies = response.headers("Set-Cookie")
                 val cookieManager = CookieManager.getInstance()
                 
                 if (cookies.isNotEmpty()) {
@@ -743,7 +719,6 @@ class LoginActivity : ComponentActivity() {
                         // Inject Cookies
                         for (cookie in cookies) {
                             cookieManager.setCookie("https://kick.com", cookie)
-                            Log.d(TAG, "🍪 Cookie set: ${cookie.substringBefore(";")}")
                         }
                         cookieManager.flush()
                         
@@ -843,14 +818,7 @@ class LoginActivity : ComponentActivity() {
                     val cookieManager = CookieManager.getInstance()
                     val currentCookies = cookieManager.getCookie("https://kick.com")
                     
-                    val client = okhttp3.OkHttpClient.Builder()
-                        .connectionSpecs(listOf(okhttp3.ConnectionSpec.RESTRICTED_TLS, okhttp3.ConnectionSpec.CLEARTEXT))
-                        .protocols(listOf(okhttp3.Protocol.HTTP_2, okhttp3.Protocol.HTTP_1_1))
-                        .followRedirects(true)
-                        .followSslRedirects(true)
-                        .cookieJar(okhttp3.CookieJar.NO_COOKIES) 
-                        .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                        .build()
+                    val client = buildLoginHttpClient()
 
                     val request = Request.Builder()
                         .url("https://kick.com/sanctum/csrf")
@@ -870,22 +838,15 @@ class LoginActivity : ComponentActivity() {
                         .header("Cookie", currentCookies ?: "")
                         .build()
 
-                    Log.d(TAG, "--- Sanctum Request Headers ---")
-                    request.headers.forEach {
-                        Log.d(TAG, "${it.first}: ${it.second}")
+                    val responseCode: Int
+                    val bodyStr: String
+                    val newCookies: List<String>
+                    client.newCall(request).execute().use { response ->
+                        responseCode = response.code
+                        bodyStr = response.body?.string().orEmpty()
+                        newCookies = response.headers("Set-Cookie")
                     }
-
-                    val response = client.newCall(request).execute()
-                    Log.d(TAG, "Sanctum CSRF Response: ${response.code}")
-                    
-                    Log.d(TAG, "--- Sanctum Response Headers ---")
-                    response.headers.forEach {
-                        Log.d(TAG, "${it.first}: ${it.second}")
-                    }
-                    
-                    val bodyStr = response.peekBody(Long.MAX_VALUE).string()
-                    Log.d(TAG, "--- Sanctum Response Body ---")
-                    Log.d(TAG, bodyStr)
+                    Log.d(TAG, "Sanctum CSRF Response: $responseCode")
                     
                     // Inject Sanctum JS Config if present (Extract from HTML)
                     if (bodyStr.contains("window.KPSDK")) {
@@ -912,13 +873,11 @@ class LoginActivity : ComponentActivity() {
                     }
                     
                     // Update cookies if any
-                    val newCookies = response.headers("Set-Cookie")
                     if (newCookies.isNotEmpty()) {
                          withContext(Dispatchers.Main) {
                             Log.d(TAG, "🍪 Setting ${newCookies.size} Sanctum cookies...")
                             for (cookie in newCookies) {
                                 cookieManager.setCookie("https://kick.com", cookie)
-                                Log.d(TAG, "   Sets-Cookie: ${cookie.take(50)}...")
                             }
                             cookieManager.flush()
                         }
@@ -1026,9 +985,7 @@ class LoginActivity : ComponentActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                  Log.d(TAG, "🔍 Verifying session_token with api/v1/user...")
-                 val client = okhttp3.OkHttpClient.Builder()
-                    .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                    .build()
+                 val client = buildLoginHttpClient()
                     
                  val request = Request.Builder()
                     .url("https://kick.com/api/v1/user")
@@ -1037,29 +994,32 @@ class LoginActivity : ComponentActivity() {
                     .header("Accept", "application/json")
                     .build()
                 
-                val response = client.newCall(request).execute()
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: "{}"
-                    val json = org.json.JSONObject(body)
-                    
-                    val userId = json.optLong("id")
-                    val username = json.optString("username")
-                    val profilePic = json.optString("profile_pic") ?: json.optString("profile_picture")
-                    var slug = json.optJSONObject("streamer_channel")?.optString("slug")
-                    if (slug.isNullOrEmpty()) slug = username
-                    
-                     withContext(Dispatchers.Main) {
-                        prefs.saveAuth(token, username, profilePic, userId, slug)
-                        // Save the full cookie set too
-                        prefs.cookies = allCookies
-                        prefs.commitActiveAccountToList()
-                        Toast.makeText(this@LoginActivity, getString(R.string.login_success_cookie), Toast.LENGTH_LONG).show()
-                        setResult(android.app.Activity.RESULT_OK)
-                        finish()
-                     }
-                } else {
-                    Log.w(TAG, "⚠️ session_token found but API returned ${response.code}")
-                    isLoginCompleted = false 
+                client.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val body = response.body?.string() ?: "{}"
+                        val json = org.json.JSONObject(body)
+                        
+                        val userId = json.optLong("id")
+                        val username = json.optString("username")
+                        val profilePic = json.optString("profilepic").takeIf { it.isNotEmpty() }
+                            ?: json.optString("profile_pic").takeIf { it.isNotEmpty() }
+                            ?: json.optString("profile_picture").takeIf { it.isNotEmpty() }
+                        var slug = json.optJSONObject("streamer_channel")?.optString("slug")
+                        if (slug.isNullOrEmpty()) slug = username
+                        
+                         withContext(Dispatchers.Main) {
+                            prefs.saveAuth(token, username, profilePic, userId, slug)
+                            // Save the full cookie set too
+                            prefs.cookies = allCookies
+                            prefs.commitActiveAccountToList()
+                            Toast.makeText(this@LoginActivity, getString(R.string.login_success_cookie), Toast.LENGTH_LONG).show()
+                            setResult(android.app.Activity.RESULT_OK)
+                            finish()
+                         }
+                    } else {
+                        Log.w(TAG, "⚠️ session_token found but API returned ${response.code}")
+                        isLoginCompleted = false 
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Cookie login check failed", e)
@@ -1204,5 +1164,24 @@ class LoginActivity : ComponentActivity() {
         if (code.length == 6) {
             binding.loginSubmitButton.performClick()
         }
+    }
+
+    override fun onDestroy() {
+        try {
+            binding.loginWebView.apply {
+                stopLoading()
+                removeJavascriptInterface("KCIKTVLogin")
+                loadUrl("about:blank")
+                clearHistory()
+                destroy()
+            }
+        } catch (_: Exception) {}
+        if (!isLoginCompleted) {
+            try {
+                CookieManager.getInstance().removeAllCookies(null)
+                CookieManager.getInstance().flush()
+            } catch (_: Exception) {}
+        }
+        super.onDestroy()
     }
 }

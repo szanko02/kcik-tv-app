@@ -82,8 +82,51 @@ class StreamFeedManager(private val activity: MobilePlayerActivity) {
     // Cache for follow status
     private val followStatusCache = ConcurrentHashMap<String, Boolean>()
     
-    // Cache for last frames
-    private val lastFrameCache = ConcurrentHashMap<Int, Bitmap>()
+    // Bounded LRU cache for last frames (max 4 bitmaps to avoid OOM)
+    private val lastFrameLock = Any()
+    private val maxLastFrameCacheSize = 4
+    private val lastFrameCache = object : LinkedHashMap<Int, Bitmap>(8, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, Bitmap>?): Boolean {
+            if (size > maxLastFrameCacheSize) {
+                val evicted = eldest?.value
+                if (evicted != null && !evicted.isRecycled) {
+                    evicted.recycle()
+                }
+                return true
+            }
+            return false
+        }
+    }
+
+    private fun putLastFrame(position: Int, bitmap: Bitmap) {
+        synchronized(lastFrameLock) {
+            val prev = lastFrameCache.put(position, bitmap)
+            if (prev != null && prev !== bitmap && !prev.isRecycled) {
+                prev.recycle()
+            }
+        }
+    }
+
+    private fun getLastFrame(position: Int): Bitmap? {
+        synchronized(lastFrameLock) {
+            val bmp = lastFrameCache[position] ?: return null
+            return if (bmp.isRecycled) {
+                lastFrameCache.remove(position)
+                null
+            } else {
+                bmp
+            }
+        }
+    }
+
+    private fun clearLastFrameCache() {
+        synchronized(lastFrameLock) {
+            lastFrameCache.values.forEach { bitmap ->
+                if (!bitmap.isRecycled) bitmap.recycle()
+            }
+            lastFrameCache.clear()
+        }
+    }
     
     // Cache for video dimensions (Slug -> Width/Height)
     private val videoSizeCache = ConcurrentHashMap<String, Pair<Int, Int>>()
@@ -255,10 +298,7 @@ class StreamFeedManager(private val activity: MobilePlayerActivity) {
     private fun clearCaches() {
         playbackUrlCache.clear()
         videoSizeCache.clear()
-        lastFrameCache.values.forEach { bitmap ->
-            if (!bitmap.isRecycled) bitmap.recycle()
-        }
-        lastFrameCache.clear()
+        clearLastFrameCache()
     }
     
     /**
@@ -500,8 +540,8 @@ class StreamFeedManager(private val activity: MobilePlayerActivity) {
         val viewHolder = getViewHolder(position)
         
         // Show cached frame or thumbnail
-        val cachedFrame = lastFrameCache[position]
-        if (cachedFrame != null && !cachedFrame.isRecycled) {
+        val cachedFrame = getLastFrame(position)
+        if (cachedFrame != null) {
             viewHolder?.showLastFrame(cachedFrame)
         }
         
@@ -707,10 +747,7 @@ class StreamFeedManager(private val activity: MobilePlayerActivity) {
     private fun captureLastFrame(position: Int) {
         getViewHolder(position)?.let { holder ->
             holder.captureCurrentFrame()?.let { bitmap ->
-                lastFrameCache[position]?.let { old ->
-                    if (!old.isRecycled) old.recycle()
-                }
-                lastFrameCache[position] = bitmap
+                putLastFrame(position, bitmap)
             }
         }
     }
@@ -765,8 +802,8 @@ class StreamFeedManager(private val activity: MobilePlayerActivity) {
                 checkFollowStatus(streamsList[position], holder)
                 
                 // Show cached frame if available
-                lastFrameCache[position]?.let { bitmap ->
-                    if (!bitmap.isRecycled) holder.showLastFrame(bitmap)
+                getLastFrame(position)?.let { bitmap ->
+                    holder.showLastFrame(bitmap)
                 }
                 
                 // Attach player if this is the current position
@@ -781,10 +818,7 @@ class StreamFeedManager(private val activity: MobilePlayerActivity) {
             },
             onViewDetached = { position, holder ->
                 holder.captureCurrentFrame()?.let { bitmap ->
-                    lastFrameCache[position]?.let { old ->
-                        if (!old.isRecycled) old.recycle()
-                    }
-                    lastFrameCache[position] = bitmap
+                    putLastFrame(position, bitmap)
                 }
                 holder.detachPlayer()
             }
@@ -1063,19 +1097,32 @@ class StreamFeedManager(private val activity: MobilePlayerActivity) {
         feedBinding?.root?.visibility = View.GONE
         isFeedActive = false
         
-        // Restore previous screen state
-        // Use robust origin screen tracking + fallback to legacy checks
-        if (activeOriginScreen == MobilePlayerActivity.AppScreen.CATEGORY_DETAILS || 
-            currentCategoryId != null || 
-            activity.browseManager.isCategoryDetailsVisible) {
-            activity.returnToCategoryDetails = true
-            binding.categoryDetailsContainer.root.visibility = View.VISIBLE
-            binding.mobileHeader.visibility = View.GONE
-            activity.setCurrentScreen(MobilePlayerActivity.AppScreen.CATEGORY_DETAILS)
-        } else {
-            binding.browseScreenContainer.root.visibility = View.VISIBLE
-            binding.mobileHeader.visibility = View.VISIBLE
-            activity.setCurrentScreen(MobilePlayerActivity.AppScreen.BROWSE)
+        // Restore previous screen state based on captured origin
+        when {
+            activeOriginScreen == MobilePlayerActivity.AppScreen.CATEGORY_DETAILS ||
+                currentCategoryId != null ||
+                activity.browseManager.isCategoryDetailsVisible -> {
+                activity.returnToCategoryDetails = true
+                binding.categoryDetailsContainer.root.visibility = View.VISIBLE
+                binding.mobileHeader.visibility = View.GONE
+                activity.setCurrentScreen(MobilePlayerActivity.AppScreen.CATEGORY_DETAILS)
+            }
+            activeOriginScreen == MobilePlayerActivity.AppScreen.HOME -> {
+                binding.homeScreenContainer.root.visibility = View.VISIBLE
+                binding.mobileHeader.visibility = View.VISIBLE
+                activity.isHomeScreenVisible = true
+                activity.setCurrentScreen(MobilePlayerActivity.AppScreen.HOME)
+            }
+            activeOriginScreen == MobilePlayerActivity.AppScreen.FOLLOWING -> {
+                binding.followingScreenContainer.root.visibility = View.VISIBLE
+                binding.mobileHeader.visibility = View.VISIBLE
+                activity.setCurrentScreen(MobilePlayerActivity.AppScreen.FOLLOWING)
+            }
+            else -> {
+                binding.browseScreenContainer.root.visibility = View.VISIBLE
+                binding.mobileHeader.visibility = View.VISIBLE
+                activity.setCurrentScreen(MobilePlayerActivity.AppScreen.BROWSE)
+            }
         }
         
         streamsList = mutableListOf()
@@ -1290,15 +1337,16 @@ class StreamFeedManager(private val activity: MobilePlayerActivity) {
             currentNavBarHeight = navBarHeight
             
             // Apply to header elements (they are in container, not ViewHolders)
+            val margin12dp = (12 * activity.resources.displayMetrics.density).toInt()
             feedBinding?.ivScaleType?.let { view ->
                 val params = view.layoutParams as? android.widget.FrameLayout.LayoutParams
-                params?.topMargin = 12 + statusBarHeight // Original 12dp + status bar
+                params?.topMargin = margin12dp + statusBarHeight // Original 12dp + status bar
                 view.layoutParams = params
             }
             
             feedBinding?.headerFilterContainer?.let { view ->
                 val params = view.layoutParams as? android.widget.FrameLayout.LayoutParams
-                params?.topMargin = 12 + statusBarHeight // Original 12dp + status bar
+                params?.topMargin = margin12dp + statusBarHeight // Original 12dp + status bar
                 view.layoutParams = params
             }
             

@@ -41,7 +41,9 @@ jobs:
           distribution: 'temurin'
 
       - name: Verify Translations
-        run: python3 scripts/verify_translations_strict.py
+        run: |
+          python3 scripts/verify_translations_strict.py
+          python3 scripts/translate_ru.py --validate-only
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -76,6 +78,10 @@ jobs:
           if [ -n "$SIGNING_KEY" ]; then
             echo "has_signing_key=true" >> "$GITHUB_OUTPUT"
           else
+            if [ "$REF_TYPE" = "tag" ]; then
+              echo "::error::SIGNING_KEY secret is required for tagged releases" >&2
+              exit 1
+            fi
             echo "has_signing_key=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -159,10 +165,11 @@ jobs:
             fi
           fi
 
+          DELIM="EOF_$(openssl rand -hex 16)"
           {
-            echo 'notes<<EOF'
+            echo "notes<<${DELIM}"
             echo "$NOTES"
-            echo 'EOF'
+            echo "${DELIM}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Build Signed Release APK

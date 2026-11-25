@@ -34,6 +34,8 @@
         android:layout_width="match_parent"
         android:layout_height="64dp"
         android:background="@drawable/bg_item_ripple"
+        android:clickable="true"
+        android:focusable="true"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingHorizontal="20dp">
@@ -80,6 +82,8 @@
         android:layout_width="match_parent"
         android:layout_height="64dp"
         android:background="@drawable/bg_item_ripple"
+        android:clickable="true"
+        android:focusable="true"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingHorizontal="20dp">
@@ -126,6 +130,8 @@
         android:layout_width="match_parent"
         android:layout_height="64dp"
         android:background="@drawable/bg_item_ripple"
+        android:clickable="true"
+        android:focusable="true"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingHorizontal="20dp">
@@ -172,6 +178,8 @@
         android:layout_width="match_parent"
         android:layout_height="64dp"
         android:background="@drawable/bg_item_ripple"
+        android:clickable="true"
+        android:focusable="true"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingHorizontal="20dp">
@@ -218,6 +226,8 @@
         android:layout_width="match_parent"
         android:layout_height="64dp"
         android:background="@drawable/bg_item_ripple"
+        android:clickable="true"
+        android:focusable="true"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingHorizontal="20dp">
@@ -264,6 +274,8 @@
         android:layout_width="match_parent"
         android:layout_height="64dp"
         android:background="@drawable/bg_item_ripple"
+        android:clickable="true"
+        android:focusable="true"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingHorizontal="20dp"

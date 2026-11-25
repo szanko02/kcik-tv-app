@@ -652,8 +652,8 @@
     <string name="mod_log_changed_mature">changed mature mode</string>
 
     <!-- API Errors -->
-    <string name="error_server_unavailable">Sunucu yanıt vermiyor (%1$d). Tekrar deneyin.</string>
-    <string name="error_network_unavailable">Bağlantı hatası. Tekrar deneyin.</string>
+    <string name="error_server_unavailable">Server unavailable (%1$d). Please try again.</string>
+    <string name="error_network_unavailable">Connection error. Please try again.</string>
 
     <!-- Moderator Actions -->
     <string name="mod_actions_title">Channel Actions</string>
@@ -1486,4 +1486,12 @@
     <string name="tv_exit_dialog_title">Exit TV Mode?</string>
     <string name="tv_exit_dialog_message">You can return to the mobile interface or close the app.</string>
     <string name="tv_exit_app_action">Close App</string>
+    <string name="tv_switch_mobile_confirm_title">Switch to Mobile UI?</string>
+    <string name="tv_switch_mobile_confirm_message">This device has no touchscreen. You can return to TV mode using your remote via Settings → Application → Switch to TV UI.</string>
+    <string name="tv_no_browser_found">No browser app found to open this link</string>
+    <string name="tv_unknown_sources_unavailable">Allow installing from unknown sources in system settings</string>
+    <string name="tv_login_code_error">ERROR</string>
+    <string name="tv_login_code_label">CODE</string>
+    <string name="tv_update_check_failed_format">Update check failed: %1$s</string>
+    <string name="tv_login_exchange_failed">TV login failed. Please try again.</string>
 </resources>

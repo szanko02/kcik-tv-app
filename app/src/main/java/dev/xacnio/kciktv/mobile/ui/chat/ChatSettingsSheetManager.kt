@@ -77,6 +77,8 @@ class ChatSettingsSheetManager(
     private var isMountedOnPlayerScreen: Boolean = false
     private var isSyncingControls: Boolean = false
     private var syncCurrentPanelControls: (() -> Unit)? = null
+    private var currentPage: Int = PAGE_ROOT
+    private var navigateBackAction: (() -> Boolean)? = null
 
     private companion object {
         const val PAGE_ROOT = 0
@@ -89,12 +91,23 @@ class ChatSettingsSheetManager(
 
     fun isPanelShowing(): Boolean = currentPanelView != null
 
+    fun handleBackPress(): Boolean {
+        if (currentPanelView == null) return false
+        val handled = navigateBackAction?.invoke() ?: false
+        if (!handled) {
+            dismissPanel()
+        }
+        return true
+    }
+
     fun dismissPanel() {
         isTrackingSideChatWidth = false
         isTrackingEdgeMargin = false
         activity.fullscreenToggleManager.clearSideChatWidthPreview()
         val view = currentPanelView ?: return
         currentPanelView = null
+        currentPage = PAGE_ROOT
+        navigateBackAction = null
         syncCurrentPanelControls = null
         isMountedOnPlayerScreen = false
         if (hasProfileChanges) saveProfileIdentity()
@@ -189,7 +202,7 @@ class ChatSettingsSheetManager(
         availableBadgesV2.clear()
         profileSelectedBadgesV2.clear()
 
-        var currentPage = PAGE_ROOT
+        currentPage = PAGE_ROOT
 
         fun updateHeader(titleRes: Int, showBack: Boolean) {
             panelTitleText.text = activity.getString(titleRes)
@@ -264,18 +277,29 @@ class ChatSettingsSheetManager(
             }
         }
 
-        panelBackButton.setOnClickListener {
+        navigateBackAction = {
             when (currentPage) {
                 PAGE_PROFILE -> {
                     if (hasProfileChanges) saveProfileIdentity()
                     navigate(PAGE_ROOT)
+                    true
                 }
-                PAGE_CHAT_SETTINGS -> navigate(PAGE_ROOT)
-                PAGE_HIGHLIGHTS -> navigate(PAGE_CHAT_SETTINGS)
-                PAGE_ANIMATIONS -> navigate(PAGE_CHAT_SETTINGS)
-                PAGE_BATTERY -> navigate(PAGE_ROOT)
+                PAGE_CHAT_SETTINGS, PAGE_BATTERY -> {
+                    navigate(PAGE_ROOT)
+                    true
+                }
+                PAGE_HIGHLIGHTS, PAGE_ANIMATIONS -> {
+                    navigate(PAGE_CHAT_SETTINGS)
+                    true
+                }
+                else -> {
+                    dismissPanel()
+                    true
+                }
             }
         }
+
+        panelBackButton.setOnClickListener { handleBackPress() }
 
         btnDismiss.setOnClickListener { dismissPanel() }
 

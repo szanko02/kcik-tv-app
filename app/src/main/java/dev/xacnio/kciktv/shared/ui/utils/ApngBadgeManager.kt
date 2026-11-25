@@ -33,7 +33,13 @@ object ApngBadgeManager {
             size > MAX_CACHED_ENTRIES
     }
 
-    private val pendingLoads = ConcurrentHashMap<String, MutableList<Pair<WeakReference<View>, (Drawable?) -> Unit>>>()
+    private data class PendingBadgeRequest(
+        val viewRef: WeakReference<View>,
+        val size: Int,
+        val onReady: (Drawable?) -> Unit
+    )
+
+    private val pendingLoads = ConcurrentHashMap<String, MutableList<PendingBadgeRequest>>()
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private val client by lazy {
@@ -56,14 +62,16 @@ object ApngBadgeManager {
             return
         }
 
+        val pendingReq = PendingBadgeRequest(WeakReference(targetView), size, onReady)
+
         // 2. Already loading — queue up
         synchronized(pendingLoads) {
             val pending = pendingLoads[url]
             if (pending != null) {
-                pending.add(Pair(WeakReference(targetView), onReady))
+                pending.add(pendingReq)
                 return
             }
-            pendingLoads[url] = mutableListOf(Pair(WeakReference(targetView), onReady))
+            pendingLoads[url] = mutableListOf(pendingReq)
         }
 
         // 3. Download in background
@@ -73,27 +81,28 @@ object ApngBadgeManager {
                     .url(url)
                     .header("User-Agent", dev.xacnio.kciktv.shared.util.Constants.USER_AGENT)
                     .build()
-                val response = client.newCall(request).execute()
-                if (response.isSuccessful) {
-                    val bytes = response.body?.bytes()
-                    if (bytes != null) {
-                        synchronized(bytesCache) { bytesCache[url] = bytes }
-                        mainHandler.post {
-                            val callbacks = synchronized(pendingLoads) { pendingLoads.remove(url) } ?: return@post
-                            for ((viewRef, callback) in callbacks) {
-                                if (viewRef.get() != null) callback(buildDrawable(bytes, size))
+                client.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val bytes = response.body?.bytes()
+                        if (bytes != null) {
+                            synchronized(bytesCache) { bytesCache[url] = bytes }
+                            mainHandler.post {
+                                val callbacks = synchronized(pendingLoads) { pendingLoads.remove(url) } ?: return@post
+                                for (req in callbacks) {
+                                    req.onReady(buildDrawable(bytes, req.size))
+                                }
                             }
+                            return@Thread
                         }
-                        return@Thread
                     }
+                    android.util.Log.e("ApngBadgeManager", "Response failed for $url: ${response.code}")
                 }
-                android.util.Log.e("ApngBadgeManager", "Response failed for $url: ${response.code}")
             } catch (e: Exception) {
                 android.util.Log.e("ApngBadgeManager", "Load failed: ${e.message}", e)
             }
             mainHandler.post {
                 val callbacks = synchronized(pendingLoads) { pendingLoads.remove(url) }
-                callbacks?.forEach { (_, callback) -> callback(null) }
+                callbacks?.forEach { req -> req.onReady(null) }
             }
         }.start()
     }

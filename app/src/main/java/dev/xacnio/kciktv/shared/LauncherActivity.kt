@@ -39,7 +39,7 @@ class LauncherActivity : FragmentActivity() {
         // If the app is already running (we are not index 0 in the stack),
         // we act as a transparent trampoline to the existing activity.
         if (!isTaskRoot 
-            && intent.hasCategory(Intent.CATEGORY_LAUNCHER) 
+            && (intent.hasCategory(Intent.CATEGORY_LAUNCHER) || intent.hasCategory(Intent.CATEGORY_LEANBACK_LAUNCHER))
             && intent.action == Intent.ACTION_MAIN
         ) {
             // Activity is already transparent from Manifest theme, so just redirect.
@@ -143,10 +143,14 @@ class LauncherActivity : FragmentActivity() {
                                 Log.e("Preload", "Launcher - Following pre-fetch failed", e)
                                 PreloadCache.followingStreams = emptyList()
                             }
-                        } else {
-                            Log.w("Preload", "Launcher - Auth invalid (Code: ${response.code()}), clearing prefs")
+                        } else if (response.code() == 401) {
+                            Log.w("Preload", "Launcher - Auth unauthorized (401), clearing prefs")
                             prefs.clearAuth()
                             PreloadCache.isAuthValid = false
+                            PreloadCache.followingStreams = emptyList()
+                        } else {
+                            Log.w("Preload", "Launcher - Auth check transient HTTP ${response.code()}, preserving local auth")
+                            PreloadCache.isAuthValid = true
                             PreloadCache.followingStreams = emptyList()
                         }
                     } catch (e: Exception) {

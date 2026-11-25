@@ -58,7 +58,7 @@ class AuthRepository {
             if (response.isSuccessful) {
                 val token = response.body()?.string()?.filter { it.code in 33..126 } // Only printable non-space ASCII
                 if (!token.isNullOrEmpty()) {
-                    Log.d(TAG, "Login successful, token received: $token")
+                    Log.d(TAG, "Login successful, token received")
                     
                     // Token comes in userid|token format, use it directly
                     // Get user info
@@ -130,7 +130,8 @@ class AuthRepository {
      */
     suspend fun fetchUserInfo(token: String): UserResponse? = withContext(Dispatchers.IO) {
         try {
-            val response = authService.getUser(token)
+            val authHeader = if (token.startsWith("Bearer ", ignoreCase = true)) token else "Bearer $token"
+            val response = authService.getUser(authHeader)
             if (response.isSuccessful) response.body() else null
         } catch (e: Exception) {
             Log.e("AuthRepository", "fetchUserInfo failed: ${e.message}")

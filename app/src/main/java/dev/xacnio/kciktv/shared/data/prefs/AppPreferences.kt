@@ -11,6 +11,7 @@ package dev.xacnio.kciktv.shared.data.prefs
 import android.content.Context
 import android.content.SharedPreferences
 import com.google.gson.Gson
+import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import dev.xacnio.kciktv.shared.util.CryptoManager
 import dev.xacnio.kciktv.shared.util.SupportedLanguages
@@ -67,8 +68,12 @@ class AppPreferences(private val context: Context) {
             return
         }
         val encrypted = cryptoManager.encrypt(value)
-        prefs.edit().putString(key, encrypted).apply()
-        decryptCache[key] = value
+        if (encrypted != null) {
+            prefs.edit().putString(key, encrypted).apply()
+            decryptCache[key] = value
+        } else {
+            android.util.Log.e("AppPreferences", "Skipping plaintext write for key=$key after encryption failure")
+        }
     }
 
     // Helper to decrypt data transparently (with auto-migration)
@@ -240,10 +245,10 @@ class AppPreferences(private val context: Context) {
         get() = prefs.getBoolean("background_audio_enabled", true)
         set(value) = prefs.edit().putBoolean("background_audio_enabled", value).apply()
 
-    // Noise Reduction (RNNoise) preset: 0=Off, 1=Low, 2=Medium, 3=High, 4=Voice Focus
+    // Noise Reduction (RNNoise) preset: 0=Off, 1=Light, 2=Balanced, 3=Strong, 4=Voice Focus, 5=Max
     var noiseReductionLevel: Int
-        get() = prefs.getInt("noise_reduction_level", 0)
-        set(value) = prefs.edit().putInt("noise_reduction_level", value.coerceIn(0, 4)).apply()
+        get() = prefs.getInt("noise_reduction_level", 0).coerceIn(0, 5)
+        set(value) = prefs.edit().putInt("noise_reduction_level", value.coerceIn(0, 5)).apply()
         
     // Custom EQ Settings (Gain in dB)
     var eqBassGain: Float
@@ -319,17 +324,17 @@ class AppPreferences(private val context: Context) {
     // ==================== Multi-Account Registry ====================
 
     data class StoredAccount(
-        val userId: Long,
-        val username: String,
-        val profilePic: String?,
-        val slug: String?,
-        val chatColor: String?,
-        val authToken: String,
-        val cookies: String?,
-        val xsrfToken: String?,
-        val userJson: String?,
-        val blerpCookies: String?,
-        val addedAt: Long = System.currentTimeMillis()
+        @SerializedName("userId") val userId: Long,
+        @SerializedName("username") val username: String,
+        @SerializedName("profilePic") val profilePic: String?,
+        @SerializedName("slug") val slug: String?,
+        @SerializedName("chatColor") val chatColor: String?,
+        @SerializedName("authToken") val authToken: String,
+        @SerializedName("cookies") val cookies: String?,
+        @SerializedName("xsrfToken") val xsrfToken: String?,
+        @SerializedName("userJson") val userJson: String?,
+        @SerializedName("blerpCookies") val blerpCookies: String?,
+        @SerializedName("addedAt") val addedAt: Long = System.currentTimeMillis()
     )
 
     var activeAccountId: Long
@@ -458,16 +463,18 @@ class AppPreferences(private val context: Context) {
             .remove("logged_in_username")
             .remove("logged_in_profile_pic")
             .remove("logged_in_user_id")
+            .remove("logged_in_slug")
             .remove("logged_in_chat_color")
             .remove("saved_cookies")
+            .remove("saved_blerp_cookies")
             .remove("xsrf_token")
             .remove("user_json")
             .apply()
         // Invalidate decrypted cache entries that bypass putStringSafe.
         listOf(
             "auth_token", "logged_in_username", "logged_in_profile_pic",
-            "logged_in_chat_color", "saved_cookies", "xsrf_token", "user_json",
-            "logged_in_slug"
+            "logged_in_chat_color", "saved_cookies", "saved_blerp_cookies",
+            "xsrf_token", "user_json", "logged_in_slug"
         ).forEach { decryptCache[it] = ABSENT }
     }
     
@@ -728,12 +735,16 @@ class AppPreferences(private val context: Context) {
         recentCategoriesRaw = limited.joinToString(",")
     }
 
+    private var legacySearchHistoryRaw: String?
+        get() = prefs.getString("search_history_legacy", null)
+        set(value) = prefs.edit().putString("search_history_legacy", value).apply()
+
     var searchHistoryRaw: String?
         get() = prefs.getString("search_history", null)
         set(value) = prefs.edit().putString("search_history", value).apply()
 
     fun getSearchHistory(): List<String> {
-        val raw = searchHistoryRaw ?: return emptyList()
+        val raw = legacySearchHistoryRaw ?: return emptyList()
         return raw.split("|||").filter { it.isNotBlank() }
     }
 
@@ -743,21 +754,22 @@ class AppPreferences(private val context: Context) {
         current.remove(query)
         current.add(0, query)
         val limited = if (current.size > 15) current.take(15) else current
-        searchHistoryRaw = limited.joinToString("|||")
+        legacySearchHistoryRaw = limited.joinToString("|||")
     }
 
     fun clearSearchHistory() {
         searchHistoryRaw = null
+        legacySearchHistoryRaw = null
     }
 
     private val gson = Gson()
 
     data class HistoryEntry(
-        val type: String, // "query", "channel", "category"
-        val query: String? = null,
-        val channelItem: dev.xacnio.kciktv.shared.data.model.SearchResultItem.ChannelResult? = null,
-        val categoryItem: dev.xacnio.kciktv.shared.data.model.SearchResultItem.CategoryResult? = null,
-        val timestamp: Long = System.currentTimeMillis()
+        @SerializedName("type") val type: String, // "query", "channel", "category"
+        @SerializedName("query") val query: String? = null,
+        @SerializedName("channelItem") val channelItem: dev.xacnio.kciktv.shared.data.model.SearchResultItem.ChannelResult? = null,
+        @SerializedName("categoryItem") val categoryItem: dev.xacnio.kciktv.shared.data.model.SearchResultItem.CategoryResult? = null,
+        @SerializedName("timestamp") val timestamp: Long = System.currentTimeMillis()
     )
 
     fun getSearchHistoryItems(): List<HistoryEntry> {
@@ -806,19 +818,19 @@ class AppPreferences(private val context: Context) {
     // ==================== VOD Watch History ====================
 
     data class VodWatchState(
-        val videoId: String,
-        val videoTitle: String?,
-        val thumbnailUrl: String?,
-        val duration: Long,
-        val watchedDuration: Long,
-        val sourceUrl: String?,
-        val channelName: String?,
-        val channelSlug: String?,
-        val profilePic: String?,
-        val categoryName: String? = null,
-        val categorySlug: String? = null,
-        val channelId: String? = null,
-        val lastWatchedTimestamp: Long = System.currentTimeMillis()
+        @SerializedName("videoId") val videoId: String,
+        @SerializedName("videoTitle") val videoTitle: String?,
+        @SerializedName("thumbnailUrl") val thumbnailUrl: String?,
+        @SerializedName("duration") val duration: Long,
+        @SerializedName("watchedDuration") val watchedDuration: Long,
+        @SerializedName("sourceUrl") val sourceUrl: String?,
+        @SerializedName("channelName") val channelName: String?,
+        @SerializedName("channelSlug") val channelSlug: String?,
+        @SerializedName("profilePic") val profilePic: String?,
+        @SerializedName("categoryName") val categoryName: String? = null,
+        @SerializedName("categorySlug") val categorySlug: String? = null,
+        @SerializedName("channelId") val channelId: String? = null,
+        @SerializedName("lastWatchedTimestamp") val lastWatchedTimestamp: Long = System.currentTimeMillis()
     )
 
     var vodWatchHistoryRaw: String?

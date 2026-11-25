@@ -1458,10 +1458,10 @@ class BrowseManager(private val activity: MobilePlayerActivity) {
         } else {
             binding.browseScreenContainer.root.visibility = View.VISIBLE
             activity.setCurrentScreen(MobilePlayerActivity.AppScreen.BROWSE)
-            if (currentBrowseTab == 0) {
-                binding.browseScreenContainer.browseLiveChannelsRecycler.visibility = View.VISIBLE
-            } else {
-                binding.browseScreenContainer.browseCategoriesRecycler.visibility = View.VISIBLE
+            when (currentBrowseTab) {
+                0 -> binding.browseScreenContainer.browseLiveChannelsRecycler.visibility = View.VISIBLE
+                2 -> binding.browseScreenContainer.browseClipsRecycler.visibility = View.VISIBLE
+                else -> binding.browseScreenContainer.browseCategoriesRecycler.visibility = View.VISIBLE
             }
         }
         categoryDetailsOpenedFromHome = false

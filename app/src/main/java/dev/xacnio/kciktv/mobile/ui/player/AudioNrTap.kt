@@ -61,9 +61,18 @@ object AudioNrTap {
     }
 
     // ---- Native RNNoise bridge ----
+    private class RendererNrState(
+        var handle: Long,
+        var channels: Int,
+        var sampleRate: Int,
+        var unsupported: Boolean
+    )
+
     private var nativeLoaded = false
-    @Volatile private var handle: Long = 0L
+    private val ctxLock = Any()
+    private val rendererStates = java.util.WeakHashMap<Any, RendererNrState>()
     @Volatile private var nonDirectWarned = false
+    @Volatile private var non48kWarned = false
 
     private external fun nrCreate(channels: Int): Long
     private external fun nrDestroy(handle: Long)
@@ -93,29 +102,69 @@ object AudioNrTap {
     private fun fieldByName(obj: Any, name: String): Any? =
         findField(obj) { it.name == name }?.get(obj)
 
+    private fun resolveStateForRenderer(renderer: Any): RendererNrState? {
+        if (!nativeLoaded) return null
+        val track = fieldByName(renderer, "track") as? android.media.AudioTrack ?: return null
+        val sr = track.sampleRate
+        val ch = track.channelCount.coerceIn(1, 2)
+        synchronized(ctxLock) {
+            val existing = rendererStates[renderer]
+            if (existing != null && existing.sampleRate == sr && existing.channels == ch) {
+                return existing
+            }
+            if (existing != null) {
+                synchronized(existing) {
+                    if (existing.handle != 0L) {
+                        nrDestroy(existing.handle)
+                        existing.handle = 0L
+                    }
+                }
+            }
+            if (sr != 48000) {
+                if (!non48kWarned) {
+                    Log.w(TAG, "sampleRate=$sr (RNNoise expects 48000) — bypassing NR")
+                    non48kWarned = true
+                }
+                return RendererNrState(0L, ch, sr, unsupported = true).also {
+                    rendererStates[renderer] = it
+                }
+            }
+            val h = nrCreate(ch)
+            Log.i(TAG, "RNNoise context created handle=$h channels=$ch sampleRate=$sr")
+            return RendererNrState(h, ch, sr, unsupported = (h == 0L)).also {
+                rendererStates[renderer] = it
+            }
+        }
+    }
+
     /**
-     * Reads the runtime PCM format from the live AudioTrack and creates the native
-     * RNNoise context for that channel count (once).
+     * Reads the runtime PCM format from the live AudioTrack and prepares the per-renderer
+     * RNNoise context for that sample rate and channel count.
      */
-    @Volatile private var formatLogged = false
     fun logFormat(player: Any) {
-        if (formatLogged || !nativeLoaded) return
+        if (!nativeLoaded) return
         try {
             val platform = fieldByType(player, ".Platform") ?: run { Log.w(TAG, "logFormat: no Platform"); return }
             val audioRenderer = fieldByName(platform, "audioRenderer") ?: run { Log.w(TAG, "logFormat: audioRenderer=null"); return }
-            val track = fieldByName(audioRenderer, "track") ?: run { Log.w(TAG, "logFormat: AudioTrack not created yet"); return }
-            val at = track as android.media.AudioTrack
-            Log.i(TAG, "🎧 PCM FORMAT: sampleRate=${at.sampleRate}Hz channels=${at.channelCount} encoding=${at.audioFormat}")
-            if (at.sampleRate != 48000) {
-                Log.w(TAG, "⚠ sampleRate=${at.sampleRate} (RNNoise expects 48000) — quality may degrade")
-            }
-            if (handle == 0L) {
-                handle = nrCreate(at.channelCount)
-                Log.i(TAG, "RNNoise context created handle=$handle channels=${at.channelCount}")
-            }
-            formatLogged = true
+            val state = resolveStateForRenderer(audioRenderer) ?: run { Log.w(TAG, "logFormat: AudioTrack not created yet"); return }
+            Log.i(TAG, "🎧 PCM FORMAT: sampleRate=${state.sampleRate}Hz channels=${state.channels} unsupported=${state.unsupported}")
         } catch (t: Throwable) {
             Log.e(TAG, "logFormat failed", t)
+        }
+    }
+
+    fun release() {
+        if (!nativeLoaded) return
+        synchronized(ctxLock) {
+            for (state in rendererStates.values) {
+                synchronized(state) {
+                    if (state.handle != 0L) {
+                        nrDestroy(state.handle)
+                        state.handle = 0L
+                    }
+                }
+            }
+            rendererStates.clear()
         }
     }
 
@@ -126,7 +175,7 @@ object AudioNrTap {
             if (installed) return
             try {
                 PineConfig.debug = false
-                PineConfig.debuggable = true
+                PineConfig.debuggable = dev.xacnio.kciktv.BuildConfig.DEBUG
 
                 val cls = Class.forName("com.amazonaws.ivs.player.AudioTrackRenderer")
                 val render = cls.getDeclaredMethod(
@@ -139,20 +188,28 @@ object AudioNrTap {
                 Pine.hook(render, object : MethodHook() {
                     override fun beforeCall(frame: Pine.CallFrame) {
                         try {
-                            val h = handle
+                            if (level <= 0) return
                             val buf = frame.args[0] as? ByteBuffer ?: return
                             val size = frame.args[1] as? Int ?: return
+                            if (size <= 0) return
+                            val renderer = frame.thisObject ?: return
+                            val state = resolveStateForRenderer(renderer) ?: return
+                            if (state.unsupported) return
                             if (dbgCount++ == 0L) {
-                                Log.i(TAG, "beforeCall: handle=$h level=$level baseWet=$baseWet size=$size direct=${buf.isDirect} ro=${buf.isReadOnly} pos=${buf.position()} cap=${buf.capacity()}")
+                                Log.i(TAG, "beforeCall: handle=${state.handle} level=$level baseWet=$baseWet size=$size direct=${buf.isDirect} ro=${buf.isReadOnly} pos=${buf.position()} cap=${buf.capacity()}")
                             }
-                            if (h == 0L || level <= 0 || size <= 0) return
                             // Write via the direct native address (bypasses the Java read-only flag,
                             // which MediaCodec output buffers set even though the memory is writable).
                             if (!buf.isDirect) {
                                 if (!nonDirectWarned) { Log.w(TAG, "render buffer not direct — passthrough"); nonDirectWarned = true }
                                 return
                             }
-                            nrProcess(h, buf, buf.position(), size, baseWet, vadAdapt)
+                            synchronized(state) {
+                                val h = state.handle
+                                if (h != 0L) {
+                                    nrProcess(h, buf, buf.position(), size, baseWet, vadAdapt)
+                                }
+                            }
                         } catch (t: Throwable) {
                             Log.e(TAG, "beforeCall error", t)
                         }

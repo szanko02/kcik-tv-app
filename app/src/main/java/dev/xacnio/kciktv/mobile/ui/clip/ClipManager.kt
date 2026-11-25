@@ -45,6 +45,38 @@ class ClipManager(
     private var clipEditorShown = false
     private var clipLoadingDialog: BottomSheetDialog? = null
     private var isClipLoadingCancelled = false
+    private var wasPlayerMutedBeforeClip = false
+    private var didMutePlayerForClip = false
+    private var activeClipPlayer: Player? = null
+    private var activeProgressHandler: android.os.Handler? = null
+    private var activeProgressRunnable: Runnable? = null
+
+    private fun restoreLivePlayerMute() {
+        if (didMutePlayerForClip) {
+            activity.ivsPlayer?.isMuted = wasPlayerMutedBeforeClip
+            didMutePlayerForClip = false
+        }
+    }
+
+    fun cleanup() {
+        isClipLoadingCancelled = true
+        activeProgressRunnable?.let { runnable ->
+            activeProgressHandler?.removeCallbacks(runnable)
+        }
+        activeProgressRunnable = null
+        activeProgressHandler = null
+        mainHandlerForClips.removeCallbacksAndMessages(null)
+        try {
+            activeClipPlayer?.release()
+        } catch (_: Exception) {}
+        activeClipPlayer = null
+        try {
+            clipLoadingDialog?.dismiss()
+        } catch (_: Exception) {}
+        clipLoadingDialog = null
+        clipEditorShown = false
+        restoreLivePlayerMute()
+    }
 
     fun handleClipRequest(channel: ChannelItem) {
         // Reset cancellation flag
@@ -73,8 +105,8 @@ class ClipManager(
                 isClipLoadingCancelled = true
                 Log.d("ClipManager", "Clip loading cancelled by user")
                 
-                // Unmute live stream
-                activity.ivsPlayer?.isMuted = false
+                // Restore live stream mute state
+                restoreLivePlayerMute()
                 
                 // Reset button state (if applicable - might need to expose a method in Activity)
                 // Assuming we can access binding directly
@@ -122,7 +154,9 @@ class ClipManager(
                 return@launch
             }
 
-            // Mute live stream
+            // Save prior mute state and mute live stream for clip creation
+            wasPlayerMutedBeforeClip = activity.ivsPlayer?.isMuted == true
+            didMutePlayerForClip = true
             activity.ivsPlayer?.isMuted = true
 
             // Use WebView Bypass for KPSDK (Cloudflare)
@@ -189,7 +223,7 @@ class ClipManager(
                             if (!isClipLoadingCancelled) {
                                 dialog.dismiss()
                                 Toast.makeText(activity, activity.getString(R.string.clip_error, code.toString()), Toast.LENGTH_SHORT).show()
-                                activity.ivsPlayer?.isMuted = false
+                                restoreLivePlayerMute()
                             }
                         }
                     } catch (e: Exception) {
@@ -197,7 +231,7 @@ class ClipManager(
                         if (!isClipLoadingCancelled) {
                             dialog.dismiss()
                             Toast.makeText(activity, activity.getString(R.string.clip_error, e.message), Toast.LENGTH_SHORT).show()
-                            activity.ivsPlayer?.isMuted = false
+                            restoreLivePlayerMute()
                         }
                     }
                 }.onFailure { e ->
@@ -205,7 +239,7 @@ class ClipManager(
                     if (!isClipLoadingCancelled) {
                         dialog.dismiss()
                         Toast.makeText(activity, activity.getString(R.string.clip_error, e.message), Toast.LENGTH_SHORT).show()
-                        activity.ivsPlayer?.isMuted = false
+                        restoreLivePlayerMute()
                     }
                 }
             }
@@ -479,6 +513,9 @@ class ClipManager(
             }
         }
         progressHandler.post(progressRunnable)
+        activeClipPlayer = clipPlayer
+        activeProgressHandler = progressHandler
+        activeProgressRunnable = progressRunnable
         
         // SeekBar user interaction
         clipSeekBar.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
@@ -622,16 +659,13 @@ class ClipManager(
             val inputTitle = titleInput.text.toString().trim()
             val finalTitle = if (inputTitle.isEmpty()) streamTitle else inputTitle
             
-            // Escape title for JSON
-            val escapedTitle = finalTitle
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-            
             // Finalize clip using WebView for KPSDK bypass
             val finalizeUrl = if (isDvrVideo) "https://kick.com/api/internal/v1/videos/$livestreamSlug/clips/${clipResponse.id}/finalize" else "https://kick.com/api/internal/v1/livestreams/$livestreamSlug/clips/${clipResponse.id}/finalize"
-            val jsonBody = """{"duration":$duration,"start_time":$start,"title":"$escapedTitle"}"""
+            val jsonBody = org.json.JSONObject().apply {
+                put("duration", duration)
+                put("start_time", start)
+                put("title", finalTitle)
+            }.toString()
             
             Log.d("ClipEditor", "Finalizing Clip: $finalizeUrl")
 
@@ -651,7 +685,7 @@ class ClipManager(
                                  val durationSecs = responseObj.optInt("duration", 0)
                                  
                                  dialog.dismiss()
-                                 showClipCreatedSheet(clipId, channelSlug, thumbnailUrl, durationSecs, escapedTitle)
+                                 showClipCreatedSheet(clipId, channelSlug, thumbnailUrl, durationSecs, finalTitle)
                             } else {
                                 Toast.makeText(activity, activity.getString(R.string.clip_publish_failed, code), Toast.LENGTH_SHORT).show()
                                 btnPublish.isEnabled = true
@@ -675,8 +709,15 @@ class ClipManager(
         
         dialog.setOnDismissListener {
             progressHandler.removeCallbacks(progressRunnable)
+            if (activeProgressRunnable === progressRunnable) {
+                activeProgressRunnable = null
+                activeProgressHandler = null
+            }
             clipPlayer.release()
-            activity.ivsPlayer?.isMuted = false
+            if (activeClipPlayer === clipPlayer) {
+                activeClipPlayer = null
+            }
+            restoreLivePlayerMute()
             clipEditorShown = false
             clipLoadingDialog = null
         }
@@ -735,7 +776,7 @@ class ClipManager(
                 val tempClip = dev.xacnio.kciktv.shared.data.model.ChannelClip(
                     id = clipId,
                     title = title, // Title passed from creation
-                    url = clipUrl,
+                    url = null, // Page URL is HTML; let vodManager resolve direct stream URL
                     thumbnailUrl = thumbnailUrl,
                     views = 0,
                     duration = durationSecs,

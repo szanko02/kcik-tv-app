@@ -122,5 +122,18 @@ class UpdateReleaseSelectorTest {
 
         // Alphanumeric pre-release suffix fallback
         assertTrue(UpdateReleaseSelector.isNewerRelease("2.4.5-beta-1v2b3c4", "v2.4.5-beta-9z8y7x6"))
+
+        // Non-prerelease git-SHA builds on the same core version do not trigger downgrade/hash ping-pong
+        assertFalse(UpdateReleaseSelector.isNewerRelease("2.5.5-027e8c9", "v2.5.5-1111111"))
+    }
+
+    @Test
+    fun selectLatest_ranksBySemVerEvenWhenOlderReleaseWasEditedLater() {
+        val releases = listOf(
+            release("v2.4.0", prerelease = false, publishedAt = "2026-12-01T00:00:00Z"),
+            release("v2.5.5", prerelease = false, publishedAt = "2026-11-25T00:00:00Z")
+        )
+        assertEquals("v2.5.5", UpdateReleaseSelector.selectLatest(releases, "stable")?.tagName)
+        assertEquals("v2.5.5", UpdateReleaseSelector.selectLatest(releases, "beta")?.tagName)
     }
 }

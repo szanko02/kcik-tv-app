@@ -75,7 +75,51 @@ class VideoCutoutScalingPolicyTest {
     }
 
     @Test
-    fun resolveEffectiveScaleMode_returnsPreferredOnlyInUnobstructedFullscreen() {
+    fun shouldShowScaleControls_trueInFullscreenEvenWithSideChatAndFalseForBlockers() {
+        assertTrue(
+            VideoCutoutScalingPolicy.shouldShowScaleControls(
+                isFullscreen = true,
+                isTheatreMode = false,
+                isInPip = false,
+                isMiniPlayer = false
+            )
+        )
+        assertFalse(
+            VideoCutoutScalingPolicy.shouldShowScaleControls(
+                isFullscreen = false,
+                isTheatreMode = false,
+                isInPip = false,
+                isMiniPlayer = false
+            )
+        )
+        assertFalse(
+            VideoCutoutScalingPolicy.shouldShowScaleControls(
+                isFullscreen = true,
+                isTheatreMode = true,
+                isInPip = false,
+                isMiniPlayer = false
+            )
+        )
+        assertFalse(
+            VideoCutoutScalingPolicy.shouldShowScaleControls(
+                isFullscreen = true,
+                isTheatreMode = false,
+                isInPip = true,
+                isMiniPlayer = false
+            )
+        )
+        assertFalse(
+            VideoCutoutScalingPolicy.shouldShowScaleControls(
+                isFullscreen = true,
+                isTheatreMode = false,
+                isInPip = false,
+                isMiniPlayer = true
+            )
+        )
+    }
+
+    @Test
+    fun resolveEffectiveScaleMode_returnsPreferredInFullscreen() {
         for (preferred in VideoScaleMode.values()) {
             assertEquals(
                 preferred,
@@ -138,22 +182,23 @@ class VideoCutoutScalingPolicyTest {
                 preferredMode = preferred
             )
         )
-        assertEquals(
-            VideoScaleMode.FIT,
-            VideoCutoutScalingPolicy.resolveEffectiveScaleMode(
-                isFullscreen = true,
-                isTheatreMode = false,
-                isInPip = false,
-                isMiniPlayer = false,
-                isSideChatVisible = true,
-                preferredMode = VideoScaleMode.FILL
-            )
-        )
     }
 
     @Test
-    fun resolveEffectiveScaleMode_allowsZoomAndFillWhenTransparentSideChatOverlayIsEnabled() {
+    fun resolveEffectiveScaleMode_allowsZoomAndFillWithBothDockedAndTransparentSideChat() {
         for (preferred in VideoScaleMode.values()) {
+            assertEquals(
+                preferred,
+                VideoCutoutScalingPolicy.resolveEffectiveScaleMode(
+                    isFullscreen = true,
+                    isTheatreMode = false,
+                    isInPip = false,
+                    isMiniPlayer = false,
+                    isSideChatVisible = true,
+                    preferredMode = preferred,
+                    transparentChatOverlayEnabled = false
+                )
+            )
             assertEquals(
                 preferred,
                 VideoCutoutScalingPolicy.resolveEffectiveScaleMode(
@@ -167,19 +212,6 @@ class VideoCutoutScalingPolicyTest {
                 )
             )
         }
-        // Docked split-screen (transparentChatOverlayEnabled = false) still forces FIT
-        assertEquals(
-            VideoScaleMode.FIT,
-            VideoCutoutScalingPolicy.resolveEffectiveScaleMode(
-                isFullscreen = true,
-                isTheatreMode = false,
-                isInPip = false,
-                isMiniPlayer = false,
-                isSideChatVisible = true,
-                preferredMode = VideoScaleMode.ZOOM,
-                transparentChatOverlayEnabled = false
-            )
-        )
     }
 
     @Test

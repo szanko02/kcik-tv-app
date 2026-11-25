@@ -34,27 +34,32 @@ class CryptoManager {
     }
 
     private fun getKey(): SecretKey {
-        val existingKey = keyStore.getEntry("secret_kick_tv", null) as? KeyStore.SecretKeyEntry
-        return existingKey?.secretKey ?: createKey()
+        synchronized(keyLock) {
+            val existingKey = keyStore.getEntry("secret_kick_tv", null) as? KeyStore.SecretKeyEntry
+            return existingKey?.secretKey ?: createKey()
+        }
     }
 
     private fun createKey(): SecretKey {
-        return KeyGenerator.getInstance(ALGORITHM, "AndroidKeyStore").apply {
-            init(
-                KeyGenParameterSpec.Builder(
-                    "secret_kick_tv",
-                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+        return synchronized(keyLock) {
+            val existingKey = keyStore.getEntry("secret_kick_tv", null) as? KeyStore.SecretKeyEntry
+            existingKey?.secretKey ?: KeyGenerator.getInstance(ALGORITHM, "AndroidKeyStore").apply {
+                init(
+                    KeyGenParameterSpec.Builder(
+                        "secret_kick_tv",
+                        KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+                    )
+                        .setBlockModes(BLOCK_MODE)
+                        .setEncryptionPaddings(PADDING)
+                        .setUserAuthenticationRequired(false)
+                        .setRandomizedEncryptionRequired(true)
+                        .build()
                 )
-                    .setBlockModes(BLOCK_MODE)
-                    .setEncryptionPaddings(PADDING)
-                    .setUserAuthenticationRequired(false)
-                    .setRandomizedEncryptionRequired(true)
-                    .build()
-            )
-        }.generateKey()
+            }.generateKey()
+        }
     }
 
-    fun encrypt(data: String): String {
+    fun encrypt(data: String): String? {
         try {
             val bytes = data.toByteArray()
             val cipher = encryptCipher
@@ -63,8 +68,8 @@ class CryptoManager {
             val encrypted = Base64.encodeToString(encryptedBytes, Base64.NO_WRAP)
             return "$iv$SEPARATOR$encrypted"
         } catch (e: Exception) {
-            e.printStackTrace()
-            return data // Fallback to plain text or handle error
+            android.util.Log.e("CryptoManager", "Encryption failed", e)
+            return null
         }
     }
 
@@ -86,6 +91,7 @@ class CryptoManager {
     }
 
     companion object {
+        private val keyLock = Any()
         private const val ALGORITHM = KeyProperties.KEY_ALGORITHM_AES
         private const val BLOCK_MODE = KeyProperties.BLOCK_MODE_GCM
         private const val PADDING = KeyProperties.ENCRYPTION_PADDING_NONE

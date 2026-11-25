@@ -135,7 +135,11 @@ object RetrofitClient {
         java.net.Authenticator.setDefault(object : java.net.Authenticator() {
             override fun getPasswordAuthentication(): java.net.PasswordAuthentication? {
                 val user = ProxyConfig.username
-                if (requestorType != RequestorType.PROXY || user.isNullOrBlank()) return null
+                if (user.isNullOrBlank()) return null
+                val isProxyOrSocks = requestorType == RequestorType.PROXY ||
+                    requestingProtocol.equals("SOCKS5", ignoreCase = true) ||
+                    requestingProtocol.equals("SOCKS", ignoreCase = true)
+                if (!isProxyOrSocks) return null
                 if (!requestingHost.equals(ProxyConfig.host, ignoreCase = true) || requestingPort != ProxyConfig.port) return null
                 return java.net.PasswordAuthentication(user, (ProxyConfig.password ?: "").toCharArray())
             }
@@ -187,37 +191,90 @@ object RetrofitClient {
         .proxyAuthenticator(httpProxyAuthenticator)
         .build()
 
+    private fun executeWithCancelBridge(
+        outerCall: okhttp3.Call,
+        backend: OkHttpClient,
+        request: okhttp3.Request
+    ): okhttp3.Response {
+        if (outerCall.isCanceled()) throw java.io.IOException("Canceled")
+        val innerCall = backend.newCall(request)
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val abandoned = java.util.concurrent.atomic.AtomicBoolean(false)
+        var response: okhttp3.Response? = null
+        var failure: java.io.IOException? = null
+        innerCall.enqueue(object : okhttp3.Callback {
+            override fun onResponse(call: okhttp3.Call, resp: okhttp3.Response) {
+                if (abandoned.get()) {
+                    resp.close()
+                } else {
+                    response = resp
+                }
+                latch.countDown()
+            }
+
+            override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
+                failure = e
+                latch.countDown()
+            }
+        })
+        try {
+            while (!latch.await(100, TimeUnit.MILLISECONDS)) {
+                if (outerCall.isCanceled()) {
+                    abandoned.set(true)
+                    innerCall.cancel()
+                    throw java.io.IOException("Canceled")
+                }
+            }
+        } catch (ie: InterruptedException) {
+            abandoned.set(true)
+            innerCall.cancel()
+            Thread.currentThread().interrupt()
+            throw java.io.IOException("Interrupted", ie)
+        }
+        if (outerCall.isCanceled()) {
+            abandoned.set(true)
+            response?.close()
+            innerCall.cancel()
+            throw java.io.IOException("Canceled")
+        }
+        failure?.let { throw it }
+        return response ?: throw java.io.IOException("Empty response")
+    }
+
     val githubHttpClient: OkHttpClient = newOkHttpClientBuilder()
         .addInterceptor(dev.xacnio.kciktv.shared.data.mock.MockInterceptor())
         .addInterceptor { chain ->
             val request = chain.request()
+            val outerCall = chain.call()
             if (ProxyConfig.isConfigured && ProxyConfig.scope == ProxyConfig.SCOPE_ALL) {
                 try {
-                    proxiedGithubClient.newCall(request).execute()
+                    executeWithCancelBridge(outerCall, proxiedGithubClient, request)
                 } catch (e: java.io.IOException) {
+                    if (outerCall.isCanceled()) throw e
                     runCatching {
                         android.util.Log.w("RetrofitClient", "Proxied GitHub request failed (${e.javaClass.simpleName}), falling back to direct: ${request.url}")
                     }
-                    directGithubClient.newCall(request).execute()
+                    executeWithCancelBridge(outerCall, directGithubClient, request)
                 }
             } else {
                 try {
-                    val response = directGithubClient.newCall(request).execute()
+                    val response = executeWithCancelBridge(outerCall, directGithubClient, request)
                     if ((response.code == 403 || response.code == 429) && ProxyConfig.isConfigured) {
                         runCatching {
                             android.util.Log.w("RetrofitClient", "Direct GitHub returned HTTP ${response.code}, retrying via proxy: ${request.url}")
                         }
                         response.close()
-                        proxiedGithubClient.newCall(request).execute()
+                        executeWithCancelBridge(outerCall, proxiedGithubClient, request)
                     } else {
                         response
                     }
                 } catch (e: java.io.IOException) {
+                    if (outerCall.isCanceled()) throw e
                     if (ProxyConfig.isConfigured) {
                         runCatching {
                             android.util.Log.w("RetrofitClient", "Direct GitHub failed (${e.javaClass.simpleName}), retrying via proxy: ${request.url}")
                         }
-                        proxiedGithubClient.newCall(request).execute()
+                        executeWithCancelBridge(outerCall, proxiedGithubClient, request)
                     } else {
                         throw e
                     }
@@ -233,7 +290,7 @@ object RetrofitClient {
         .addInterceptor { chain ->
             val request = chain.request()
             val backend = if (shouldProxy(request.url)) proxyBackendClient else okHttpClient
-            backend.newCall(request).execute()
+            executeWithCancelBridge(chain.call(), backend, request)
         }
         .build()
 
@@ -258,12 +315,24 @@ object RetrofitClient {
 
     // Short-lived client for connectivity testing, independent of ProxyConfig.enabled so a
     // proxy can be verified before turning it on.
-    fun buildProxyTestClient(proxy: java.net.Proxy): OkHttpClient {
-        return newOkHttpClientBuilder()
+    fun buildProxyTestClient(
+        proxy: java.net.Proxy,
+        username: String? = ProxyConfig.username,
+        password: String? = ProxyConfig.password
+    ): OkHttpClient {
+        val builder = newOkHttpClientBuilder()
             .proxy(proxy)
             .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(8, TimeUnit.SECONDS)
-            .build()
+        if (proxy.type() == java.net.Proxy.Type.HTTP && !username.isNullOrBlank()) {
+            builder.proxyAuthenticator { _, response ->
+                if (response.request.header("Proxy-Authorization") != null) return@proxyAuthenticator null
+                response.request.newBuilder()
+                    .header("Proxy-Authorization", okhttp3.Credentials.basic(username, password ?: ""))
+                    .build()
+            }
+        }
+        return builder.build()
     }
 
     // Retrofit instance for web.kick.com (livestreams)

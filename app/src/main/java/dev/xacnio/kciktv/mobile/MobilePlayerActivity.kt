@@ -306,6 +306,8 @@ class MobilePlayerActivity : FragmentActivity() {
     // Tracks the active account id so onResume can detect mid-session account switches.
     private var lastKnownActiveAccountId: Long = 0L
     internal var isHomeScreenVisible = true // Start with home screen visible
+    private var rootKeyboardGlobalLayoutListener: android.view.ViewTreeObserver.OnGlobalLayoutListener? = null
+    internal var isSwitchingToTvUi: Boolean = false
     internal val isSettingsVisible: Boolean
         get() = if (::settingsPanelManager.isInitialized) settingsPanelManager.isSettingsVisible else false
     internal var isErrorStateActive = false
@@ -1125,49 +1127,6 @@ class MobilePlayerActivity : FragmentActivity() {
         analytics.setAnalyticsEnabled(prefs.analyticsEnabled)
         analytics.logAppOpen()
 
-        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {
-                // 1. Emote Panel
-                if (::binding.isInitialized && binding.emotePanelContainer.visibility == View.VISIBLE) {
-                    emotePanelManager.toggleEmotePanel(false)
-                    return
-                }
-
-                // 1b. Chat Settings Panel
-                if (chatSettingsSheetManager.isPanelShowing()) {
-                    chatSettingsSheetManager.dismissPanel()
-                    return
-                }
-
-                // 1c. Video Settings Panel
-                if (videoSettingsDialogManager.handleBackPress()) {
-                    return
-                }
-
-                // 2. Settings Panel
-                if (isSettingsVisible) {
-                    hideSettingsPanel()
-                    return
-                }
-
-                // 3. Side Chat / Fullscreen
-                if (::fullscreenToggleManager.isInitialized) {
-                    if (fullscreenToggleManager.isSideChatVisible) {
-                        fullscreenToggleManager.hideSideChat()
-                        return
-                    }
-                    if (isFullscreen) {
-                        fullscreenToggleManager.exitFullscreen()
-                        return
-                    }
-                }
-
-                // 4. Default
-                isEnabled = false
-                onBackPressedDispatcher.onBackPressed()
-            }
-        })
-
         // Note: FLAG_KEEP_SCREEN_ON is now managed dynamically in playerListener
         // It's added when playing and removed when paused/idle
 
@@ -1215,7 +1174,7 @@ class MobilePlayerActivity : FragmentActivity() {
         }
 
         var wasKeyboardOrEmoteOpen = false
-        binding.root.viewTreeObserver.addOnGlobalLayoutListener {
+        rootKeyboardGlobalLayoutListener = android.view.ViewTreeObserver.OnGlobalLayoutListener {
             val r = android.graphics.Rect()
             binding.root.getWindowVisibleDisplayFrame(r)
             val screenHeight = binding.root.rootView.height
@@ -1231,12 +1190,13 @@ class MobilePlayerActivity : FragmentActivity() {
                         binding.chatOverlayContainer.visibility = View.GONE
                     }
                 } else {
-                    if (binding.chatContainer.visibility == View.VISIBLE && binding.chatOverlayContainer.visibility != View.VISIBLE) {
+                    if (!isVodPlaying && binding.chatContainer.visibility == View.VISIBLE && binding.chatOverlayContainer.visibility != View.VISIBLE) {
                         binding.chatOverlayContainer.visibility = View.VISIBLE
                     }
                 }
             }
         }
+        binding.root.viewTreeObserver.addOnGlobalLayoutListener(rootKeyboardGlobalLayoutListener)
         
         chatUiManager = dev.xacnio.kciktv.mobile.ui.chat.ChatUiManager(
             this, binding, prefs, repository, chatStateManager, lifecycleScope
@@ -2272,28 +2232,13 @@ class MobilePlayerActivity : FragmentActivity() {
                      binding.videoContainer.layoutParams = params
                  }
                  
-                 // STEP 3: Check REAL orientation after layout completes
-                 if (isTabletOrLargeWindow()) {
-                      // Wait for layout to complete, then check actual root view dimensions
-                      binding.root.viewTreeObserver.addOnGlobalLayoutListener(object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
-                           override fun onGlobalLayout() {
-                                binding.root.viewTreeObserver.removeOnGlobalLayoutListener(this)
-                                
-                                val rootWidth = binding.root.width
-                                val rootHeight = binding.root.height
-                                val isActuallyLandscape = rootWidth > rootHeight
-                                val isSideChatAlreadyVisible = fullscreenToggleManager.isSideChatVisible
-                                Log.d(TAG, "playChannel layout check: isActuallyLandscape=$isActuallyLandscape, isSideChatVisible=$isSideChatAlreadyVisible, root=${rootWidth}x${rootHeight}")
-                                
-                                if (isActuallyLandscape && !isSideChatAlreadyVisible) {
-                                     Log.d(TAG, "playChannel: Calling showSideChat")
-                                     fullscreenToggleManager.showSideChat(skipAnimation = true)
-                                } else {
-                                     Log.d(TAG, "playChannel: NOT calling showSideChat (landscape=$isActuallyLandscape, sideChatVisible=$isSideChatAlreadyVisible)")
-                                }
-                           }
-                      })
-                 }
+                 // STEP 3: Check REAL orientation after layout completes (phones and tablets)
+                 binding.root.viewTreeObserver.addOnGlobalLayoutListener(object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+                      override fun onGlobalLayout() {
+                           binding.root.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                           syncPlayerLayoutWithCurrentOrientation()
+                      }
+                 })
              }
         }
 
@@ -2490,11 +2435,15 @@ class MobilePlayerActivity : FragmentActivity() {
             }
         }
         
+        if (::fullscreenToggleManager.isInitialized && fullscreenToggleManager.isTheatreMode) {
+            fullscreenToggleManager.exitTheatreMode()
+        }
         vodManager.playVideo(video, channelData, pos)
         if (::fullscreenToggleManager.isInitialized) {
             fullscreenToggleManager.applyDisplayCutoutMode()
             fullscreenToggleManager.applyEffectiveVideoResizeMode()
         }
+        binding.root.post { syncPlayerLayoutWithCurrentOrientation() }
         // NOTE: Split screen is handled in playChannel, not here
     }
 
@@ -2525,8 +2474,12 @@ class MobilePlayerActivity : FragmentActivity() {
         }
 
         dvrPlaybackUrl = null // Reset DVR mode for Clip
+        if (::fullscreenToggleManager.isInitialized && fullscreenToggleManager.isTheatreMode) {
+            fullscreenToggleManager.exitTheatreMode()
+        }
         vodManager.playClip(clip, channelData)
         applyFullscreenCutoutAndResizeModeIfReady()
+        binding.root.post { syncPlayerLayoutWithCurrentOrientation() }
         // NOTE: Split screen handled by layout reset logic, not here
     }
 
@@ -2541,6 +2494,38 @@ class MobilePlayerActivity : FragmentActivity() {
             fullscreenToggleManager.applyDisplayCutoutMode()
             fullscreenToggleManager.applyEffectiveVideoResizeMode()
         }
+    }
+
+    internal fun syncPlayerLayoutWithCurrentOrientation() {
+        if (!::fullscreenToggleManager.isInitialized) return
+        val rootW = binding.root.width
+        val rootH = binding.root.height
+        val isLandscape = if (rootW > 0 && rootH > 0) {
+            rootW > rootH
+        } else {
+            resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        }
+        if (!isLandscape) return
+        if (isTabletOrLargeWindow()) {
+            if (!fullscreenToggleManager.isSideChatVisible && !isFullscreen) {
+                fullscreenToggleManager.showSideChat(skipAnimation = true)
+            }
+        } else {
+            if (!isFullscreen) {
+                fullscreenToggleManager.enterFullscreen()
+            }
+        }
+    }
+
+    internal fun stopPlaybackForUiSwitch() {
+        isSwitchingToTvUi = true
+        playbackStatusManager.stopUptimeUpdater()
+        viewerCountHandler.removeCallbacks(viewerCountRunnable)
+        stopBlerpEarnTicker()
+        ivsPlayer?.pause()
+        isBackgroundAudioEnabled = false
+        stopChatWebSocket()
+        hideNotification()
     }
 
     internal fun shouldKeepMainChatHiddenInFullscreen(): Boolean {
@@ -2906,6 +2891,19 @@ class MobilePlayerActivity : FragmentActivity() {
     override fun onStop() {
         super.onStop()
 
+        if (isFinishing) {
+            playbackStatusManager.stopUptimeUpdater()
+            viewerCountHandler.removeCallbacks(viewerCountRunnable)
+            stopBlerpEarnTicker()
+            ivsPlayer?.pause()
+            isBackgroundAudioEnabled = false
+            stopChatWebSocket()
+            if (!isSwitchingToTvUi) {
+                hideNotification()
+            }
+            return
+        }
+
         // If we explicitly exited PiP mode (closed the window), stop playback
         if (exitedPipMode) {
             Log.d(TAG, "PiP mode exited explicitely - stopping playback")
@@ -3105,12 +3103,23 @@ class MobilePlayerActivity : FragmentActivity() {
         
         // Only auto-play if the player UI is visible and we have a valid stream
         if (binding.playerScreenContainer.visibility == View.VISIBLE && currentStreamUrl != null) {
+            if (::playerManager.isInitialized) {
+                playerManager.ensurePlayerViewAttached()
+            }
             ivsPlayer?.play()
         }
     }
 
     override fun onDestroy() {
         if (::chatUiManager.isInitialized) chatUiManager.stopFlushing()
+        if (::binding.isInitialized) {
+            rootKeyboardGlobalLayoutListener?.let { listener ->
+                if (binding.root.viewTreeObserver.isAlive) {
+                    binding.root.viewTreeObserver.removeOnGlobalLayoutListener(listener)
+                }
+            }
+        }
+        rootKeyboardGlobalLayoutListener = null
         homeScreenManager.onDestroy()
         super.onDestroy()
 
@@ -3123,6 +3132,8 @@ class MobilePlayerActivity : FragmentActivity() {
 
         // Clean up handlers
         viewerCountHandler.removeCallbacks(viewerCountRunnable)
+        blerpCleanupHandler.removeCallbacks(blerpCleanupRunnable)
+        stopBlerpEarnTicker()
         playbackStatusManager.stopUptimeUpdater()
         mainHandler.removeCallbacksAndMessages(null)
         
@@ -3134,6 +3145,25 @@ class MobilePlayerActivity : FragmentActivity() {
             chatStateManager.cleanup()
             vodManager.stopVodChatReplay()
             mentionsManager.release()
+            if (::streamFeedManager.isInitialized && streamFeedManager.isFeedActive) {
+                streamFeedManager.closeFeed()
+            }
+            if (::clipFeedManager.isInitialized && clipFeedManager.isFeedActive) {
+                clipFeedManager.closeFeed()
+            }
+            if (::playerManager.isInitialized) {
+                playerManager.releaseAudioEffects()
+            }
+            dev.xacnio.kciktv.mobile.ui.player.AudioNrTap.release()
+            if (::clipManager.isInitialized) {
+                clipManager.cleanup()
+            }
+            if (::browseClipsManager.isInitialized) {
+                browseClipsManager.destroy()
+            }
+            if (::webViewManager.isInitialized) {
+                webViewManager.destroy()
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error cleaning up managers", e)
         }
@@ -3155,7 +3185,9 @@ class MobilePlayerActivity : FragmentActivity() {
         
         chatConnectionManager.disconnect()
         mediaSessionHelper?.release()
-        hideNotification()
+        if (!isSwitchingToTvUi) {
+            hideNotification()
+        }
     }
 
     private fun scrollToBottom() = chatSystemMessageManager.scrollToBottom()
@@ -3243,9 +3275,8 @@ class MobilePlayerActivity : FragmentActivity() {
                         emotePanelManager.toggleEmotePanel(false)
                         return@handleOnBackPressed
                     }
-                    chatSettingsSheetManager.isPanelShowing() -> {
-                        Log.d(TAG, "BACK: Branch -> chatSettingsPanel -> dismiss")
-                        chatSettingsSheetManager.dismissPanel()
+                    chatSettingsSheetManager.handleBackPress() -> {
+                        Log.d(TAG, "BACK: Branch -> chatSettingsPanel -> handled")
                         return@handleOnBackPressed
                     }
                     videoSettingsDialogManager.handleBackPress() -> {
@@ -3375,6 +3406,7 @@ class MobilePlayerActivity : FragmentActivity() {
                         if (System.currentTimeMillis() - lastBackPressTime < 2000) {
                             isEnabled = false
                             onBackPressedDispatcher.onBackPressed()
+                            isEnabled = true
                         } else {
                             lastBackPressTime = System.currentTimeMillis()
                             Toast.makeText(this@MobilePlayerActivity, R.string.press_again_to_exit, Toast.LENGTH_SHORT).show()

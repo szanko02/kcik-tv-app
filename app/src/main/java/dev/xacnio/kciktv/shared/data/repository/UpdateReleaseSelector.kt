@@ -13,13 +13,21 @@ object UpdateReleaseSelector {
     )
 
     fun selectLatest(releases: List<GithubRelease>, channel: String): GithubRelease? {
-        val sorted = releases
-            .filter { it.safeTagName.isNotBlank() }
-            .sortedByDescending { it.safePublishedAt }
-        return if (channel == "stable") {
-            sorted.firstOrNull { !it.prerelease }
-        } else {
-            sorted.firstOrNull()
+        val filtered = releases.filter { it.safeTagName.isNotBlank() }
+        val candidates = if (channel == "stable") filtered.filter { !it.prerelease } else filtered
+        return candidates.maxWithOrNull { a, b ->
+            val verCmp = compareVersions(a.safeTagName, b.safeTagName)
+            if (verCmp != 0) verCmp else a.safePublishedAt.compareTo(b.safePublishedAt)
+        }
+    }
+
+    private fun compareVersions(aTag: String, bTag: String): Int {
+        val aNewer = isNewerRelease(bTag, aTag)
+        val bNewer = isNewerRelease(aTag, bTag)
+        return when {
+            aNewer && !bNewer -> 1
+            bNewer && !aNewer -> -1
+            else -> 0
         }
     }
 
@@ -57,9 +65,9 @@ object UpdateReleaseSelector {
         if (currentSuffix.isEmpty()) return false
 
         // Both have suffixes on the same core version:
-        // If both are `<base>-<sha>` git builds with different hashes, treat release as newer
+        // Two untagged `<base>-<sha>` builds on the same base version don't establish ordering
         if (currentIsHashOnly && releaseIsHashOnly) {
-            return !currentSuffix.equals(releaseSuffix, ignoreCase = true)
+            return false
         }
 
         return comparePrereleaseSuffix(releaseSuffix, currentSuffix)

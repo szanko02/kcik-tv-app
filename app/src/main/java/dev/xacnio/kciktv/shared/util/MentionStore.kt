@@ -33,6 +33,9 @@ object MentionStore {
         try { cacheFile(context, username, channelSlug).delete() } catch (_: Exception) {}
     }
 
+    private fun sanitize(value: String): String =
+        value.lowercase().replace(Regex("[^a-z0-9._-]"), "_").ifBlank { "unknown" }
+
     private fun cacheFile(context: Context, username: String, channelSlug: String) =
-        File(context.filesDir, "mentions_${username.lowercase()}_${channelSlug.lowercase()}.json")
+        File(context.filesDir, "mentions_${sanitize(username)}_${sanitize(channelSlug)}.json")
 }

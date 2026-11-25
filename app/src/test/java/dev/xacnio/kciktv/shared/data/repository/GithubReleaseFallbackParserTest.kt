@@ -104,6 +104,12 @@ class GithubReleaseFallbackParserTest {
                   </a>
                 </li>
                 <li class="Box-row">
+                  <a href="http://github.com/szanko02/kcik-tv-app/releases/download/v2.5.2/insecure.apk">insecure.apk</a>
+                </li>
+                <li class="Box-row">
+                  <a href="/other/repo/releases/download/v9.9.9/evil.apk">evil.apk</a>
+                </li>
+                <li class="Box-row">
                   <a href="/szanko02/kcik-tv-app/archive/refs/tags/v2.5.2.zip">Source code (zip)</a>
                 </li>
               </ul>

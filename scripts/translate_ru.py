@@ -39,6 +39,28 @@ MAX_BATCH_CHARS = 1600
 MAX_WORKERS = 4
 
 FMT_RE = re.compile(r"%(?:\d+\$)?[-+# 0,(]*(?:\d+|\*)?(?:\.(?:\d+|\*))?[a-zA-Z%]")
+FMT_PARSED_RE = re.compile(
+    r"%(?:(?P<index>\d+)\$)?[-+# 0,(]*(?:\d+|\*)?(?:\.(?:\d+|\*))?(?P<conv>[a-zA-Z%])"
+)
+
+
+def format_signature(text: str) -> Counter[tuple[int, str]]:
+    """Return ordered (1-based argument index, conversion) counts for format strings."""
+    sig: Counter[tuple[int, str]] = Counter()
+    implicit_pos = 0
+    for m in FMT_PARSED_RE.finditer(text):
+        conv = m.group("conv")
+        if conv == "%":
+            sig[(-1, "%")] += 1
+            continue
+        idx_str = m.group("index")
+        if idx_str is not None:
+            arg_idx = int(idx_str)
+        else:
+            implicit_pos += 1
+            arg_idx = implicit_pos
+        sig[(arg_idx, conv.lower())] += 1
+    return sig
 
 BRAND_TERMS = [
     "Kick.com",
@@ -358,6 +380,33 @@ GLOSSARY_BY_KEY: dict[str, str] = {
     "daily_reward_consolation_minutes": "+%1$d мин к уровню",
     "daily_reward_locked_progress_hours_minutes": "Осталось %1$d ч %2$d мин",
     "daily_reward_locked_progress_minutes": "Осталось %d мин",
+
+    # API errors, stats, moderation, time units, rewards & Android TV
+    "error_server_unavailable": "Сервер недоступен (%1$d). Попробуйте ещё раз.",
+    "error_network_unavailable": "Ошибка соединения. Попробуйте ещё раз.",
+    "stats_nerd_title": "Статистика видео (для гиков)",
+    "quality_audio_only_synthetic": "Воспроизведение из %dp",
+    "chat_user_banned": "Пользователь &lt;b&gt;%1$s&lt;/b&gt; получил тайм-аут от &lt;b&gt;%2$s&lt;/b&gt; на %3$s.",
+    "mod_timeout_success": "Пользователю выдан тайм-аут на %s",
+    "chat_timed_out_overlay": "Вам выдан тайм-аут на этом канале!",
+    "chat_timeout_remaining_format": "Тайм-аут. (Осталось: %s)",
+    "chat_login_prompt_prefix": "Чтобы писать в чат, ",
+    "chat_gifted_subs_plural": "%1$s подарил сообществу %2$d подписок! Всего на этом канале подарено %3$d подписок.",
+    "points_needed_format": "Для этой награды нужно ещё %s баллов",
+    "time_month_ago": "%d мес. назад",
+    "time_day_ago": "%d дн. назад",
+    "time_minute_ago": "%d мин. назад",
+    "collectibles_unlocked_count": "Открыто %1$d из %2$d",
+    "drops_ends_in": "Завершается через %s",
+    "active_chatters_summary": "%1$d участников · %2$d сообщений",
+    "tv_switch_mobile_confirm_title": "Перейти в мобильный интерфейс?",
+    "tv_switch_mobile_confirm_message": "На этом устройстве нет сенсорного экрана. Вернуться в ТВ-режим можно с пульта через Настройки → Приложение → Переключиться на ТВ-интерфейс.",
+    "tv_no_browser_found": "Не найдено приложение браузера для открытия ссылки",
+    "tv_unknown_sources_unavailable": "Разрешите установку из неизвестных источников в настройках системы",
+    "tv_login_code_error": "ОШИБКА",
+    "tv_login_code_label": "КОД",
+    "tv_update_check_failed_format": "Ошибка проверки обновлений: %1$s",
+    "tv_login_exchange_failed": "Не удалось выполнить вход на ТВ. Попробуйте ещё раз.",
 }
 
 # Idiomatic Russian overrides for <string-array> items keyed by (array_name, 0-based index).
@@ -654,7 +703,7 @@ def validate_output(base_path: pathlib.Path, out_path: pathlib.Path) -> list[str
             o_prefix, o_key, o_val, o_suffix = o_str.groups()
             if b_key != o_key or b_prefix != o_prefix or b_suffix != o_suffix:
                 errors.append(f"Line {line_no}: <string> wrapper/key mismatch for '{b_key}'")
-            if Counter(FMT_RE.findall(b_val)) != Counter(FMT_RE.findall(o_val)):
+            if format_signature(b_val) != format_signature(o_val):
                 errors.append(
                     f"Line {line_no} ({b_key}): format specifier mismatch "
                     f"base={FMT_RE.findall(b_val)} out={FMT_RE.findall(o_val)}"
@@ -675,7 +724,7 @@ def validate_output(base_path: pathlib.Path, out_path: pathlib.Path) -> list[str
             o_prefix, o_val, o_suffix = o_item.groups()
             if b_prefix != o_prefix or b_suffix != o_suffix:
                 errors.append(f"Line {line_no}: <item> wrapper mismatch")
-            if Counter(FMT_RE.findall(b_val)) != Counter(FMT_RE.findall(o_val)):
+            if format_signature(b_val) != format_signature(o_val):
                 errors.append(f"Line {line_no} ({current_array}[{array_idx}]): format mismatch")
             if UNESCAPED_APOS_RE.search(o_val):
                 errors.append(f"Line {line_no} ({current_array}[{array_idx}]): unescaped apostrophe")
@@ -829,9 +878,7 @@ def main() -> int:
                 for (line_idx, _), ru_protected in zip(batch, results):
                     ru_xml = restore_tokens(ru_protected, token_map[line_idx])
                     # Fix any rare format-specifier loss by falling back to raw English if corrupted.
-                    if Counter(FMT_RE.findall(raw_en_map[line_idx])) != Counter(
-                        FMT_RE.findall(ru_xml)
-                    ):
+                    if format_signature(raw_en_map[line_idx]) != format_signature(ru_xml):
                         ru_xml = raw_en_map[line_idx]
                     resolved_values[line_idx] = ru_xml
                     translated_count += 1

@@ -29,11 +29,12 @@ class PlayerGestureManager(private val activity: MobilePlayerActivity) {
     private fun isPinchZoomEligible(): Boolean {
         val isInPip = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N &&
             activity.isInPictureInPictureMode
-        return activity.isFullscreen &&
-            !activity.fullscreenToggleManager.isTheatreMode &&
-            !activity.fullscreenToggleManager.isDockedSideChatActive() &&
-            !isInPip &&
-            !activity.miniPlayerManager.isMiniPlayerMode
+        return VideoCutoutScalingPolicy.shouldShowScaleControls(
+            isFullscreen = activity.isFullscreen,
+            isTheatreMode = activity.fullscreenToggleManager.isTheatreMode,
+            isInPip = isInPip,
+            isMiniPlayer = activity.miniPlayerManager.isMiniPlayerMode
+        )
     }
 
     private fun cancelSingleFingerGesture(event: MotionEvent) {
@@ -317,7 +318,7 @@ class PlayerGestureManager(private val activity: MobilePlayerActivity) {
 
         })
 
-        val touchListener = View.OnTouchListener { _, event ->
+        val touchListener = View.OnTouchListener { view, event ->
             val dragManager = activity.dragToMiniPlayerManager
             val action = event.actionMasked
 
@@ -328,7 +329,8 @@ class PlayerGestureManager(private val activity: MobilePlayerActivity) {
                 blockSingleFingerUntilUp = false
             }
 
-            if (isPinchZoomEligible()) {
+            val canPinchVideo = isPinchZoomEligible() && view !== activity.binding.sideChatContainer
+            if (canPinchVideo) {
                 playerScaleGestureDetector.onTouchEvent(event)
             }
 
@@ -336,7 +338,7 @@ class PlayerGestureManager(private val activity: MobilePlayerActivity) {
                 action == MotionEvent.ACTION_POINTER_DOWN ||
                 action == MotionEvent.ACTION_POINTER_UP
 
-            if (isMultiTouch || isPinching || playerScaleGestureDetector.isInProgress) {
+            if (canPinchVideo && (isMultiTouch || isPinching || playerScaleGestureDetector.isInProgress)) {
                 if (!blockSingleFingerUntilUp) {
                     blockSingleFingerUntilUp = true
                     cancelSingleFingerGesture(event)

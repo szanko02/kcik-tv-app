@@ -71,12 +71,12 @@ class OverlayControlManager(private val activity: MobilePlayerActivity) {
 
         // Determine which panels to show
         val showInfoPanel = !isTheatreMode
-        val shouldShowActionBar = if (isTheatreMode || (isTablet && isSideChatVisible)) {
-             true 
-        } else if (activity.isFullscreen) {
-             false
-        } else {
-             vodManager.currentPlaybackMode == VodManager.PlaybackMode.LIVE
+        val isLiveMode = vodManager.currentPlaybackMode == VodManager.PlaybackMode.LIVE
+        val shouldShowActionBar = when {
+            !isLiveMode -> false
+            isTheatreMode || (isTablet && isSideChatVisible) -> true
+            activity.isFullscreen -> false
+            else -> true
         }
 
         // Animate both panels together as one smooth surface
@@ -129,9 +129,9 @@ class OverlayControlManager(private val activity: MobilePlayerActivity) {
 
         val isSideChatVisible = try { activity.fullscreenToggleManager.isSideChatVisible } catch (e: Exception) { false }
 
-        // Info panel should be visible on tablets in portrait OR landscape split-view
-        val shouldKeepInfoVisible = isTablet && (isPortrait || isSideChatVisible) && !isTheatreMode
-        val shouldKeepActionVisible = isTablet && isSideChatVisible
+        // Info panel should be visible on tablets in portrait OR landscape split-view (not fullscreen)
+        val shouldKeepInfoVisible = isTablet && (isPortrait || (isSideChatVisible && !activity.isFullscreen)) && !isTheatreMode
+        val shouldKeepActionVisible = isTablet && isSideChatVisible && vodManager.currentPlaybackMode == VodManager.PlaybackMode.LIVE
 
         // Stop marquees. TextView marquee posts a frame callback every ~50ms via Choreographer
         // regardless of visibility, so leaving isSelected=true on a GONE overlay keeps burning CPU.

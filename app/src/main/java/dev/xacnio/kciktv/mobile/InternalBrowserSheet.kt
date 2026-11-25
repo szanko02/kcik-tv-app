@@ -71,7 +71,7 @@ class InternalBrowserSheet : BottomSheetDialogFragment() {
             val pm = requireContext().packageManager
             
             // 1. Refresh
-            popup.menu.add("Yenile").setOnMenuItemClickListener {
+            popup.menu.add(getString(R.string.refresh)).setOnMenuItemClickListener {
                 binding.blerpWebView.reload()
                 true
             }
@@ -206,7 +206,7 @@ class InternalBrowserSheet : BottomSheetDialogFragment() {
 
         val cookieManager = CookieManager.getInstance()
         cookieManager.setAcceptCookie(true)
-        cookieManager.setAcceptThirdPartyCookies(webView, true)
+        cookieManager.setAcceptThirdPartyCookies(webView, false)
 
         // Inject Cookies from Encrypted Prefs
         try {
@@ -241,10 +241,10 @@ class InternalBrowserSheet : BottomSheetDialogFragment() {
             // 2. Force Inject Auth Token (Critical for immediate login state)
             val authToken = prefs.authToken
             if (!authToken.isNullOrEmpty()) {
-                val sessionCookie = "kick_session=$authToken; Domain=.kick.com; Path=/; Secure; HttpOnly"
+                val sessionCookie = "kick_session=$authToken; Domain=.kick.com; Path=/; Secure; HttpOnly; SameSite=Lax"
                 cookieManager.setCookie("https://kick.com", sessionCookie)
                 // Also redundant keys just in case
-                cookieManager.setCookie("https://kick.com", "session_token=$authToken; Domain=.kick.com; Path=/; Secure")
+                cookieManager.setCookie("https://kick.com", "session_token=$authToken; Domain=.kick.com; Path=/; Secure; SameSite=Lax")
             }
             
             cookieManager.flush()
@@ -305,6 +305,15 @@ class InternalBrowserSheet : BottomSheetDialogFragment() {
                         android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(requestUrl))
                     }
                     
+                    intent.addCategory(android.content.Intent.CATEGORY_BROWSABLE)
+                    intent.component = null
+                    intent.selector = null
+                    intent.flags = intent.flags and (
+                        android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                        android.content.Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
+                        android.content.Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
+                    ).inv()
                     intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                     
                     val fallbackToMarket = {
@@ -353,6 +362,19 @@ class InternalBrowserSheet : BottomSheetDialogFragment() {
         val headers = HashMap<String, String>()
         headers["Accept-Language"] = java.util.Locale.getDefault().toLanguageTag()
         webView.loadUrl(url, headers)
+    }
+
+    override fun onDestroyView() {
+        _binding?.blerpWebView?.let { webView ->
+            try {
+                webView.stopLoading()
+                webView.loadUrl("about:blank")
+                (webView.parent as? ViewGroup)?.removeView(webView)
+                webView.destroy()
+            } catch (_: Exception) {}
+        }
+        _binding = null
+        super.onDestroyView()
     }
 
     override fun onDismiss(dialog: DialogInterface) {

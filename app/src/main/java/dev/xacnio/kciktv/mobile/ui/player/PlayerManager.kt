@@ -745,6 +745,29 @@ class PlayerManager(
      * Cancels any ongoing stream loading operations.
      * Call this before loading a new stream or when stopping the player.
      */
+    fun ensurePlayerViewAttached() {
+        if (binding.playerView.parent !== binding.videoContainer) {
+            (binding.playerView.parent as? ViewGroup)?.removeView(binding.playerView)
+            binding.videoContainer.addView(binding.playerView, 0)
+        }
+    }
+
+    fun releaseAudioEffects() {
+        cancelLoadingOperations()
+        stopBufferingSpinner()
+        mainHandler.removeCallbacksAndMessages(null)
+        audioProcessor?.let { processor ->
+            try {
+                processor.enabled = false
+                processor.release()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error releasing DynamicsProcessing", e)
+            }
+        }
+        audioProcessor = null
+        activeSessionId = 0
+    }
+
     fun cancelLoadingOperations() {
         loadStreamJob?.cancel()
         loadStreamJob = null

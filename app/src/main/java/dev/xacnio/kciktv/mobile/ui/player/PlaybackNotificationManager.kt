@@ -62,7 +62,7 @@ class PlaybackNotificationManager(
                 "Mobile Playback",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Arka plan ses oynatma bildirimleri"
+                description = "Background audio playback notifications"
                 setShowBadge(false)
             }
             val manager = activity.getSystemService(NotificationManager::class.java)
@@ -223,14 +223,19 @@ class PlaybackNotificationManager(
 
         // Update service even if paused
         if (isBackgroundAudioEnabled || forceService) {
+            PlaybackService.pendingNotification = notification
+            PlaybackService.pendingNotificationId = NOTIFICATION_ID
             val serviceIntent = Intent(activity, PlaybackService::class.java).apply {
-                putExtra("notification", notification)
                 putExtra("notificationId", NOTIFICATION_ID)
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                activity.startForegroundService(serviceIntent)
-            } else {
-                activity.startService(serviceIntent)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    activity.startForegroundService(serviceIntent)
+                } else {
+                    activity.startService(serviceIntent)
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("PlaybackNotif", "Unable to start PlaybackService from background: ${e.message}")
             }
         }
     }

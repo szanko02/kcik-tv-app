@@ -76,6 +76,7 @@ import java.io.FileOutputStream
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.ensureActive
 import dev.xacnio.kciktv.shared.ui.adapter.ChannelSidebarAdapter
 import dev.xacnio.kciktv.shared.ui.adapter.ChatAdapter
 import dev.xacnio.kciktv.shared.ui.adapter.GenericSelectionAdapter
@@ -148,12 +149,19 @@ class PlayerActivity : FragmentActivity() {
     private var isLoginWebViewInitialized = false
     private var pendingInstallApkFile: File? = null
     private var exitConfirmDialog: android.app.AlertDialog? = null
+    private var activeUpdateDialog: android.app.AlertDialog? = null
+    private var activeUpdateDownloadJob: Job? = null
+    private var chatMarginAnimator: ValueAnimator? = null
     private var isCleanedUpForExit = false
     private var lastBackNavigationTimeMs = 0L
+    private var lastSafeChannelIndex: Int = -1
+    private var isUserPaused: Boolean = false
 
     private lateinit var binding: ActivityPlayerBinding
     private lateinit var prefs: AppPreferences
     private var ivsPlayer: Player? = null
+
+    private fun drawerWidthPx(): Float = 268f * resources.displayMetrics.density
 
     private val isPipMode: Boolean
         get() = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N && isInPictureInPictureMode
@@ -388,8 +396,10 @@ class PlayerActivity : FragmentActivity() {
             when (intent.getIntExtra(EXTRA_CONTROL_TYPE, 0)) {
                 CONTROL_TYPE_PLAY_PAUSE -> {
                     if (ivsPlayer?.state == com.amazonaws.ivs.player.Player.State.PLAYING) {
+                        isUserPaused = true
                         ivsPlayer?.pause()
                     } else {
+                        isUserPaused = false
                         ivsPlayer?.seekTo(ivsPlayer?.duration ?: 0L)
                         ivsPlayer?.play()
                     }
@@ -437,6 +447,7 @@ class PlayerActivity : FragmentActivity() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == PlaybackService.ACTION_STOP_PLAYBACK) {
                 Log.d("PlayerActivity", "Received stop playback broadcast - stopping player")
+                isUserPaused = true
                 ivsPlayer?.pause()
                 isBackgroundAudioEnabled = false
             }
@@ -590,15 +601,20 @@ class PlayerActivity : FragmentActivity() {
         notificationManager.notify(NOTIFICATION_ID, notification)
         
         // Start Foreground Service to prevent background kill
-        if (isBackgroundAudioEnabled && isPlaying) {
+        if (isBackgroundAudioEnabled && isPlaying && lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+            PlaybackService.pendingNotification = notification
+            PlaybackService.pendingNotificationId = NOTIFICATION_ID
             val serviceIntent = Intent(this, PlaybackService::class.java).apply {
-                putExtra("notification", notification)
                 putExtra("notificationId", NOTIFICATION_ID)
             }
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                startForegroundService(serviceIntent)
-            } else {
-                startService(serviceIntent)
+            try {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    startForegroundService(serviceIntent)
+                } else {
+                    startService(serviceIntent)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to start PlaybackService in updateNotification", e)
             }
         }
     }
@@ -623,6 +639,7 @@ class PlayerActivity : FragmentActivity() {
      * The notification will show, but this is necessary for uninterrupted background playback.
      */
     private fun startBackgroundPlayback() {
+        if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) return
         val isPlaying = ivsPlayer?.state == com.amazonaws.ivs.player.Player.State.PLAYING
         if (!isPlaying) return
         
@@ -676,17 +693,21 @@ class PlayerActivity : FragmentActivity() {
             .build()
 
         // Start Foreground Service immediately
+        PlaybackService.pendingNotification = notification
+        PlaybackService.pendingNotificationId = NOTIFICATION_ID
         val serviceIntent = Intent(this, PlaybackService::class.java).apply {
-            putExtra("notification", notification)
             putExtra("notificationId", NOTIFICATION_ID)
         }
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            startForegroundService(serviceIntent)
-        } else {
-            startService(serviceIntent)
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+            Log.d("PlayerActivity", "Background playback service started immediately")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start background PlaybackService", e)
         }
-        
-        Log.d("PlayerActivity", "Background playback service started immediately")
     }
     
     // JavaScript Interface to receive login body
@@ -757,14 +778,14 @@ class PlayerActivity : FragmentActivity() {
         // Register PIP receiver early
         val filter = IntentFilter(PIP_CONTROL_ACTION)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(pipReceiver, filter, Context.RECEIVER_EXPORTED) // Exported for system broadcast
+            registerReceiver(pipReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
             registerReceiver(pipReceiver, filter)
         }
         
         // Register Screen State Receiver
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(screenStateReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF), Context.RECEIVER_EXPORTED)
+            registerReceiver(screenStateReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF), Context.RECEIVER_NOT_EXPORTED)
         } else {
             registerReceiver(screenStateReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF))
         }
@@ -896,20 +917,22 @@ class PlayerActivity : FragmentActivity() {
                 pendingIntent
             ))
             
-            // 3. Audio Only Action (Right)
-            val audioIntent = Intent(PIP_CONTROL_ACTION).apply {
-                setPackage(packageName)
-                putExtra(EXTRA_CONTROL_TYPE, CONTROL_TYPE_AUDIO_ONLY)
+            // 3. Audio Only Action (Right) — handheld only
+            if (!isTvDevice()) {
+                val audioIntent = Intent(PIP_CONTROL_ACTION).apply {
+                    setPackage(packageName)
+                    putExtra(EXTRA_CONTROL_TYPE, CONTROL_TYPE_AUDIO_ONLY)
+                }
+                val audioPendingIntent = PendingIntent.getBroadcast(this, CONTROL_TYPE_AUDIO_ONLY, audioIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+                val audioTitle = getString(R.string.setting_background_audio)
+                
+                actions.add(RemoteAction(
+                    Icon.createWithResource(this, R.drawable.ic_pip_headset),
+                    audioTitle,
+                    audioTitle,
+                    audioPendingIntent
+                ))
             }
-            val audioPendingIntent = PendingIntent.getBroadcast(this, CONTROL_TYPE_AUDIO_ONLY, audioIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-            val audioTitle = getString(R.string.setting_background_audio)
-            
-            actions.add(RemoteAction(
-                Icon.createWithResource(this, R.drawable.ic_pip_headset),
-                audioTitle,
-                audioTitle,
-                audioPendingIntent
-            ))
 
             return PictureInPictureParams.Builder()
                 .setAspectRatio(aspectRatio)
@@ -936,6 +959,21 @@ class PlayerActivity : FragmentActivity() {
         }
         
         if (isInPictureInPictureMode) {
+            val wasMatureWarning = currentState == MenuState.MATURE_WARNING
+            chatMarginAnimator?.cancel()
+            chatMarginAnimator = null
+            binding.chatPanel.animate().withEndAction(null).cancel()
+            (binding.playerContainer.layoutParams as? FrameLayout.LayoutParams)?.let { lp ->
+                if (lp.marginEnd != 0) {
+                    lp.marginEnd = 0
+                    binding.playerContainer.layoutParams = lp
+                }
+            }
+            if (isChatVisible) {
+                chatWebSocket?.unsubscribeFromChat()
+                chatAdapter?.clearMessages()
+            }
+
             // Hide UI elements in PIP mode without affecting player state
             binding.channelInfoOverlay.visibility = View.GONE
             binding.quickMenuOverlay.visibility = View.GONE
@@ -947,11 +985,14 @@ class PlayerActivity : FragmentActivity() {
             binding.chatPanel.visibility = View.GONE
             binding.statsOverlay.visibility = View.GONE
             binding.searchPanel.visibility = View.GONE
+            binding.matureWarningOverlay.visibility = View.GONE
+            binding.errorPanel.visibility = View.GONE
+            binding.channelInputOverlay.visibility = View.GONE
             isChatVisible = false
             isStatsVisible = false
             currentState = MenuState.NONE
             
-            if (ivsPlayer?.state != Player.State.PLAYING) {
+            if (!wasMatureWarning && !isUserPaused && ivsPlayer?.state != Player.State.PLAYING) {
                 ivsPlayer?.play()
             }
         } else {
@@ -959,7 +1000,7 @@ class PlayerActivity : FragmentActivity() {
             enableImmersiveMode()
             
             // User requirement: If background audio is OFF, stop playback when PIP ends
-            if (!prefs.backgroundAudioEnabled && !isTvDevice()) {
+            if (!prefs.backgroundAudioEnabled && !isBackgroundAudioEnabled && !isTvDevice()) {
                 ivsPlayer?.pause()
                 isBackgroundAudioEnabled = false
                 stopService(Intent(this, PlaybackService::class.java))
@@ -1202,9 +1243,12 @@ class PlayerActivity : FragmentActivity() {
                         
                         val screenWidth = binding.playerContainer.width.toFloat()
                         val screenHeight = binding.playerContainer.height.toFloat()
+                        if (screenWidth <= 0f || screenHeight <= 0f) return
                         
                         val quality = ivsPlayer?.quality
-                        val videoAspect = (quality?.width?.toFloat() ?: 1920f) / (quality?.height?.toFloat() ?: 1080f)
+                        val qW = quality?.width?.takeIf { it > 0 }?.toFloat() ?: 1920f
+                        val qH = quality?.height?.takeIf { it > 0 }?.toFloat() ?: 1080f
+                        val videoAspect = qW / qH
                         val screenAspect = screenWidth / screenHeight
                         
                         var maxPanX = 0f
@@ -1212,10 +1256,10 @@ class PlayerActivity : FragmentActivity() {
                         
                         if (videoAspect > screenAspect) {
                             val scaledVideoWidth = screenHeight * videoAspect
-                            maxPanX = (scaledVideoWidth - screenWidth) / 2
+                            maxPanX = ((scaledVideoWidth - screenWidth) / 2f).coerceAtLeast(0f)
                         } else {
                             val scaledVideoHeight = screenWidth / videoAspect
-                            maxPanY = (scaledVideoHeight - screenHeight) / 2
+                            maxPanY = ((scaledVideoHeight - screenHeight) / 2f).coerceAtLeast(0f)
                         }
                         
                         videoPanX = (videoPanX + deltaX).coerceIn(-maxPanX, maxPanX)
@@ -1246,7 +1290,7 @@ class PlayerActivity : FragmentActivity() {
     }
     
     private fun setupDrawer() {
-        val drawerWidth = 200f * resources.displayMetrics.density
+        val drawerWidth = drawerWidthPx()
         binding.drawerPanel.translationX = -drawerWidth
         binding.drawerPanel.visibility = View.GONE
         
@@ -1486,7 +1530,7 @@ class PlayerActivity : FragmentActivity() {
     }
 
     private fun showDrawer(focusType: String = "default") {
-        val drawerWidth = 200f * resources.displayMetrics.density
+        val drawerWidth = drawerWidthPx()
         val isSidebarVisible = binding.sidebarMenu.visibility == View.VISIBLE
         
         // Hide only non-menu overlays
@@ -1501,7 +1545,7 @@ class PlayerActivity : FragmentActivity() {
         currentState = MenuState.DRAWER
         
         if (prefs.animationsEnabled) {
-            binding.menuScrim.animate().alpha(1f).setDuration(300).start()
+            binding.menuScrim.animate().withEndAction(null).alpha(1f).setDuration(300).start()
             binding.drawerPanel.animate()
                 .translationX(0f)
                 .setDuration(300)
@@ -1539,7 +1583,7 @@ class PlayerActivity : FragmentActivity() {
     }
 
     private fun hideDrawer(immediate: Boolean = false, animateSidebar: Boolean = true) {
-        val drawerWidth = 200f * resources.displayMetrics.density
+        val drawerWidth = drawerWidthPx()
         val sidebarVisible = binding.sidebarMenu.visibility == View.VISIBLE
         
         if (immediate || !prefs.animationsEnabled) {
@@ -1613,7 +1657,7 @@ class PlayerActivity : FragmentActivity() {
         cookieManager.removeAllCookies(null)
         cookieManager.flush()
         
-        WebView.setWebContentsDebuggingEnabled(true)
+        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
         cookieManager.setAcceptCookie(true)
         cookieManager.setAcceptThirdPartyCookies(webView, true)
 
@@ -1665,7 +1709,7 @@ class PlayerActivity : FragmentActivity() {
                     val body = capturedLoginBody ?: "{}"
                     
                     try {
-                        val client = okhttp3.OkHttpClient.Builder()
+                        val client = RetrofitClient.proxiedOkHttpClient.newBuilder()
                             .connectionSpecs(listOf(okhttp3.ConnectionSpec.RESTRICTED_TLS, okhttp3.ConnectionSpec.CLEARTEXT))
                             .followRedirects(true)
                             .followSslRedirects(true)
@@ -1719,115 +1763,117 @@ class PlayerActivity : FragmentActivity() {
                         
                         if (cookieStr != null) requestBuilder.header("Cookie", cookieStr)
                         
-                        val response = client.newCall(requestBuilder.build()).execute()
-                        val responseBodyString = response.body?.string() ?: ""
-                        
-                        Log.d("PlayerActivity", "Login Response: ${response.code}")
-                        
-                        if (response.code in 200..299) {
-                            if (responseBodyString.contains("\"2fa_required\":true") || responseBodyString.contains("\"otp_required\":true")) {
-                                Log.d("PlayerActivity", "🚨 2FA/OTP Required!")
-                                loginResultDeferred?.complete(LoginResult.TwoFARequired("OTP Verification Required"))
+                        client.newCall(requestBuilder.build()).execute().use { response ->
+                            val responseBodyString = response.body?.string() ?: ""
+                            
+                            Log.d("PlayerActivity", "Login Response: ${response.code}")
+                            
+                            if (response.code in 200..299) {
+                                if (responseBodyString.contains("\"2fa_required\":true") || responseBodyString.contains("\"otp_required\":true")) {
+                                    Log.d("PlayerActivity", "🚨 2FA/OTP Required!")
+                                    loginResultDeferred?.complete(LoginResult.TwoFARequired("OTP Verification Required"))
+                                } else {
+                                    try {
+                                        val json = org.json.JSONObject(responseBodyString)
+                                        val token = json.getString("token")
+                                        var username = "Kick User"
+                                        var profilePic: String? = null
+                                        
+                                        // Try to get email as well if available, or just username
+                                        var userEmail = ""
+                                        var userId: Long? = null
+                                        var slug: String? = null
+
+                                        if (json.has("user")) {
+                                            val u = json.getJSONObject("user")
+                                            username = u.optString("username", username)
+                                            profilePic = u.optString("profile_pic").takeIf { it.isNotEmpty() }
+                                                ?: u.optString("profile_picture").takeIf { it.isNotEmpty() }
+                                                ?: u.optString("profilepic").takeIf { it.isNotEmpty() }
+                                            userEmail = u.optString("email", "")
+                                            userId = u.optLong("id").takeIf { it > 0 }
+                                        }
+
+                                        // --- FETCH FULL USER DETAILS (api/v1/user) ---
+                                        try {
+                                            Log.d("PlayerActivity", "🔍 Fetching Full User Details...")
+                                            val userReq = Request.Builder()
+                                                .url("https://kick.com/api/v1/user")
+                                                .header("Authorization", "Bearer $token")
+                                                .header("Accept", "application/json")
+                                                .header("User-Agent", KICK_USER_AGENT)
+                                                .header("Cookie", cookieStr ?: "")
+                                                .build()
+                                                
+                                            client.newCall(userReq).execute().use { userRes ->
+                                                if (userRes.isSuccessful) {
+                                                    val userBody = userRes.body?.string() ?: "{}"
+                                                    val userJson = org.json.JSONObject(userBody)
+                                                    
+                                                    username = userJson.optString("username", username)
+                                                    userId = userJson.optLong("id", userId ?: 0L).takeIf { it > 0 }
+                                                    if (userJson.has("profilepic") && !userJson.isNull("profilepic")) {
+                                                        profilePic = userJson.getString("profilepic")
+                                                    } else if (userJson.has("profile_picture") && !userJson.isNull("profile_picture")) {
+                                                        profilePic = userJson.getString("profile_picture")
+                                                    } else if (userJson.has("profile_pic") && !userJson.isNull("profile_pic")) {
+                                                        profilePic = userJson.getString("profile_pic")
+                                                    }
+                                                    val streamerChannel = userJson.optJSONObject("streamer_channel")
+                                                    slug = streamerChannel?.optString("slug")
+                                                    if (slug.isNullOrEmpty()) slug = username
+                                                    
+                                                    Log.d("PlayerActivity", "✅ User Details Fetched: $username (ID: $userId, Slug: $slug)")
+                                                }
+                                            }
+                                        } catch (e: Exception) {
+                                            Log.e("PlayerActivity", "Error fetching user details", e)
+                                        }
+
+                                        val userObj = UserResponse(
+                                            id = userId,
+                                            username = username,
+                                            email = userEmail.ifEmpty { null },
+                                            bio = null,
+                                            profilePic = profilePic,
+                                            streamerChannel = slug?.let { 
+                                                dev.xacnio.kciktv.shared.data.api.StreamerChannelData(
+                                                    id = null,
+                                                    userId = userId,
+                                                    slug = it,
+                                                    playbackUrl = null,
+                                                    isBanned = false,
+                                                    vodEnabled = null
+                                                )
+                                            }
+                                        )
+                                        
+                                        val responseCookies = response.headers("Set-Cookie")
+                                        for (c in responseCookies) {
+                                            cookieManager.setCookie("https://kick.com", c)
+                                            prefs.appendCookies("https://kick.com", c)
+                                        }
+                                        cookieManager.flush()
+                                        
+                                        loginResultDeferred?.complete(LoginResult.Success(token, userObj))
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                        loginResultDeferred?.complete(LoginResult.Error("Parse Error: ${e.message}"))
+                                    }
+                                }
                             } else {
+                                var errorMsg = "Login Failed (${response.code})"
                                 try {
                                     val json = org.json.JSONObject(responseBodyString)
-                                    val token = json.getString("token")
-                                    var username = "Kick User"
-                                    var profilePic: String? = null
-                                    
-                                    // Try to get email as well if available, or just username
-                                    var userEmail = ""
-                                    var userId: Long? = null
-                                    var slug: String? = null
-
-                                    if (json.has("user")) {
-                                        val u = json.getJSONObject("user")
-                                        username = u.optString("username", username)
-                                        profilePic = u.optString("profile_pic").takeIf { it.isNotEmpty() }
-                                            ?: u.optString("profile_picture").takeIf { it.isNotEmpty() }
-                                            ?: u.optString("profilepic").takeIf { it.isNotEmpty() }
-                                        userEmail = u.optString("email", "")
-                                        userId = u.optLong("id").takeIf { it > 0 }
-                                    }
-
-                                    // --- FETCH FULL USER DETAILS (api/v1/user) ---
-                                    try {
-                                        Log.d("PlayerActivity", "🔍 Fetching Full User Details...")
-                                        val userReq = Request.Builder()
-                                            .url("https://kick.com/api/v1/user")
-                                            .header("Authorization", "Bearer $token")
-                                            .header("Accept", "application/json")
-                                            .header("User-Agent", KICK_USER_AGENT)
-                                            .header("Cookie", cookieStr ?: "")
-                                            .build()
-                                            
-                                        val userRes = client.newCall(userReq).execute()
-                                        if (userRes.isSuccessful) {
-                                            val userBody = userRes.body?.string() ?: "{}"
-                                            val userJson = org.json.JSONObject(userBody)
-                                            
-                                            username = userJson.optString("username", username)
-                                            userId = userJson.optLong("id", userId ?: 0L).takeIf { it > 0 }
-                                            if (userJson.has("profilepic") && !userJson.isNull("profilepic")) {
-                                                profilePic = userJson.getString("profilepic")
-                                            } else if (userJson.has("profile_picture") && !userJson.isNull("profile_picture")) {
-                                                profilePic = userJson.getString("profile_picture")
-                                            } else if (userJson.has("profile_pic") && !userJson.isNull("profile_pic")) {
-                                                profilePic = userJson.getString("profile_pic")
-                                            }
-                                            val streamerChannel = userJson.optJSONObject("streamer_channel")
-                                            slug = streamerChannel?.optString("slug")
-                                            if (slug.isNullOrEmpty()) slug = username
-                                            
-                                            Log.d("PlayerActivity", "✅ User Details Fetched: $username (ID: $userId, Slug: $slug)")
-                                        }
-                                    } catch (e: Exception) {
-                                        Log.e("PlayerActivity", "Error fetching user details", e)
-                                    }
-
-                                    val userObj = UserResponse(
-                                        id = userId,
-                                        username = username,
-                                        email = userEmail.ifEmpty { null },
-                                        bio = null,
-                                        profilePic = profilePic,
-                                        streamerChannel = slug?.let { 
-                                            dev.xacnio.kciktv.shared.data.api.StreamerChannelData(
-                                                id = null,
-                                                userId = userId,
-                                                slug = it,
-                                                playbackUrl = null,
-                                                isBanned = false,
-                                                vodEnabled = null
-                                            )
-                                        }
-                                    )
-                                    
-                                    val responseCookies = response.headers("Set-Cookie")
-                                    for (c in responseCookies) {
-                                        cookieManager.setCookie("https://kick.com", c)
-                                        prefs.appendCookies("https://kick.com", c)
-                                    }
-                                    cookieManager.flush()
-                                    
-                                    loginResultDeferred?.complete(LoginResult.Success(token, userObj))
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
-                                    loginResultDeferred?.complete(LoginResult.Error("Parse Error: ${e.message}"))
-                                }
+                                    errorMsg = json.optString("message", json.optString("error", errorMsg))
+                                } catch(e: Exception) {}
+                                loginResultDeferred?.complete(LoginResult.Error(errorMsg))
                             }
-                        } else {
-                            var errorMsg = "Login Failed (${response.code})"
-                            try {
-                                val json = org.json.JSONObject(responseBodyString)
-                                errorMsg = json.optString("message", json.optString("error", errorMsg))
-                            } catch(e: Exception) {}
-                            loginResultDeferred?.complete(LoginResult.Error(errorMsg))
+                            
+                            return android.webkit.WebResourceResponse(
+                                "application/json", "UTF-8", response.code, "OK", null, java.io.ByteArrayInputStream(responseBodyString.toByteArray())
+                            )
                         }
-                        
-                        return android.webkit.WebResourceResponse(
-                            "application/json", "UTF-8", response.code, "OK", null, java.io.ByteArrayInputStream(responseBodyString.toByteArray())
-                        )
                         
                     } catch (e: Exception) {
                         loginResultDeferred?.complete(LoginResult.Error(e.message ?: "Unknown Error"))
@@ -1862,6 +1908,13 @@ class PlayerActivity : FragmentActivity() {
         return withContext(Dispatchers.Main) {
             if (!isLoginWebViewInitialized) {
                 setupWebViewLogin()
+            } else {
+                try {
+                    binding.loginWebView.onResume()
+                    if (binding.loginWebView.url == "about:blank" || binding.loginWebView.url.isNullOrBlank()) {
+                        binding.loginWebView.loadUrl("https://kick.com")
+                    }
+                } catch (_: Exception) {}
             }
             val webView = binding.loginWebView
             val deferred = CompletableDeferred<LoginResult>()
@@ -1874,7 +1927,7 @@ class PlayerActivity : FragmentActivity() {
                     val cookieManager = CookieManager.getInstance()
                     val currentCookies = cookieManager.getCookie("https://kick.com")
                     
-                    val client = okhttp3.OkHttpClient.Builder()
+                    val client = RetrofitClient.proxiedOkHttpClient.newBuilder()
                         .connectionSpecs(listOf(okhttp3.ConnectionSpec.RESTRICTED_TLS, okhttp3.ConnectionSpec.CLEARTEXT))
                         .protocols(listOf(okhttp3.Protocol.HTTP_2, okhttp3.Protocol.HTTP_1_1))
                         .followRedirects(true)
@@ -1901,31 +1954,32 @@ class PlayerActivity : FragmentActivity() {
                         .header("Cookie", currentCookies ?: "")
                         .build()
 
-                    val response = client.newCall(request).execute()
-                    val bodyStr = response.peekBody(Long.MAX_VALUE).string()
-                    
-                    // Inject Sanctum JS Config if present (Extract from HTML)
-                    if (bodyStr.contains("window.KPSDK")) {
-                        try {
-                            val scriptRegex = Regex("<script[^>]*>(.*?)</script>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
-                            val matches = scriptRegex.findAll(bodyStr)
-                            val configScript = matches.map { it.groupValues[1] }.find { it.contains("window.KPSDK") }
-                            if (configScript != null) {
-                                withContext(Dispatchers.Main) {
-                                    try { webView.evaluateJavascript(configScript, null) } catch (t: Throwable) {}
+                    client.newCall(request).execute().use { response ->
+                        val bodyStr = response.peekBody(Long.MAX_VALUE).string()
+                        
+                        // Inject Sanctum JS Config if present (Extract from HTML)
+                        if (bodyStr.contains("window.KPSDK")) {
+                            try {
+                                val scriptRegex = Regex("<script[^>]*>(.*?)</script>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
+                                val matches = scriptRegex.findAll(bodyStr)
+                                val configScript = matches.map { it.groupValues[1] }.find { it.contains("window.KPSDK") }
+                                if (configScript != null) {
+                                    withContext(Dispatchers.Main) {
+                                        try { webView.evaluateJavascript(configScript, null) } catch (t: Throwable) {}
+                                    }
                                 }
+                            } catch (e: Exception) {}
+                        }
+                        
+                        // Update cookies if any
+                        val newCookies = response.headers("Set-Cookie")
+                        if (newCookies.isNotEmpty()) {
+                             withContext(Dispatchers.Main) {
+                                for (cookie in newCookies) {
+                                    cookieManager.setCookie("https://kick.com", cookie)
+                                }
+                                cookieManager.flush()
                             }
-                        } catch (e: Exception) {}
-                    }
-                    
-                    // Update cookies if any
-                    val newCookies = response.headers("Set-Cookie")
-                    if (newCookies.isNotEmpty()) {
-                         withContext(Dispatchers.Main) {
-                            for (cookie in newCookies) {
-                                cookieManager.setCookie("https://kick.com", cookie)
-                            }
-                            cookieManager.flush()
                         }
                     }
                 } catch (e: Exception) {
@@ -2015,7 +2069,7 @@ class PlayerActivity : FragmentActivity() {
                 e.printStackTrace()
                 withContext(Dispatchers.Main) {
                     binding.qrLoadingSpinner.visibility = View.GONE
-                    binding.tvLoginCode.text = "ERROR"
+                    binding.tvLoginCode.text = getString(R.string.tv_login_code_error)
                 }
             }
         }
@@ -2027,7 +2081,7 @@ class PlayerActivity : FragmentActivity() {
         
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val client = OkHttpClient()
+                val client = RetrofitClient.proxiedOkHttpClient
                 val jsonBody = org.json.JSONObject().apply {
                     put("key", code)
                 }
@@ -2041,62 +2095,90 @@ class PlayerActivity : FragmentActivity() {
 
                 Log.d(TAG, "Exchanging TV Token for UUID: $uuid")
                     
-                val response = client.newCall(request).execute()
-                val responseBody = response.body?.string()
-                
-                if (response.isSuccessful && responseBody != null) {
-                    Log.d(TAG, "TV Token Exchange Success: $responseBody")
+                client.newCall(request).execute().use { response ->
+                    val responseBody = response.body?.string()
                     
-                    // Parse response directly. Code only returns { "token": "..." }
-                    val json = org.json.JSONObject(responseBody)
-                    
-                    if (json.has("token")) {
-                        val token = json.getString("token")
+                    if (response.isSuccessful && responseBody != null) {
+                        Log.d(TAG, "TV Token Exchange Success")
                         
-                        // Now fetch user details using this token
-                         try {
-                            val userResponse = dev.xacnio.kciktv.shared.data.api.RetrofitClient.authService.getUser("Bearer $token")
+                        // Parse response directly. Code only returns { "token": "..." }
+                        val json = org.json.JSONObject(responseBody)
+                        
+                        if (json.has("token")) {
+                            val token = json.getString("token")
                             
-                            if (userResponse.isSuccessful && userResponse.body() != null) {
-                                val user = userResponse.body()
-                                val userId = user?.id ?: 0L
-                                val username = user?.username ?: "User"
-                                val profilePic = user?.profilePic
+                            // Now fetch user details using this token
+                            try {
+                                val userResponse = dev.xacnio.kciktv.shared.data.api.RetrofitClient.authService.getUser("Bearer $token")
                                 
-                                // Parse streamer channel slug if available
-                                val slug = user?.streamerChannel?.slug ?: username
-                                
-                                withContext(Dispatchers.Main) {
-                                    prefs.saveAuth(token, username, profilePic, userId, slug)
-                                    updateDrawerUserInfo()
-                                    Toast.makeText(this@PlayerActivity, getString(R.string.login_success, username), Toast.LENGTH_SHORT).show()
-                                    hideLoginPanel()
+                                if (userResponse.isSuccessful && userResponse.body() != null) {
+                                    val user = userResponse.body()
+                                    val userId = user?.id ?: 0L
+                                    val username = user?.username ?: "User"
+                                    val profilePic = user?.profilePic
                                     
-                                    // Unsubscribe/Cleanup
-                                    chatWebSocket?.unsubscribeFromTvSetup(uuid)
+                                    // Parse streamer channel slug if available
+                                    val slug = user?.streamerChannel?.slug ?: username
+                                    
+                                    withContext(Dispatchers.Main) {
+                                        prefs.saveAuth(token, username, profilePic, userId, slug)
+                                        updateDrawerUserInfo()
+                                        Toast.makeText(this@PlayerActivity, getString(R.string.login_success, username), Toast.LENGTH_SHORT).show()
+                                        hideLoginPanel()
+                                        
+                                        // Unsubscribe/Cleanup
+                                        chatWebSocket?.unsubscribeFromTvSetup(uuid)
+                                    }
+                                } else {
+                                    Log.e(TAG, "Failed to fetch user details after TV login")
+                                    withContext(Dispatchers.Main) {
+                                        Toast.makeText(this@PlayerActivity, getString(R.string.tv_login_exchange_failed), Toast.LENGTH_SHORT).show()
+                                    }
                                 }
-                            } else {
-                                Log.e(TAG, "Failed to fetch user details after TV login")
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Error fetching user details", e)
+                                withContext(Dispatchers.Main) {
+                                    Toast.makeText(this@PlayerActivity, getString(R.string.tv_login_exchange_failed), Toast.LENGTH_SHORT).show()
+                                }
                             }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Error fetching user details", e)
+                        } else {
+                            Log.e(TAG, "TV Auth response missing token")
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(this@PlayerActivity, getString(R.string.tv_login_exchange_failed), Toast.LENGTH_SHORT).show()
+                            }
                         }
-
                     } else {
-                         Log.e(TAG, "TV Auth response missing token")
+                        Log.e(TAG, "TV Auth Failed: ${response.code}")
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(this@PlayerActivity, getString(R.string.tv_login_exchange_failed), Toast.LENGTH_SHORT).show()
+                        }
                     }
-                } else {
-                    Log.e(TAG, "TV Auth Failed: ${response.code} - $responseBody")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error in TV Token Exchange", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@PlayerActivity, getString(R.string.tv_login_exchange_failed), Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
 
-
-
     private fun hideLoginPanel() {
+        currentTvSetupUuid?.let { uuid ->
+            chatWebSocket?.unsubscribeFromTvSetup(uuid)
+        }
+        currentTvSetupUuid = null
+        currentTvSetupCode = null
+        loginResultDeferred?.cancel()
+        loginResultDeferred = null
+        if (isLoginWebViewInitialized) {
+            try {
+                binding.loginWebView.stopLoading()
+                binding.loginWebView.loadUrl("about:blank")
+                binding.loginWebView.onPause()
+            } catch (_: Exception) {}
+        }
+
         if (currentState != MenuState.LOGIN) return
         
         showChannelSidebar(requestFocus = false)
@@ -2113,6 +2195,7 @@ class PlayerActivity : FragmentActivity() {
     }
 
     private fun performLogin() {
+        if (!binding.loginSubmitBtn.isEnabled) return
         val email = binding.loginEmailInput.text.toString()
         val password = binding.loginPasswordInput.text.toString()
         val otp = binding.loginOtpInput.text.toString().takeIf { binding.loginOtpContainer.visibility == View.VISIBLE }
@@ -2123,44 +2206,47 @@ class PlayerActivity : FragmentActivity() {
             return
         }
 
+        binding.loginSubmitBtn.isEnabled = false
         binding.loginLoadingSpinner.visibility = View.VISIBLE
         binding.loginSubmitText.visibility = View.GONE
         binding.loginErrorText.visibility = View.GONE
 
         lifecycleScope.launch {
-            val result = performWebViewLogin(email, password, otp)
-            
-            binding.loginLoadingSpinner.visibility = View.GONE
-            binding.loginSubmitText.visibility = View.VISIBLE
-            
-            when (result) {
-                is LoginResult.Success -> {
-                    val token = result.token
-                    val user = result.user
-                    val username = user?.username ?: email
-                    
-                    prefs.saveAuth(
-                        token, 
-                        username, 
-                        user?.profilePic,
-                        user?.id,
-                        user?.streamerChannel?.slug ?: username
-                    )
-                    
-                    updateDrawerUserInfo()
-                    Toast.makeText(this@PlayerActivity, getString(R.string.login_success, username), Toast.LENGTH_SHORT).show()
-                    hideLoginPanel()
+            try {
+                val result = performWebViewLogin(email, password, otp)
+                when (result) {
+                    is LoginResult.Success -> {
+                        val token = result.token
+                        val user = result.user
+                        val username = user?.username ?: email
+                        
+                        prefs.saveAuth(
+                            token, 
+                            username, 
+                            user?.profilePic,
+                            user?.id,
+                            user?.streamerChannel?.slug ?: username
+                        )
+                        
+                        updateDrawerUserInfo()
+                        Toast.makeText(this@PlayerActivity, getString(R.string.login_success, username), Toast.LENGTH_SHORT).show()
+                        hideLoginPanel()
+                    }
+                    is LoginResult.TwoFARequired -> {
+                        binding.loginOtpContainer.visibility = View.VISIBLE
+                        binding.loginOtpInput.requestFocus()
+                        binding.loginErrorText.text = getString(R.string.two_fa_required)
+                        binding.loginErrorText.visibility = View.VISIBLE
+                    }
+                    is LoginResult.Error -> {
+                        binding.loginErrorText.text = result.message
+                        binding.loginErrorText.visibility = View.VISIBLE
+                    }
                 }
-                is LoginResult.TwoFARequired -> {
-                    binding.loginOtpContainer.visibility = View.VISIBLE
-                    binding.loginOtpInput.requestFocus()
-                    binding.loginErrorText.text = getString(R.string.two_fa_required)
-                    binding.loginErrorText.visibility = View.VISIBLE
-                }
-                is LoginResult.Error -> {
-                    binding.loginErrorText.text = result.message
-                    binding.loginErrorText.visibility = View.VISIBLE
-                }
+            } finally {
+                binding.loginSubmitBtn.isEnabled = true
+                binding.loginLoadingSpinner.visibility = View.GONE
+                binding.loginSubmitText.visibility = View.VISIBLE
             }
         }
     }
@@ -2494,9 +2580,12 @@ class PlayerActivity : FragmentActivity() {
             }
             override fun onQualityChanged(quality: Quality) {
                 // Resolution Badge
-                binding.qualityBadge.text = if (quality.height >= 1080) "1080P" 
-                                          else if (quality.height >= 720) "720P"
-                                          else "${quality.height}P"
+                if (quality.height > 0) {
+                    binding.qualityBadge.text = if (quality.height >= 1080) "1080P" 
+                                              else if (quality.height >= 720) "720P"
+                                              else "${quality.height}P"
+                    binding.qualityBadge.visibility = View.VISIBLE
+                }
                 
                 // FPS Badge
                 binding.fpsBadge.text = String.format("%.0f FPS", quality.framerate)
@@ -2664,6 +2753,10 @@ class PlayerActivity : FragmentActivity() {
     
     private fun playCurrentChannel(useZapDelay: Boolean = false, showInfo: Boolean = true, keepBanner: Boolean = false, isRetry: Boolean = false) {
         if (allChannels.isEmpty()) return
+
+        zapHandler.removeCallbacksAndMessages(null)
+        loadingJob?.cancel()
+        loadingJob = null
         
         stopRecoveryPolling()
         if (!isRetry) {
@@ -2685,11 +2778,17 @@ class PlayerActivity : FragmentActivity() {
         
         val channel = allChannels.getOrNull(currentChannelIndex) ?: return
 
-        // Mature Content Check
+        // Mature Content Check: stop active stream first before showing overlay
         if (channel.isMature && !isMatureAcceptedForSession) {
+            ivsPlayer?.pause()
+            binding.playerView.visibility = View.GONE
+            binding.loadingThumbnailView.visibility = View.GONE
             showMatureWarning()
             return
         }
+
+        lastSafeChannelIndex = currentChannelIndex
+        isUserPaused = false
         
         ivsPlayer?.pause()
         // RESET VIDEO VIEW IMMEDIATELY (Prevent frozen frame)
@@ -2735,6 +2834,12 @@ class PlayerActivity : FragmentActivity() {
             lastIsMobile = null // Reset network state tracking
             loadingJob = lifecycleScope.launch {
                 repository.getStreamUrl(channel.slug).onSuccess { url ->
+                    if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) &&
+                        !isBackgroundAudioEnabled &&
+                        !isPipMode
+                    ) {
+                        return@onSuccess
+                    }
                     ivsPlayer?.pause()
                     ivsPlayer?.load(Uri.parse(url))
                     ivsPlayer?.play()
@@ -3030,7 +3135,7 @@ class PlayerActivity : FragmentActivity() {
         sidebarContext = "channels"
         binding.sidebarTitle.text = getString(R.string.sidebar_channels)
         
-        val drawerWidth = 200f * resources.displayMetrics.density
+        val drawerWidth = drawerWidthPx()
         val isDrawerVisible = binding.drawerPanel.visibility == View.VISIBLE
         val targetX = if (isDrawerVisible) drawerWidth else 0f
         
@@ -3053,7 +3158,7 @@ class PlayerActivity : FragmentActivity() {
         
         if (prefs.animationsEnabled) {
             binding.sidebarMenu.animate().translationX(targetX).alpha(1f).setDuration(200).start()
-            binding.menuScrim.animate().alpha(1f).setDuration(200).start()
+            binding.menuScrim.animate().withEndAction(null).alpha(1f).setDuration(200).start()
         }
 
         binding.sidebarRecyclerView.apply {
@@ -3093,7 +3198,7 @@ class PlayerActivity : FragmentActivity() {
         val layoutManager = binding.sidebarRecyclerView.layoutManager as? LinearLayoutManager
         val savedState = if (!animate && currentState == MenuState.SIDEBAR) layoutManager?.onSaveInstanceState() else null
 
-        val drawerWidth = 200f * resources.displayMetrics.density
+        val drawerWidth = drawerWidthPx()
         val targetX = if (binding.drawerPanel.visibility == View.VISIBLE) drawerWidth else 0f
 
         if (animate && prefs.animationsEnabled) {
@@ -3101,8 +3206,9 @@ class PlayerActivity : FragmentActivity() {
             binding.sidebarMenu.alpha = 0f
             binding.sidebarMenu.animate().translationX(targetX).alpha(1f).setDuration(300).start()
             
+            binding.menuScrim.animate().cancel()
             binding.menuScrim.alpha = 0f
-            binding.menuScrim.animate().alpha(1f).duration = 300
+            binding.menuScrim.animate().withEndAction(null).alpha(1f).setDuration(300).start()
         } else {
             binding.sidebarMenu.translationX = targetX
             binding.sidebarMenu.alpha = 1f
@@ -3114,6 +3220,9 @@ class PlayerActivity : FragmentActivity() {
         
         currentState = MenuState.SIDEBAR
         isChannelMenu = false
+        val effectiveFocusId = initialFocusId
+            ?: items.firstOrNull { it.isSelected && !it.isHeader }?.id
+            ?: items.firstOrNull { !it.isHeader }?.id
         binding.sidebarRecyclerView.apply {
             val currentAdapter = this.adapter as? GenericSelectionAdapter
             val isRefresh = !animate && sidebarContext == context && currentAdapter != null
@@ -3132,8 +3241,8 @@ class PlayerActivity : FragmentActivity() {
                 (this.layoutManager as LinearLayoutManager).onRestoreInstanceState(savedState)
             }
             
-            if (initialFocusId != null) {
-                val index = items.indexOfFirst { it.id == initialFocusId }
+            if (effectiveFocusId != null) {
+                val index = items.indexOfFirst { it.id == effectiveFocusId }
                 if (index != -1) {
                     val lm = this.layoutManager as LinearLayoutManager
                     lm.scrollToPositionWithOffset(index, 200)
@@ -3157,6 +3266,16 @@ class PlayerActivity : FragmentActivity() {
         }
     }
 
+    private fun dismissMatureWarningAndRestoreSafeChannel() {
+        binding.matureWarningOverlay.visibility = View.GONE
+        val restored = lastSafeChannelIndex.takeIf {
+            it in allChannels.indices && !allChannels[it].isMature
+        } ?: allChannels.indexOfFirst { !it.isMature }
+        currentChannelIndex = if (restored >= 0) restored else -1
+        channelSidebarAdapter?.setCurrentIndex(currentChannelIndex)
+        showChannelSidebar()
+    }
+
     private fun setupMatureWarning() {
         binding.btnMatureAccept.setOnClickListener {
             val channel = allChannels.getOrNull(currentChannelIndex)
@@ -3168,8 +3287,7 @@ class PlayerActivity : FragmentActivity() {
         }
         
         binding.btnMatureExit.setOnClickListener {
-            binding.matureWarningOverlay.visibility = View.GONE
-            showChannelSidebar()
+            dismissMatureWarningAndRestoreSafeChannel()
         }
     }
 
@@ -3215,7 +3333,7 @@ class PlayerActivity : FragmentActivity() {
                  binding.quickMenuOverlay.animate().translationY(50f).alpha(0f).setDuration(animDuration).withEndAction { binding.quickMenuOverlay.visibility = View.GONE }.start()
             
             if (binding.drawerPanel.visibility == View.VISIBLE)
-                binding.drawerPanel.animate().translationX(-200f * resources.displayMetrics.density).setDuration(animDuration).withEndAction { binding.drawerPanel.visibility = View.GONE }.start()
+                binding.drawerPanel.animate().translationX(-drawerWidthPx()).setDuration(animDuration).withEndAction { binding.drawerPanel.visibility = View.GONE }.start()
             
             if (binding.loginPanel.visibility == View.VISIBLE)
                 binding.loginPanel.animate().alpha(0f).setDuration(animDuration).withEndAction { binding.loginPanel.visibility = View.GONE }.start()
@@ -3478,11 +3596,19 @@ class PlayerActivity : FragmentActivity() {
             if (item.id == "github") {
                 val url = getString(R.string.url_github)
                 val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
-                startActivity(intent)
+                try {
+                    startActivity(intent)
+                } catch (_: android.content.ActivityNotFoundException) {
+                    Toast.makeText(this, getString(R.string.tv_no_browser_found), Toast.LENGTH_SHORT).show()
+                }
             } else if (item.id == "coffee") {
                 val url = getString(R.string.url_coffee)
                 val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
-                startActivity(intent)
+                try {
+                    startActivity(intent)
+                } catch (_: android.content.ActivityNotFoundException) {
+                    Toast.makeText(this, getString(R.string.tv_no_browser_found), Toast.LENGTH_SHORT).show()
+                }
             } else if (item.id == "version" || item.id == "check_update") {
                 checkForUpdates(manual = true)
             }
@@ -3592,7 +3718,7 @@ class PlayerActivity : FragmentActivity() {
                 }
             }.onFailure {
                 if (manual) {
-                    showError("Update check failed: ${it.message}")
+                    showError(getString(R.string.tv_update_check_failed_format, it.message ?: ""))
                     hideHandler.postDelayed({ hideError() }, 2000)
                 }
             }
@@ -3600,6 +3726,9 @@ class PlayerActivity : FragmentActivity() {
     }
 
     private fun showUpdateDialog(release: GithubRelease) {
+        if (isFinishing || isDestroyed) return
+        activeUpdateDialog?.takeIf { it.isShowing }?.dismiss()
+
         // Wrap context with Material Theme to support MaterialButton in shared layout
         val contextWrapper = android.view.ContextThemeWrapper(this, com.google.android.material.R.style.Theme_MaterialComponents_DayNight_NoActionBar)
         val dialogView = LayoutInflater.from(contextWrapper).inflate(R.layout.dialog_update, null)
@@ -3637,6 +3766,15 @@ class PlayerActivity : FragmentActivity() {
             .setView(dialogView)
             .setCancelable(true)
             .create()
+        activeUpdateDialog = dialog
+
+        dialog.setOnDismissListener {
+            activeUpdateDownloadJob?.cancel()
+            activeUpdateDownloadJob = null
+            if (activeUpdateDialog === dialog) {
+                activeUpdateDialog = null
+            }
+        }
         
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
             
@@ -3663,15 +3801,33 @@ class PlayerActivity : FragmentActivity() {
             if (asset != null) {
                 downloadAndInstallApk(asset.safeDownloadUrl, asset.size) { progress ->
                     runOnUiThread {
+                        if (isFinishing || isDestroyed || !dialog.isShowing) return@runOnUiThread
                         if (progress >= 0) {
                             progressBar.progress = progress
                             progressPercent.text = "$progress%"
+                            if (progress >= 100) {
+                                isDownloading = false
+                                btnUpdate.isEnabled = true
+                                btnLater.isEnabled = true
+                                btnUpdate.alpha = 1f
+                                btnLater.alpha = 1f
+                            }
                         } else if (progress == -1) {
+                            isDownloading = false
+                            btnUpdate.isEnabled = true
+                            btnLater.isEnabled = true
+                            btnUpdate.alpha = 1f
+                            btnLater.alpha = 1f
                             dialog.dismiss()
                         }
                     }
                 }
             } else {
+                isDownloading = false
+                btnUpdate.isEnabled = true
+                btnLater.isEnabled = true
+                btnUpdate.alpha = 1f
+                btnLater.alpha = 1f
                 Toast.makeText(this, getString(R.string.apk_not_found), Toast.LENGTH_SHORT).show()
                 dialog.dismiss()
             }
@@ -3686,10 +3842,59 @@ class PlayerActivity : FragmentActivity() {
         btnUpdate.requestFocus()
     }
 
+    private fun hasZipMagicHeader(file: File): Boolean {
+        if (!file.exists() || file.length() < 4L) return false
+        return try {
+            val header = ByteArray(4)
+            val read = java.io.FileInputStream(file).use { it.read(header) }
+            read == 4 &&
+                header[0] == 0x50.toByte() &&
+                header[1] == 0x4B.toByte() &&
+                header[2] == 0x03.toByte() &&
+                header[3] == 0x04.toByte()
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun validateDownloadedApk(file: File) {
+        val pm = packageManager
+        val archiveInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            pm.getPackageArchiveInfo(
+                file.absolutePath,
+                android.content.pm.PackageManager.PackageInfoFlags.of(0)
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            pm.getPackageArchiveInfo(file.absolutePath, 0)
+        } ?: throw java.io.IOException("Corrupted APK archive")
+
+        if (archiveInfo.packageName != packageName) {
+            throw java.io.IOException("APK package mismatch (${archiveInfo.packageName})")
+        }
+
+        val currentInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            pm.getPackageInfo(
+                packageName,
+                android.content.pm.PackageManager.PackageInfoFlags.of(0)
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            pm.getPackageInfo(packageName, 0)
+        }
+        val archiveCode = androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(archiveInfo)
+        val currentCode = androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(currentInfo)
+        if (archiveCode < currentCode) {
+            throw java.io.IOException("APK version downgrade blocked ($archiveCode < $currentCode)")
+        }
+    }
+
     private fun downloadAndInstallApk(url: String, totalSize: Long = 0L, onProgress: (Int) -> Unit) {
-        lifecycleScope.launch(Dispatchers.IO) {
-            val partFile = File(cacheDir, "update.apk.part")
-            val apkFile = File(cacheDir, "update.apk")
+        activeUpdateDownloadJob?.cancel()
+        activeUpdateDownloadJob = lifecycleScope.launch(Dispatchers.IO) {
+            val otaDir = File(cacheDir, "ota").apply { mkdirs() }
+            val partFile = File(otaDir, "update.apk.part")
+            val apkFile = File(otaDir, "update.apk")
             try {
                 if (partFile.exists()) partFile.delete()
                 val request = Request.Builder().url(url).build()
@@ -3706,24 +3911,32 @@ class PlayerActivity : FragmentActivity() {
                     val responseLength = body.contentLength()
                     val expectedLength = if (responseLength > 0L) responseLength else totalSize
                     var totalBytesRead = 0L
+                    var lastEmitTimeMs = 0L
+                    var lastEmittedProgress = -1
 
                     body.byteStream().use { inputStream ->
                         FileOutputStream(partFile).use { outputStream ->
                             val buffer = ByteArray(16 * 1024)
                             var bytesRead: Int
                             while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                                kotlinx.coroutines.currentCoroutineContext().ensureActive()
                                 outputStream.write(buffer, 0, bytesRead)
                                 totalBytesRead += bytesRead
                                 if (expectedLength > 0L) {
                                     val progress = ((totalBytesRead * 100L) / expectedLength).toInt().coerceIn(0, 99)
-                                    onProgress(progress)
+                                    val nowMs = System.currentTimeMillis()
+                                    if (lastEmittedProgress < 0 || (nowMs - lastEmitTimeMs >= 250L && progress != lastEmittedProgress) || (progress == 99 && lastEmittedProgress != 99)) {
+                                        lastEmitTimeMs = nowMs
+                                        lastEmittedProgress = progress
+                                        onProgress(progress)
+                                    }
                                 }
                             }
                             outputStream.flush()
                         }
                     }
 
-                    if (totalBytesRead <= 4L || (expectedLength > 0L && totalBytesRead != expectedLength)) {
+                    if (totalBytesRead <= 4L || (expectedLength > 0L && totalBytesRead != expectedLength) || !hasZipMagicHeader(partFile)) {
                         partFile.delete()
                         withContext(Dispatchers.Main) {
                             showError(getString(R.string.download_failed))
@@ -3731,6 +3944,8 @@ class PlayerActivity : FragmentActivity() {
                         }
                         return@use
                     }
+
+                    validateDownloadedApk(partFile)
 
                     if (apkFile.exists()) apkFile.delete()
                     if (!partFile.renameTo(apkFile)) {
@@ -3749,8 +3964,9 @@ class PlayerActivity : FragmentActivity() {
                 throw e
             } catch (e: Exception) {
                 partFile.delete()
+                apkFile.delete()
                 withContext(Dispatchers.Main) { 
-                    showError(getString(R.string.download_failed) + ": ${e.message}")
+                    showError("${getString(R.string.download_failed)}: ${e.message}")
                     onProgress(-1)
                 }
             }
@@ -3779,11 +3995,15 @@ class PlayerActivity : FragmentActivity() {
                 )
                 startActivity(settingsIntent)
                 return
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 try {
                     startActivity(Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES))
                     return
-                } catch (_: Exception) {}
+                } catch (_: Exception) {
+                    pendingInstallApkFile = null
+                    showError(getString(R.string.tv_unknown_sources_unavailable))
+                    return
+                }
             }
         }
 
@@ -3831,6 +4051,14 @@ class PlayerActivity : FragmentActivity() {
     }
 
     private fun cleanupBeforeExit() {
+        activeUpdateDownloadJob?.cancel()
+        activeUpdateDownloadJob = null
+        activeUpdateDialog?.takeIf { it.isShowing }?.dismiss()
+        activeUpdateDialog = null
+
+        chatMarginAnimator?.cancel()
+        chatMarginAnimator = null
+
         exitConfirmDialog?.takeIf { it.isShowing }?.dismiss()
         exitConfirmDialog = null
 
@@ -3878,13 +4106,38 @@ class PlayerActivity : FragmentActivity() {
         }
     }
 
-    private fun switchToMobileUi() {
+    private fun performSwitchToMobileUi() {
         prefs.uiMode = AppPreferences.UI_MODE_MOBILE
         cleanupBeforeExit()
         startActivity(Intent(this, MobilePlayerActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
         })
         finish()
+    }
+
+    private fun switchToMobileUi() {
+        if (isTvDevice() && !packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_TOUCHSCREEN)) {
+            val dlg = android.app.AlertDialog.Builder(this)
+                .setTitle(getString(R.string.tv_switch_mobile_confirm_title))
+                .setMessage(getString(R.string.tv_switch_mobile_confirm_message))
+                .setNegativeButton(getString(R.string.cancel), null)
+                .setPositiveButton(getString(R.string.switch_to_mobile_ui)) { _, _ ->
+                    performSwitchToMobileUi()
+                }
+                .create()
+            dlg.show()
+            dlg.getButton(android.app.AlertDialog.BUTTON_NEGATIVE)?.apply {
+                isFocusable = true
+                isFocusableInTouchMode = false
+            }
+            dlg.getButton(android.app.AlertDialog.BUTTON_POSITIVE)?.apply {
+                isFocusable = true
+                isFocusableInTouchMode = false
+            }
+            dlg.getButton(android.app.AlertDialog.BUTTON_NEGATIVE)?.requestFocus()
+        } else {
+            performSwitchToMobileUi()
+        }
     }
 
     private fun showExitTvDialog() {
@@ -3945,8 +4198,7 @@ class PlayerActivity : FragmentActivity() {
                 hideSearchPanel()
             }
             MenuState.MATURE_WARNING -> {
-                binding.matureWarningOverlay.visibility = View.GONE
-                showChannelSidebar()
+                dismissMatureWarningAndRestoreSafeChannel()
             }
             MenuState.QUALITY -> {
                 if (prefs.animationsEnabled) {
@@ -4026,6 +4278,50 @@ class PlayerActivity : FragmentActivity() {
                     return super.onKeyDown(keyCode, event)
                 }
                 KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
+                    val activeRecycler: androidx.recyclerview.widget.RecyclerView? = when {
+                        currentState == MenuState.DRAWER && binding.drawerLanguageContent.visibility == View.VISIBLE ->
+                            binding.drawerLanguageRecyclerView
+                        currentState == MenuState.QUALITY ->
+                            binding.qualityRecyclerView
+                        else -> null
+                    }
+                    if (activeRecycler != null) {
+                        val lm = activeRecycler.layoutManager as? LinearLayoutManager
+                        val focusedChild = activeRecycler.focusedChild
+                        val totalCount = activeRecycler.adapter?.itemCount ?: 0
+                        if (lm != null && focusedChild != null && totalCount > 0) {
+                            val pos = lm.getPosition(focusedChild)
+                            if (pos >= 0) {
+                                val nextPos = if (keyCode == KeyEvent.KEYCODE_DPAD_UP) pos - 1 else pos + 1
+                                if (nextPos in 0 until totalCount) {
+                                    activeRecycler.scrollToPosition(nextPos)
+                                    activeRecycler.post {
+                                        val vh = activeRecycler.findViewHolderForAdapterPosition(nextPos)
+                                        if (vh != null) {
+                                            vh.itemView.requestFocus()
+                                        } else {
+                                            activeRecycler.postDelayed({
+                                                activeRecycler.findViewHolderForAdapterPosition(nextPos)?.itemView?.requestFocus()
+                                            }, 50)
+                                        }
+                                    }
+                                    return true
+                                } else if (activeRecycler === binding.drawerLanguageRecyclerView && keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                                    // Let FocusFinder move up to drawer back button if present
+                                    val upTarget = android.view.FocusFinder.getInstance().findNextFocus(
+                                        binding.drawerPanel, focusedChild, View.FOCUS_UP
+                                    )
+                                    if (upTarget != null) {
+                                        upTarget.requestFocus()
+                                    }
+                                    return true
+                                } else {
+                                    return true
+                                }
+                            }
+                        }
+                    }
+
                     val root = when (currentState) {
                         MenuState.DRAWER -> binding.drawerPanel
                         MenuState.LOGIN -> binding.loginPanel
@@ -4050,7 +4346,7 @@ class PlayerActivity : FragmentActivity() {
                     return super.onKeyDown(keyCode, event)
                 }
                 KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
-                    super.onKeyDown(keyCode, event)
+                    return super.onKeyDown(keyCode, event)
                 }
                 // Block all other keys (Channel switch, numbers, volume etc)
                 KeyEvent.KEYCODE_CHANNEL_UP, KeyEvent.KEYCODE_CHANNEL_DOWN,
@@ -4208,6 +4504,7 @@ class PlayerActivity : FragmentActivity() {
                 }
             }
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                if (event != null && event.repeatCount > 0) return true
                 if (currentState == MenuState.NONE) {
                     showInfoOverlay()
                     return true
@@ -4331,7 +4628,7 @@ class PlayerActivity : FragmentActivity() {
     }
 
     private fun refreshGlobalList() {
-        if (allChannels.isEmpty()) return
+        if (currentListMode == ListMode.SEARCH || allChannels.isEmpty()) return
         
         // Save the slug of the currently watched channel
         val currentSlug = allChannels.getOrNull(currentChannelIndex)?.slug
@@ -4363,6 +4660,7 @@ class PlayerActivity : FragmentActivity() {
                     // Update the list completely
                     allChannels.clear()
                     allChannels.addAll(filtered)
+                    nextCursor = data.nextCursor
                     
                     if (newIndex != -1) {
                         currentChannelIndex = newIndex
@@ -4646,6 +4944,10 @@ class PlayerActivity : FragmentActivity() {
     private fun showChat() {
         val channel = allChannels.getOrNull(currentChannelIndex) ?: return
         
+        chatMarginAnimator?.cancel()
+        chatMarginAnimator = null
+        binding.chatPanel.animate().withEndAction(null).cancel()
+
         isChatVisible = true
         
         // Make panel visible
@@ -4673,6 +4975,7 @@ class PlayerActivity : FragmentActivity() {
                 lp.marginEnd = animatedValue
                 binding.playerContainer.layoutParams = lp
             }
+            chatMarginAnimator = marginAnimator
             marginAnimator.start()
         } else {
             binding.chatPanel.translationX = 0f
@@ -4686,6 +4989,10 @@ class PlayerActivity : FragmentActivity() {
     }
     
     private fun hideChat() {
+        chatMarginAnimator?.cancel()
+        chatMarginAnimator = null
+        binding.chatPanel.animate().withEndAction(null).cancel()
+
         isChatVisible = false
         
         // Unsubscribe from chat to save data, but keep connection for channel events
@@ -4717,6 +5024,7 @@ class PlayerActivity : FragmentActivity() {
                 lp.marginEnd = animatedValue
                 binding.playerContainer.layoutParams = lp
             }
+            chatMarginAnimator = marginAnimator
             marginAnimator.start()
         } else {
             binding.chatPanel.visibility = View.GONE
@@ -4858,7 +5166,9 @@ class PlayerActivity : FragmentActivity() {
         if (isPipMode) {
             return
         }
-        ivsPlayer?.play()
+        if (currentState != MenuState.MATURE_WARNING && !isUserPaused && allChannels.getOrNull(currentChannelIndex)?.isLive == true) {
+            ivsPlayer?.play()
+        }
         startRefreshTimer()
         // Reconnect chat if it was visible
         if (isChatVisible) {
@@ -5058,8 +5368,11 @@ class PlayerActivity : FragmentActivity() {
                     categoryName = detail.livestream?.categories?.firstOrNull()?.name,
                     categorySlug = detail.livestream?.categories?.firstOrNull()?.slug,
                     language = detail.livestream?.language,
+                    isMature = detail.livestream?.isMature == true,
                     isLive = detail.livestream != null,
-                    startTimeMillis = detail.livestream?.createdAt?.let { parseIsoDate(it) }
+                    offlineBannerUrl = detail.offlineBannerImage?.src,
+                    startTimeMillis = detail.livestream?.createdAt?.let { parseIsoDate(it) },
+                    tags = detail.livestream?.tags
                 )
                 
                 currentListMode = ListMode.SEARCH
@@ -5082,9 +5395,9 @@ class PlayerActivity : FragmentActivity() {
     }
 
     private fun playMyChannel() {
-        val myUsername = prefs.username
-        if (myUsername != null) {
-            performSearch(myUsername)
+        val mySlug = prefs.userSlug?.takeIf { it.isNotBlank() } ?: prefs.username
+        if (mySlug != null) {
+            performSearch(mySlug)
         } else {
             Toast.makeText(this, getString(R.string.not_logged_in), Toast.LENGTH_SHORT).show()
         }
@@ -5163,23 +5476,28 @@ class PlayerActivity : FragmentActivity() {
     override fun onStop() {
         super.onStop()
         
-        // On TV: Always stop playback when going to background (no background audio on TV)
-        if (isTvDevice()) {
-            Log.d("PlayerActivity", "onStop: TV device - stopping playback")
+        if (!isPipMode && (isTvDevice() || !isBackgroundAudioEnabled)) {
+            Log.d("PlayerActivity", "onStop: stopping playback, timers, and chat (tv=${isTvDevice()}, bgAudio=$isBackgroundAudioEnabled)")
             ivsPlayer?.pause()
 
-            isBackgroundAudioEnabled = false
-            // Stop the service
-            stopService(Intent(this, PlaybackService::class.java))
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.cancel(NOTIFICATION_ID)
-            return
-        }
-        
-        // On mobile: Pause ONLY if not in background mode AND not in PIP
-        if (!isBackgroundAudioEnabled && !isPipMode) {
-             ivsPlayer?.pause()
+            refreshHandler.removeCallbacksAndMessages(null)
+            stopRecoveryPolling()
+            stabilityHandler.removeCallbacksAndMessages(null)
+            statsHandler.removeCallbacksAndMessages(null)
+            uptimeHandler.removeCallbacksAndMessages(null)
+            zapHandler.removeCallbacksAndMessages(null)
+            retryHandler.removeCallbacksAndMessages(null)
 
+            mockChatSource?.stop()
+            mockChatSource = null
+            chatWebSocket?.disconnect()
+
+            if (isTvDevice()) {
+                isBackgroundAudioEnabled = false
+                stopService(Intent(this, PlaybackService::class.java))
+                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                notificationManager.cancel(NOTIFICATION_ID)
+            }
         }
     }
 

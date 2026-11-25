@@ -591,7 +591,14 @@ class VodManager(
         activity.showLoading()
         lifecycleScope.launch {
             repository.getClipPlayDetails(clipId).onSuccess { response ->
-                val clipDetails = response.clip ?: return@onSuccess
+                val clipDetails = response.clip
+                if (clipDetails == null) {
+                    withContext(Dispatchers.Main) {
+                        activity.hideLoading()
+                        Toast.makeText(activity, activity.getString(R.string.clip_url_not_found), Toast.LENGTH_SHORT).show()
+                    }
+                    return@onSuccess
+                }
                 val channel = clipDetails.channel
                 
                 withContext(Dispatchers.Main) {
@@ -637,7 +644,7 @@ class VodManager(
                         channel = channel
                     )
                     
-                    playClip(clip, channelItem)
+                    playClip(clip, channelItem, preloadedDetails = clipDetails)
                 }
             }.onFailure {
                 withContext(Dispatchers.Main) {
@@ -651,7 +658,8 @@ class VodManager(
     fun playClip(
         clip: dev.xacnio.kciktv.shared.data.model.ChannelClip,
         channelData: Any?,
-        playbackRate: Float = 1.0f
+        playbackRate: Float = 1.0f,
+        preloadedDetails: dev.xacnio.kciktv.shared.data.model.ClipPlayDetails? = null
     ) {
         val channel: ChannelItem
         val fullChannel: dev.xacnio.kciktv.shared.data.model.ChannelDetailResponse?
@@ -734,63 +742,72 @@ class VodManager(
         binding.bottomNavGradient.visibility = View.GONE
         activity.isHomeScreenVisible = false
         
-        binding.videoTopBar.visibility = View.GONE
         binding.mentionsButton.visibility = View.GONE
         activity.showLoading()
         
         // Log analytics event (anonymous)
         activity.analytics.logClipView()
 
+        fun applyClipDetails(clipDetails: dev.xacnio.kciktv.shared.data.model.ClipPlayDetails?) {
+            // Load Profile Pic for Clips too
+            Glide.with(activity)
+                .asBitmap()
+                .load(channel.getEffectiveProfilePicUrl())
+                .circleCrop()
+                .into(object : CustomTarget<Bitmap>() {
+                    override fun onResourceReady(resource: Bitmap, transition: Transition<in Bitmap>?) {
+                        try {
+                            activity.currentProfileBitmap = resource
+                            binding.infoProfileImage.setImageBitmap(resource)
+                        } catch (e: Exception) {}
+                    }
+                    override fun onLoadCleared(placeholder: Drawable?) {}
+                })
+
+            val streamUrl = clipDetails?.videoUrl ?: clipDetails?.clipUrl ?: clip.url
+            if (streamUrl != null) {
+                loadDirectUrl(streamUrl, playbackRate = playbackRate)
+                binding.root.post {
+                    binding.infoChannelName.text =
+                        clipDetails?.channel?.username ?: channel.username
+                    binding.infoStreamTitle.text = clipDetails?.title ?: clip.title
+                    binding.infoCategoryName.text = clipDetails?.category?.name ?: activity.getString(R.string.category_clip)
+                    binding.viewerCount.text = activity.formatViewerCount(
+                        (clipDetails?.viewCount ?: clip.views ?: 0).toLong()
+                    )
+
+                    // Watch Full VOD Button
+                    if (clipDetails?.vod?.id != null) {
+                        setupWatchFullVodButton(clipDetails.vod.id, clipDetails.vodStartsAt ?: 0, fullChannel = fullChannel)
+                    }
+                }
+                val startedAt = clipDetails?.startedAt
+                // Use channel.id for chat history API
+                val chatroomIdValue = channel.id.toLongOrNull()
+                Log.d(TAG, "playClip: startedAt=$startedAt, chatroomId=$chatroomIdValue")
+                if (startedAt != null && chatroomIdValue != null) {
+                    startVodChatReplay(chatroomIdValue, startedAt)
+                }
+
+                // Fetch identity for clips too (subscriber badges, moderator status)
+                refreshChatIdentity(channel.slug, fullChannel)
+            } else {
+                activity.hideLoading()
+                Toast.makeText(activity, activity.getString(R.string.clip_url_not_found), Toast.LENGTH_SHORT)
+                    .show()
+            }
+        }
+
+        if (preloadedDetails != null) {
+            applyClipDetails(preloadedDetails)
+            return
+        }
+
         lifecycleScope.launch {
             repository.getClipPlayDetails(clip.id).onSuccess { response ->
                 val clipDetails = response.clip
                 withContext(Dispatchers.Main) {
-                     // Load Profile Pic for Clips too
-                     Glide.with(activity)
-                        .asBitmap()
-                        .load(channel.getEffectiveProfilePicUrl())
-                        .circleCrop()
-                        .into(object : CustomTarget<Bitmap>() {
-                            override fun onResourceReady(resource: Bitmap, transition: Transition<in Bitmap>?) {
-                                try {
-                                    activity.currentProfileBitmap = resource
-                                    binding.infoProfileImage.setImageBitmap(resource)
-                                } catch (e: Exception) {}
-                            }
-                            override fun onLoadCleared(placeholder: Drawable?) {}
-                        })
-                    
-                    val streamUrl = clipDetails?.videoUrl ?: clipDetails?.clipUrl ?: clip.url
-                    if (streamUrl != null) {
-                        loadDirectUrl(streamUrl, playbackRate = playbackRate)
-                        binding.root.post {
-                            binding.infoChannelName.text =
-                                clipDetails?.channel?.username ?: channel.username
-                            binding.infoStreamTitle.text = clipDetails?.title ?: clip.title
-                            binding.infoCategoryName.text = clipDetails?.category?.name ?: activity.getString(R.string.category_clip)
-                            binding.viewerCount.text = activity.formatViewerCount(
-                                (clipDetails?.viewCount ?: clip.views ?: 0).toLong()
-                            )
-                            
-                            // Watch Full VOD Button
-                            if (clipDetails?.vod?.id != null) {
-                                setupWatchFullVodButton(clipDetails.vod.id, clipDetails.vodStartsAt ?: 0, fullChannel = fullChannel)
-                            }
-                        }
-                        val startedAt = clipDetails?.startedAt
-                        // Use channel.id for chat history API
-                        val chatroomIdValue = channel.id.toLongOrNull()
-                        Log.d(TAG, "playClip: startedAt=$startedAt, chatroomId=$chatroomIdValue")
-                        if (startedAt != null && chatroomIdValue != null) {
-                            startVodChatReplay(chatroomIdValue, startedAt)
-                        }
-                        
-                        // Fetch identity for clips too (subscriber badges, moderator status)
-                        refreshChatIdentity(channel.slug, fullChannel)
-                    } else {
-                        Toast.makeText(activity, activity.getString(R.string.clip_url_not_found), Toast.LENGTH_SHORT)
-                            .show()
-                    }
+                    applyClipDetails(clipDetails)
                 }
             }.onFailure {
                 withContext(Dispatchers.Main) {
@@ -805,6 +822,7 @@ class VodManager(
                                 activity.formatViewerCount((clip.views ?: 0).toLong())
                         }
                     } else {
+                        activity.hideLoading()
                         Toast.makeText(activity, activity.getString(R.string.clip_url_not_found), Toast.LENGTH_SHORT)
                             .show()
                     }
@@ -924,7 +942,7 @@ class VodManager(
         }
         binding.rewindButton.visibility = View.VISIBLE
         binding.forwardButton.visibility = View.VISIBLE
-        binding.playPauseOverlay.visibility = View.VISIBLE
+        activity.overlayControlManager.showOverlay(showControls = true)
 
         vodProgressHandler.removeCallbacks(vodProgressRunnable)
         vodProgressHandler.postDelayed(vodProgressRunnable, 500)

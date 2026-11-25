@@ -45,20 +45,25 @@ object VideoCutoutScalingPolicy {
         return isFullscreen && !isTheatreMode && !isInPip && drawUnderCutoutPref
     }
 
+    fun shouldShowScaleControls(
+        isFullscreen: Boolean,
+        isTheatreMode: Boolean,
+        isInPip: Boolean,
+        isMiniPlayer: Boolean
+    ): Boolean {
+        return isFullscreen && !isTheatreMode && !isInPip && !isMiniPlayer
+    }
+
     fun resolveEffectiveScaleMode(
         isFullscreen: Boolean,
         isTheatreMode: Boolean,
         isInPip: Boolean,
         isMiniPlayer: Boolean,
-        isSideChatVisible: Boolean,
+        isSideChatVisible: Boolean = false,
         preferredMode: VideoScaleMode,
         transparentChatOverlayEnabled: Boolean = false
     ): VideoScaleMode {
-        val isDockedSideChat = ChatOverlayStyleUtils.isDockedSideChat(
-            isSideChatVisible = isSideChatVisible,
-            transparentChatOverlayEnabled = transparentChatOverlayEnabled
-        )
-        return if (isFullscreen && !isTheatreMode && !isInPip && !isMiniPlayer && !isDockedSideChat) {
+        return if (shouldShowScaleControls(isFullscreen, isTheatreMode, isInPip, isMiniPlayer)) {
             preferredMode
         } else {
             VideoScaleMode.FIT
