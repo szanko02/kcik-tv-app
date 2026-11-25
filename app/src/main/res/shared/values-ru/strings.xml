@@ -1,0 +1,1472 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- General -->
+    <string name="back_label">Назад</string>
+    <string name="arrow_sep"> → </string>
+    <string name="preview_label">Предпросмотр</string>
+    <string name="celebration_emoji">🎉</string>
+    <string name="arrow_right_symbol">➔</string>
+    <string name="dot_separator"> • </string>
+    <string name="loading">Загрузка...</string>
+    <string name="loading_channels">Загрузка каналов...</string>
+    <string name="retry">Повторить</string>
+    <string name="cancel">Отмена</string>
+    <string name="confirm">Подтвердить</string>
+    <string name="close">Закрыть</string>
+    <string name="back">Назад</string>
+    <string name="save">Сохранить</string>
+    <string name="delete">Удалить</string>
+    <string name="remove">Удалить</string>
+    <string name="yes">Да</string>
+    <string name="no">Нет</string>
+    <string name="on">Вкл.</string>
+    <string name="off">Выкл.</string>
+    <string name="unknown">Неизвестно</string>
+    <string name="gift">Подарок</string>
+    <string name="live">В ЭФИРЕ</string>
+    <string name="channel">Канал</string>
+    <string name="offline">Офлайн</string>
+    <string name="category">Категория</string>
+    <string name="email">Email</string>
+    <string name="password">Пароль</string>
+    <string name="exit">Выход</string>
+    <string name="reply">Ответить</string>
+    <string name="pause">Пауза</string>
+    <string name="play">Воспроизвести</string>
+    <string name="download">Скачать</string>
+    <string name="publish">Опубликовать</string>
+    <string name="beta">Бета</string>
+    <string name="replying_to">Ответ на %s</string>
+    <string name="language_selected_format">%s выбран</string>
+
+    <!-- Navigation -->
+    <string name="press_back_to_close">Нажмите НАЗАД, чтобы закрыть</string>
+    <string name="press_again_to_exit">Нажмите еще раз, чтобы выйти</string>
+
+    <!-- Channels -->
+    <string name="channel_name">Название канала</string>
+    <string name="following_channels_header">Отслеживаемые каналы</string>
+    <string name="offline_channels_title">Офлайн-каналы</string>
+    <string name="following_empty_state">Ни один канал еще не подписан</string>
+    <string name="category_no_streams">В настоящее время в этой категории нет трансляций</string>
+
+    <!-- Categories -->
+    <string name="cat_art">Искусство</string>
+    <string name="cat_chess">Шахматы</string>
+    <string name="cat_food_drink">Еда и напитки</string>
+    <string name="cat_slots">Слоты и казино</string>
+    <string name="cat_games_demos">Игры + Демоверсии</string>
+    <string name="cat_just_chatting">Общение</string>
+    <string name="cat_just_sleeping">Просто сон</string>
+    <string name="cat_music">Музыка</string>
+    <string name="cat_music_production">Создание музыки</string>
+    <string name="cat_pools_hot_tubs">Бассейны, гидромассажные ванны и бикини</string>
+    <string name="cat_special_events">Специальные события</string>
+    <string name="cat_sports">Спорт</string>
+    <string name="cat_video_production">Видеопроизводство</string>
+    <string name="cat_gaming">Игры</string>
+    <string name="cat_creative">Креатив</string>
+    <string name="cat_crypto_trading">Крипто и трейдинг</string>
+    <string name="cat_music_stations">Музыкальные станции</string>
+    <string name="cat_news">Новости</string>
+
+    <!-- Blocked Categories -->
+    <string name="manage_hidden_categories">Управление скрытыми категориями</string>
+    <string name="blocked_categories_subtitle">Нажмите значок рядом с категорией, чтобы отобразить ее.</string>
+    <string name="blocked_categories_empty">Скрытых категорий пока нет</string>
+    <string name="category_hidden_msg">Вы скрыли эту категорию, поэтому содержимое не отображается.</string>
+    <string name="category_hide">Скрыть</string>
+    <string name="category_hidden">Скрытый</string>
+    <string name="category_hidden_toast">Категория скрыта</string>
+    <string name="category_unhidden_toast">Категория снова отображается</string>
+    <string name="category_unblocked_toast">%s больше не скрыт</string>
+    <string name="no_blocked_categories_toast">Ни одна категория в настоящее время не скрыта</string>
+
+    <!-- Player UI -->
+    <string name="pip_label">PIP</string>
+    <string name="playback_speed_title">Скорость воспроизведения</string>
+    <string name="resolution">Разрешение</string>
+    <string name="refresh">Обновить</string>
+    <string name="stats">Статистика</string>
+    <string name="settings">Настройки</string>
+    <string name="guest">Гость</string>
+    <string name="not_logged_in">Не авторизован</string>
+    <string name="list_sorting">Сортировка списка</string>
+    <string name="stream_language">Языковые параметры</string>
+    <string name="viewers_high_to_low">Зрители (по убыв.)</string>
+    <string name="viewers_low_to_high">Зрители (по возр.)</string>
+    <string name="recommended_streams">Рекомендуемые</string>
+    <string name="my_list">ЛИЧНОЕ</string>
+    <string name="my_channel">Мой канал</string>
+    <string name="level_format">Уровень %d</string>
+    <string name="level_towards_next_format">%1$d%% к уровню %2$d</string>
+    <string name="xp_progress_format">%1$d / %2$d XP</string>
+    <string name="watch_time_hours_minutes">Просмотрено: %1$d ч %2$d мин</string>
+    <string name="watch_time_minutes">Просмотрено: %d мин</string>
+    <string name="time_to_level_up_hours_minutes">%1$d ч %2$d мин до уровня</string>
+    <string name="time_to_level_up_minutes">%d мин до уровня</string>
+    <string name="search">Поиск</string>
+    <string name="following">Подписки</string>
+    <string name="app_settings">Настройки приложения</string>
+    <string name="stream_title">Название потока</string>
+    <string name="view_and_filters">Просмотр и фильтры</string>
+    <string name="view_mode">Режим просмотра</string>
+    <string name="view_list">Список</string>
+    <string name="view_grid">Сетка</string>
+    <string name="sorting">Сортировка</string>
+    <string name="sort_title_featured">Рекомендуемые</string>
+    <string name="sort_title_viewers_desc">Самые просматриваемые</string>
+    <string name="sort_title_viewers_asc">Наименее просматриваемые</string>
+
+    <!-- Login -->
+    <string name="login_with_kick_account">Войдите под своей учетной записью Kick</string>
+    <string name="email_or_username_label">Email или логин</string>
+    <string name="email_label">Email</string>
+    <string name="password_label">Пароль</string>
+    <string name="error_invalid_credentials">Неверное имя пользователя или пароль</string>
+    <string name="login_button">Войти</string>
+    <string name="login_with_webview">Войти через WebView</string>
+    <string name="login_data_disclaimer">Ваши пользовательские данные зашифрованы и используются только для входа в систему.</string>
+    <string name="verify_2fa_title">Проверьте код 2FA</string>
+    <string name="verify_2fa_desc">Пожалуйста, введите 6-значный код подтверждения от вашего аутентификатора.</string>
+    <string name="login">Войти</string>
+    <string name="logout">Выйти</string>
+    <string name="user_default_name">Пользователь</string>
+    <string name="logged_out">Вышел из системы</string>
+    <string name="online_status">Онлайн</string>
+    <string name="login_prompt">Войдите в свою учетную запись</string>
+    <string name="logout_confirm_title">Подтверждение выхода из системы</string>
+    <string name="logout_confirm_message">Вы уверены, что хотите выйти?</string>
+    <string name="switch_account">Сменить аккаунт</string>
+    <string name="add_account">Добавить аккаунт</string>
+    <string name="account_switched">Перешёл на %s</string>
+    <string name="account_active">Активный</string>
+    <string name="login_success">Добро пожаловать, %s</string>
+    <string name="login_required_following">Войдите в аккаунт, чтобы видеть отслеживаемые каналы</string>
+    <string name="manual_login">Ручной вход</string>
+    <string name="email_hint">например: user@mail.com</string>
+    <string name="show_password">Показать пароль</string>
+    <string name="otp_code">Код подтверждения OTP</string>
+    <string name="otp_hint">6-значный код</string>
+    <string name="login_action">ВОЙТИ</string>
+    <string name="qr_login_title">Войти с помощью QR-кода</string>
+    <string name="qr_login_subtitle">Быстро войдите в систему, отсканировав с помощью телефона</string>
+    <string name="ip_not_found">IP-адрес не найден. Пожалуйста, проверьте ваше соединение.</string>
+    <string name="server_error">Не удалось запустить сервер: %s.</string>
+    <string name="login_fields_required">Требуется адрес электронной почты и пароль</string>
+    <string name="two_fa_required">Требуется код 2FA</string>
+    <string name="login_required">Вам необходимо войти в систему</string>
+    <string name="login_required_chat">Вы должны войти в систему, чтобы общаться в чате</string>
+    <string name="session_expired">Срок сеанса истек</string>
+    <string name="login_button_label">Войти</string>
+    <string name="login_success_welcome">Вход успешен! Добро пожаловать %s</string>
+    <string name="login_success_cookie">Вход успешен (Cookie)!</string>
+    <string name="twofa_required">Требуется код 2FA</string>
+    <string name="enter_6_digit_code">Пожалуйста, введите 6-значный код</string>
+    <string name="verifying">Проверка…</string>
+    <string name="logging_in">Вход в систему…</string>
+    <string name="logging_out_secure">Безопасный выход из системы…</string>
+    <string name="otp_required_title">Подтвердить код электронной почты</string>
+    <string name="otp_required_desc">Пожалуйста, введите 6-значный код, отправленный на вашу электронную почту</string>
+
+    <!-- Mature Content -->
+    <string name="mature_content_warning">Предупреждение о контенте для взрослых</string>
+    <string name="mature_content_description">Этот поток содержит контент, предназначенный для взрослой аудитории.</string>
+    <string name="im_plus_18">Мне есть 18+</string>
+
+    <!-- Settings -->
+    <string name="setting_option">Параметр настройки</string>
+    <string name="setting_language">Выбор языка</string>
+    <string name="setting_app_language">Язык приложения</string>
+    <string name="setting_app_font">Шрифт приложения</string>
+    <string name="font_default">По умолчанию</string>
+    <string name="font_section_system">Системные шрифты</string>
+    <string name="font_section_google">Google Fonts</string>
+    <string name="font_category_sans">Без засечек</string>
+    <string name="font_category_serif">С засечками</string>
+    <string name="font_category_display">Декоративные и рукописные</string>
+    <string name="font_category_mono">Моноширинный</string>
+    <string name="font_source_system">Система</string>
+    <string name="font_source_google">Google Fonts</string>
+    <string name="font_download_failed">Загрузка шрифта не удалась. Проверьте свое соединение.</string>
+    <string name="system_default">Как в системе</string>
+    <string name="setting_info_delay">Продолжительность отображения информации</string>
+    <string name="setting_transparency">Настройка прозрачности</string>
+    <string name="setting_filter">Фильтровать категории</string>
+    <string name="setting_theme">Цвет темы</string>
+    <string name="setting_zap_delay">Скорость перехода каналов</string>
+    <string name="setting_animations">Анимации</string>
+    <string name="setting_chat_animation">Анимация сообщений чата</string>
+    <string name="animation_none">Нет</string>
+    <string name="animation_fade_in">Появление</string>
+    <string name="animation_slide_left">Слайд слева</string>
+    <string name="animation_slide_right">Слайд справа</string>
+    <string name="animation_slide_bottom">Слайд снизу</string>
+    <string name="animation_scale">Увеличение</string>
+    <string name="animation_typewriter">Пишущая машинка</string>
+    <string name="animation_curtain">Занавес</string>
+    <string name="animation_flip">Переворот</string>
+    <string name="animation_rotate">Поворот</string>
+    <string name="animation_zoom_out">Отдаление</string>
+    <string name="animation_swing">Покачивание</string>
+    <string name="setting_refresh_interval">Частота обновления</string>
+    <string name="setting_update_channel">Канал обновлений</string>
+    <string name="switch_to_tv_ui">Переключиться на ТВ-интерфейс</string>
+    <string name="switch_to_mobile_ui">Переключиться на мобильный интерфейс</string>
+    <string name="setting_mobile_quality">Лимит мобильных данных</string>
+    <string name="setting_dynamic_quality">Динамическое переключение качества</string>
+    <string name="dynamic_quality_desc">Качество меняется без остановки потока. Остается в автоматическом режиме.</string>
+    <string name="setting_catch_up">Автодогон эфира</string>
+    <string name="setting_auto_update">Автоматическая проверка обновлений</string>
+    <string name="setting_auto_update_desc">Автоматическая проверка наличия новых версий при запуске</string>
+    <string name="setting_about">О приложении</string>
+    <string name="support_developer">Поддержка разработчика (Купи мне кофе)</string>
+    <string name="visit_github">Посетите GitHub</string>
+    <string name="setting_background_audio">Фоновый звук</string>
+    <string name="setting_auto_pip">Авто PIP (кнопка «Домой»)</string>
+    <string name="setting_chat_refresh_title">Частота обновления чата</string>
+    <string name="setting_whats_new">Что нового</string>
+
+    <!-- Settings Sidebar Titles -->
+    <string name="sidebar_title_language">Выбор языка</string>
+    <string name="sidebar_title_delay">Длительность инфо</string>
+    <string name="sidebar_title_transparency">Прозрачность</string>
+    <string name="sidebar_title_theme">Цвет темы</string>
+    <string name="sidebar_title_zap">Скорость переключения</string>
+    <string name="sidebar_title_refresh">Интервал обновления</string>
+    <string name="sidebar_title_update_channel">Канал обновлений</string>
+    <string name="sidebar_title_mobile_quality">Лимит мобильных данных</string>
+    <string name="sidebar_title_background_audio">Фоновый звук</string>
+    <string name="sidebar_title_auto_pip">Авто PIP</string>
+    <string name="sidebar_title_auto_update">Автоматическая проверка обновлений</string>
+    <string name="sidebar_title_catch_up">Автодогон эфира</string>
+    <string name="sidebar_title_filter_hide">Скрыть категорию</string>
+    <string name="sidebar_channels">Каналы</string>
+
+    <!-- Settings Categories -->
+    <string name="blerp_overlay">Оверлей Blerp</string>
+    <string name="settings_category_general">Общие</string>
+    <string name="settings_category_player">Плеер</string>
+    <string name="settings_category_appearance">Внешний вид</string>
+    <string name="settings_category_app">Приложение</string>
+    <string name="settings_category_third_party">Сторонние компоненты</string>
+    <string name="blerp_title">Blerp</string>
+    <string name="blerp_desc">Поддержка потоков со звуковыми мемами, эффектами и эмоциями.</string>
+    <string name="settings_player_desc">Настройки качества, фонового звука и воспроизведения</string>
+    <string name="settings_appearance_desc">Языковые и визуальные предпочтения</string>
+    <string name="settings_third_party_desc">Blerp и другие интеграции</string>
+    <string name="settings_app_desc">Обновления, информация о версии и многое другое</string>
+    <string name="settings_category_advanced">Дополнительно</string>
+    <string name="settings_category_advanced_desc">Экспериментальные функции и инструменты</string>
+    <string name="settings_kick_webview">Kick WebView</string>
+    <string name="settings_kick_webview_desc">Откройте Kick.com во внутреннем браузере (прошедшем проверку подлинности)</string>
+    <string name="settings_clear_cache">Очистить кэш</string>
+    <string name="settings_clear_cache_desc">Очистите кеш приложения и временные файлы</string>
+    <string name="settings_clear_blerp_auth">Очистить аутентификацию Blerp</string>
+    <string name="settings_clear_blerp_auth_desc">Выйдите из Blerp и очистите сохраненный сеанс.</string>
+    <string name="cache_cleared">Кэш успешно очищен</string>
+    <string name="blerp_auth_cleared">Авторизация Blerp успешно очищена</string>
+    <string name="settings_trusted_domains">Доверенные домены</string>
+    <string name="privacy_policy">Политика конфиденциальности</string>
+    <string name="settings_trusted_domains_desc">Управление доменами для предварительного просмотра ссылок</string>
+    <string name="trusted_domains_count">Доменов: %d</string>
+    <string name="trusted_domain_add_title">Добавить домен</string>
+    <string name="trusted_domain_add_hint">например reddit.com</string>
+    <string name="trusted_domain_added">Добавлен домен: %s.</string>
+    <string name="trusted_domain_removed">Домен удален: %s.</string>
+    <string name="trusted_domain_exists">Домен уже существует</string>
+    <string name="trusted_domain_invalid">Пожалуйста, введите действительный домен</string>
+    <string name="trusted_domains_reset">Сброс к настройкам по умолчанию</string>
+    <string name="trusted_domains_reset_confirm">Сбросить доверенные домены к настройкам по умолчанию?</string>
+    <string name="trusted_domains_reset_done">Доверенные домены сброшены до значений по умолчанию</string>
+    <string name="trusted_domain_remove_confirm">Удалить %s из доверенных доменов?</string>
+    <string name="add">Добавить</string>
+
+    <!-- Proxy Settings -->
+    <string name="settings_proxy">Прокси</string>
+    <string name="proxy_status_disabled">Отключено</string>
+    <string name="proxy_status_enabled">%1$s • %2$s:%3$d</string>
+    <string name="proxy_enable">Включить прокси</string>
+    <string name="proxy_enable_desc">Направляет трафик Kick.com, web.kick.com и search.kick.com через прокси-сервер, указанный ниже.</string>
+    <string name="proxy_protocol">Протокол</string>
+    <string name="proxy_protocol_socks5">SOCKS5 (рекомендуется)</string>
+    <string name="proxy_protocol_http">HTTP</string>
+    <string name="proxy_host">Хост</string>
+    <string name="proxy_host_hint">например 127.0.0.1 или proxy.example.com</string>
+    <string name="proxy_port">Порт</string>
+    <string name="proxy_port_hint">например 1080</string>
+    <string name="proxy_not_set">Не задан</string>
+    <string name="proxy_username">Имя пользователя</string>
+    <string name="proxy_username_desc">Необязательно — оставьте пустым, если не требуется.</string>
+    <string name="proxy_password">Пароль</string>
+    <string name="proxy_password_desc">Необязательно — оставьте пустым, если не требуется.</string>
+    <string name="proxy_password_set">Задан</string>
+    <string name="proxy_invalid_host">Пожалуйста, введите действительный хост</string>
+    <string name="proxy_invalid_port">Пожалуйста, введите действительный порт (1-65535)</string>
+    <string name="proxy_saved">Настройки прокси сохранены.</string>
+    <string name="proxy_test">Проверить прокси</string>
+    <string name="proxy_testing">Проверка прокси-соединения…</string>
+    <string name="proxy_test_success">Успешно! Подключено за %1$d мс</string>
+    <string name="proxy_test_failed">Не удалось: %1$s</string>
+    <string name="proxy_scope">Область действия прокси</string>
+    <string name="proxy_scope_desc">Критический режим маршрутизирует только конечные точки канала и видео, которые Kick может геоблокировать через прокси; все остальное идет напрямую. Через него проходят все вызовы API Kick.com, web.kick.com и search.kick.com.</string>
+    <string name="proxy_scope_critical">Только критические конечные точки (рекомендуется)</string>
+    <string name="proxy_scope_all">Весь трафик Kick API</string>
+
+    <!-- Settings Options -->
+    <string name="pip_automatic">Автоматический</string>
+    <string name="pip_manual">Только кнопка</string>
+    <string name="catch_up_off">Выкл.</string>
+    <string name="catch_up_low">Низкий уровень</string>
+    <string name="catch_up_high">Высокий уровень</string>
+    <string name="quality_unlimited">Безлимитный</string>
+    <string name="only_manual">Только вручную</string>
+    <string name="x_minutes">%1$d Минуты</string>
+    <string name="x_seconds">%1$d секунды</string>
+    <string name="instant_ms">Мгновенно (0 мс)</string>
+    <string name="fast_ms">Быстро (300 мс)</string>
+    <string name="normal_ms">Нормальный (700 мс)</string>
+    <string name="slow_ms">Медленно (1200 мс)</string>
+    <string name="speed_ultra_fast">Сверхбыстрый (100 мс)</string>
+    <string name="speed_fast">Быстро (по умолчанию — 200 мс)</string>
+    <string name="speed_normal">Нормальный (500 мс)</string>
+    <string name="speed_slow">Медленно (1000 мс)</string>
+
+    <!-- Theme Colors -->
+    <string name="premium_emerald">Изумрудно-зеленый</string>
+    <string name="premium_sapphire">Сапфировый синий</string>
+    <string name="premium_ruby">Рубиновый Красный</string>
+    <string name="premium_gold">Янтарное золото</string>
+    <string name="premium_violet">Аметист Фиолетовый</string>
+    <string name="premium_teal">Темно-бирюзовый</string>
+    <string name="premium_rose">Розово-розовый</string>
+    <string name="kciktv_cyan">Электрический голубой</string>
+    <string name="brand_green">Зелёный Kick</string>
+
+    <!-- Stream Status -->
+    <string name="stream_ended">Стрим офлайн</string>
+    <string name="live_stream">Прямая трансляция</string>
+    <string name="stream_offline">Стрим офлайн</string>
+    <string name="list_empty">Список пуст</string>
+    <string name="currently_live">Сейчас в эфире</string>
+    <string name="currently_offline">Сейчас офлайн</string>
+    <string name="last_stream_time">Последний стрим %s</string>
+    <string name="live_badge">В ЭФИРЕ</string>
+    <string name="offline_badge">ОФЛАЙН</string>
+
+    <!-- Stats -->
+    <string name="stats_nerd_title">Статистика видео (статистика ботаников)</string>
+    <string name="stats_resolution_label">Разрешение:</string>
+    <string name="stats_fps_label">FPS:</string>
+    <string name="stats_bitrate_label">Битрейт:</string>
+    <string name="stats_latency_label">Задержка:</string>
+    <string name="stats_buffer_label">Буфер:</string>
+    <string name="stats_dropped_frames_label">Пропущенные кадры:</string>
+    <string name="stats_playback_rate_label">Скорость воспроизведения:</string>
+    <string name="stats_player_state_label">Состояние плеера:</string>
+    <string name="stats_volume_label">Громкость:</string>
+    <string name="stat_resolution">Разрешение</string>
+    <string name="stat_bitrate">Битрейт</string>
+    <string name="stat_codec">Кодек</string>
+    <string name="stat_dropped_frames">Пропущенные кадры</string>
+    <string name="stat_decoded_frames">Декодированные кадры</string>
+    <string name="stat_rendered_frames">Рендеринг кадров</string>
+    <string name="stat_buffer_health">Состояние буфера</string>
+    <string name="stat_latency">Задержка</string>
+    <string name="stat_playback_rate">Скорость воспроизведения</string>
+    <string name="stat_ready_state">Готовность</string>
+    <string name="stat_volume">Громкость</string>
+    <string name="stat_muted">Без звука</string>
+    <string name="player_statistics">Статистика плеера</string>
+
+    <!-- Updates -->
+    <string name="stable">Стабильный</string>
+    <string name="update_available">Доступно новое обновление: %s.</string>
+    <string name="update_now">Обновить сейчас</string>
+    <string name="up_to_date">Приложение актуально</string>
+    <string name="checking_updates">Проверяем наличие обновлений...</string>
+    <string name="check_update">Проверьте наличие обновлений</string>
+    <string name="download_failed">Загрузка не удалась</string>
+    <string name="update_available_title">Доступно обновление</string>
+    <string name="update_available_msg">Доступна версия %1$s. Хотите обновить сейчас?</string>
+    <string name="downloading_percent">Загружается... %1$d%%</string>
+    <string name="later">Позже</string>
+    <string name="no_updates">Приложение актуально</string>
+    <string name="update_check_failed">Не удалось проверить наличие обновлений</string>
+    <string name="update_message">%1$s доступен. Вы хотите скачать его?</string>
+    <string name="apk_not_found">APK не найден</string>
+    <string name="whats_new">Что нового</string>
+    <string name="downloading">Загрузка…</string>
+    <string name="update_version_format">%1$s → %2$s</string>
+
+    <!-- Languages Array -->
+    <string-array name="stream_language_names">
+        <item>Турецкий</item>
+        <item>Английский</item>
+        <item>Африкаанс</item>
+        <item>Немецкий</item>
+        <item>Арабский</item>
+        <item>Албанский</item>
+        <item>Азербайджанский</item>
+        <item>Белорусский</item>
+        <item>Бенгальский</item>
+        <item>Боснийский</item>
+        <item>Болгарский</item>
+        <item>Чешский</item>
+        <item>Китайский</item>
+        <item>Датский</item>
+        <item>Индонезийский</item>
+        <item>Эсперанто</item>
+        <item>Эстонский</item>
+        <item>Фарерский</item>
+        <item>Персидский</item>
+        <item>Нидерландский</item>
+        <item>Филиппинский</item>
+        <item>Финский</item>
+        <item>Французский</item>
+        <item>Грузинский</item>
+        <item>Гавайский</item>
+        <item>Хорватский</item>
+        <item>Хинди</item>
+        <item>Иврит</item>
+        <item>Интерлингва</item>
+        <item>Испанский</item>
+        <item>Шведский</item>
+        <item>Итальянский</item>
+        <item>Японский</item>
+        <item>Каталанский</item>
+        <item>Корейский</item>
+        <item>Латынь</item>
+        <item>Польский</item>
+        <item>Латышский</item>
+        <item>Литовский</item>
+        <item>Венгерский</item>
+        <item>Македонский</item>
+        <item>Малаялам</item>
+        <item>Малайский</item>
+        <item>Монгольский</item>
+        <item>Норвежский</item>
+        <item>Норвежский букмол</item>
+        <item>Португальский</item>
+        <item>Румынский</item>
+        <item>Молдавский</item>
+        <item>Русский</item>
+        <item>Сербский</item>
+        <item>Словацкий</item>
+        <item>Словенский</item>
+        <item>Сомалийский</item>
+        <item>Сунданский</item>
+        <item>Татарский</item>
+        <item>Тайский</item>
+        <item>Украинский</item>
+        <item>Урду</item>
+        <item>Вьетнамский</item>
+        <item>Греческий</item>
+        <item>Зулу</item>
+    </string-array>
+    <string name="app_version_label">Версия: %s</string>
+
+    <!-- Quality -->
+    <string name="format_fit">По размеру экрана</string>
+    <string name="load_more">ЗАГРУЗИТЬ ЕЩЕ...</string>
+    <string name="auto">АВТО</string>
+    <string name="quality_selection">Качество</string>
+    <string name="auto_quality">Авто</string>
+    <string name="quality_loading">Загрузка</string>
+    <string name="quality_auto">Авто</string>
+    <string name="quality_auto_description">Лучшее качество для вашего соединения</string>
+    <string name="quality_audio_only">Только аудио</string>
+    <string name="quality_audio_only_synthetic">Буду играть с %dp</string>
+    <string name="auto_quality_with_limit">Авто (%dp)</string>
+    <string name="speed_normal_1x">Нормальный (1x)</string>
+    <string name="speed_x_format">%sx</string>
+
+    <!-- Connection & Errors -->
+    <string name="connection_failed">Соединение не может быть установлено</string>
+    <string name="stream_error_retrying">Ошибка потока, повторная попытка %1$d/%2$d</string>
+    <string name="channel_not_found">Канал не найден: %1$s</string>
+    <string name="channels_load_failed">Не удалось загрузить каналы.</string>
+    <string name="category_load_failed">Не удалось загрузить категорию</string>
+    <string name="data_load_failed">Не удалось загрузить данные</string>
+    <string name="categories_load_failed">Не удалось загрузить категории.</string>
+    <string name="channel_load_failed">Не удалось загрузить канал: %s.</string>
+    <string name="history_load_failed">Не удалось загрузить историю</string>
+    <string name="history_load_failed_web">Не удалось загрузить историю (Интернет)</string>
+    <string name="error_occurred">Произошла ошибка</string>
+    <string name="error_format">Ошибка: %s</string>
+    <string name="error_view_details">Посмотреть детали</string>
+    <string name="link_open_failed">Не удалось открыть ссылку</string>
+    <string name="video_load_failed">Видео не удалось загрузить</string>
+    <string name="error_open_link">Ошибка открытия ссылки</string>
+    <string name="error_loading_clip">Ошибка загрузки клипа: %s.</string>
+    <string name="failed_to_load_streams">Не удалось загрузить потоки.</string>
+    <string name="failed_to_load_clips">Не удалось загрузить клипы.</string>
+    <string name="clip_url_missing">URL клипа отсутствует</string>
+
+    <!-- Search -->
+    <string name="search_channel_hint">Введите название канала (например: xqc)</string>
+    <string name="search_no_result">Канал не найден</string>
+    <string name="search_channels">Поиск каналов...</string>
+    <string name="recent_searches">Недавние поиски</string>
+    <string name="clear_all">Очистить все</string>
+    <string name="no_results_found">Результаты не найдены</string>
+    <string name="search_categories_hint">Категории поиска...</string>
+    <string name="tag_format">Тег: #%s</string>
+    <string name="type_channel">Канал</string>
+    <string name="type_category">Категория</string>
+    <string name="type_tag">Тег</string>
+
+    <!-- Mobile UI -->
+    <string name="send_message">Отправить сообщение...</string>
+    <string name="no_messages">Сообщений пока нет</string>
+
+    <!-- Chat Errors -->
+    <string name="chat_system_username">СИСТЕМА</string>
+    <string name="chat_error_subscribers_only">Чат только для подписчиков.</string>
+    <string name="chat_error_followers_only">Чат только для фолловеров.</string>
+    <string name="chat_error_slow_mode">Медленный режим активен. Пожалуйста, подождите.</string>
+    <string name="chat_error_banned">Вас забанили на этом канале.</string>
+    <string name="chat_error_message_too_long">Сообщение слишком длинное.</string>
+    <string name="chat_error_duplicate_message">Вы не можете отправить одно и то же сообщение еще раз.</string>
+    <string name="chat_error_generic">Не удалось отправить сообщение: %s.</string>
+    <string name="chat_error_timeout">Время подключения истекло. Пожалуйста, проверьте свой Интернет.</string>
+
+    <!-- Audio Modes -->
+    <string name="audio_mode_custom_eq">Пользовательский эквалайзер и шумоподавление</string>
+
+    <!-- Chat Hints -->
+    <string name="chat_hint_subscribers_only">Подписчики только в чате</string>
+    <string name="chat_hint_followers_only">Чат только для фолловеров</string>
+    <string name="chat_hint_emotes_only">Только смайлы...</string>
+    <string name="chat_hint_default">Отправить сообщение...</string>
+    <string name="chat_hint_follower_min_duration">Только подписчик (%d мин.)</string>
+    <string name="chat_hint_follower_remaining">Осталось %d мин до доступа к чату</string>
+    <string name="chat_hint_login_required">Войдите в чат</string>
+    <string name="chat_preview_message">Привет, мир!</string>
+
+    <!-- Chat Status -->
+    <string name="chat_status_slow_mode_on">Медленный режим активирован</string>
+    <string name="chat_status_slow_mode_on_duration">Активирован медленный режим. (%1$s)</string>
+    <string name="chat_status_slow_mode_on_by">Медленный режим активирован &lt;b&gt;%1$s&lt;/b&gt;.</string>
+    <string name="chat_status_slow_mode_off">Медленный режим отключен.</string>
+    <string name="chat_status_slow_mode_off_by">Медленный режим отключен &lt;b&gt;%1$s&lt;/b&gt;</string>
+    <string name="chat_status_subscribers_mode_on">Режим только для подписчиков активирован</string>
+    <string name="chat_status_subscribers_mode_on_by">Режим только для подписчиков, активированный &lt;b&gt;%1$s&lt;/b&gt;</string>
+    <string name="chat_status_subscribers_mode_off">Режим только для подписчиков отключен</string>
+    <string name="chat_status_subscribers_mode_off_by">Режим только для подписчиков деактивирован &lt;b&gt;%1$s&lt;/b&gt;</string>
+    <string name="chat_status_emotes_mode_on">Включён режим только смайлов</string>
+    <string name="chat_status_emotes_mode_on_by">Режим только смайлов включил &lt;b&gt;%1$s&lt;/b&gt;</string>
+    <string name="chat_status_emotes_mode_off">Режим только смайлов отключён</string>
+    <string name="chat_status_emotes_mode_off_by">Режим только смайлов отключил &lt;b&gt;%1$s&lt;/b&gt;</string>
+    <string name="chat_status_followers_mode_on">Включён режим только для фолловеров</string>
+    <string name="chat_status_followers_mode_on_by">Режим только для фолловеров включил &lt;b&gt;%1$s&lt;/b&gt;</string>
+    <string name="chat_status_followers_mode_off">Режим только для фолловеров отключён</string>
+    <string name="chat_status_followers_mode_off_by">Режим только для фолловеров отключил &lt;b&gt;%1$s&lt;/b&gt;</string>
+
+    <!-- Chat User Events -->
+    <string name="chat_user_banned">Для пользователя &lt;b&gt;%1$s&lt;/b&gt; &lt;b&gt;%2$s&lt;/b&gt; истекло время ожидания для %3$s.</string>
+    <string name="chat_user_banned_permanently">Пользователь &lt;b&gt;%1$s&lt;/b&gt; был заблокирован пользователем &lt;b&gt;%2$s&lt;/b&gt; навсегда.</string>
+    <string name="chat_user_unbanned">Пользователь &lt;b&gt;%1$s&lt;/b&gt; был разбанен пользователем &lt;b&gt;%2$s&lt;/b&gt;.</string>
+    <string name="pinned_by_format">Закрепил: %s</string>
+
+    <!-- Duration -->
+    <string name="duration_days">%1$d дней</string>
+    <string name="duration_hours">%1$d часов</string>
+    <string name="duration_minutes">%1$d минут</string>
+    <string name="duration_seconds">%1$d секунд</string>
+    <string name="duration_months">%1$d месяцев</string>
+
+    <!-- Emotes -->
+    <string name="emote_available_only_for_subscribers">Этот смайлик доступен только подписчикам</string>
+    <string name="emote_category_subscribers">Смайлы подписчиков</string>
+    <string name="emote_section_subscribers_only">Только для подписчиков</string>
+    <string name="emote_subscriber_only_suffix"> (Только для подписчиков)</string>
+
+    <!-- Moderation Errors -->
+    <string name="error_cannot_ban_moderator">Вы не можете забанить модератора</string>
+    <string name="error_moderation_failed">Модерация не удалась</string>
+    <string name="error_moderation_failed_reason">Не удалось выполнить модерацию: %s</string>
+    <string name="error_user_not_exists">Пользователь не существует</string>
+    <string name="error_cannot_ban_owner">Вы не можете забанить владельца канала</string>
+
+    <!-- Activity Feed -->
+    <string name="activity_feed_title">Лента активности</string>
+    <string name="activity_feed_followed">только что подписался на канал</string>
+    <string name="activity_feed_unfollowed">отписался от канала</string>
+    <string name="activity_feed_subscribed">Подписался!</string>
+    <string name="activity_feed_resubscribed">Переподписался!</string>
+    <string name="activity_feed_gifted_sub">Подарил подписку!</string>
+    <string name="activity_feed_redeemed">активировал награду</string>
+    <string name="activity_feed_months">они подписаны на %d месяц</string>
+    <string name="activity_feed_months_plural">они подписаны на %d месяцев</string>
+    <string name="activity_feed_celebrates">празднует %d мес. подписки!</string>
+    <string name="activity_feed_celebrates_plural">празднует %d мес. подписки!</string>
+    <string name="activity_feed_empty">Нет недавней активности</string>
+    <string name="activity_feed_load_error">Не удалось загрузить активность.</string>
+    <!-- Activity Feed Filters -->
+    <string name="activity_filter_all">Все</string>
+    <string name="activity_filter_followers">Фолловеры</string>
+    <string name="activity_filter_unfollowers">Отписавшиеся</string>
+    <string name="activity_filter_subscribers">Подписчики</string>
+    <string name="activity_filter_gifted_subs">Подаренные подписки</string>
+    <string name="activity_filter_hosts">Хосты</string>
+    <string name="activity_filter_rewards">Награды</string>
+    <string name="activity_filter_follower_goals">Цели подписчиков</string>
+    <string name="activity_filter_subscriber_goals">Цели подписчика</string>
+    <string name="activity_filter_channel_engagement">Вовлеченность канала</string>
+
+    <!-- Mod Log -->
+    <string name="mod_log_title">Действия модератора</string>
+    <string name="mod_log_empty">Нет недавних действий</string>
+    <string name="mod_log_load_error">Не удалось загрузить действия.</string>
+    <string name="mod_log_filter_banned_words">Запрещенные слова</string>
+    <string name="mod_log_filter_bans_unbans">Баны и разбаны</string>
+    <string name="mod_log_filter_category">Изменение категории</string>
+    <string name="mod_log_filter_chat_mode">Изменения режима чата</string>
+    <string name="mod_log_filter_language">Изменение языка</string>
+    <string name="mod_log_filter_mature">Изменение режима для взрослых</string>
+    <string name="mod_log_filter_deleted">Удаленные сообщения</string>
+    <string name="mod_log_filter_pin_unpin">Закрепить и открепить сообщения</string>
+    <string name="mod_log_filter_polls">Опросы</string>
+    <string name="mod_log_filter_title">Изменение названия</string>
+    <string name="mod_log_filter_timeouts">Пользовательские таймауты</string>
+    <string name="mod_log_banned">забанен</string>
+    <string name="mod_log_banned_by">забанен модератором</string>
+    <string name="mod_log_unbanned">разбанен</string>
+    <string name="mod_log_unbanned_by">разбанен</string>
+    <string name="mod_log_timed_out">отстранён (тайм-аут)</string>
+    <string name="mod_log_timeout_removed">удален таймаут для</string>
+    <string name="mod_log_pinned">закрепил сообщение</string>
+    <string name="mod_log_unpinned">открепил сообщение</string>
+    <string name="mod_log_deleted">удалил сообщение</string>
+    <string name="mod_log_word_added">добавил запрещенное слово</string>
+    <string name="mod_log_word_removed">удалил запрещенное слово</string>
+    <string name="mod_log_created_poll">создал опрос</string>
+    <string name="mod_log_ended_poll">закончил опрос</string>
+    <string name="mod_log_cancelled_poll">отменил опрос</string>
+    <string name="mod_log_changed_category">изменил категорию</string>
+    <string name="mod_log_changed_title">обновил заголовок</string>
+    <string name="mod_log_changed_mode">изменен режим чата</string>
+    <string name="mod_log_changed_language">изменил язык</string>
+    <string name="mod_log_changed_mature">изменен режим для взрослых</string>
+
+    <!-- API Errors -->
+    <string name="error_server_unavailable">Sunucu не работает (%1$d). Текрар денейин.</string>
+    <string name="error_network_unavailable">Багланты хатасы. Текрар денейин.</string>
+
+    <!-- Moderator Actions -->
+    <string name="mod_actions_title">Действия канала</string>
+    <string name="mod_slow_mode">Медленный режим</string>
+    <string name="mod_followers_only">Чат только для фолловеров</string>
+    <string name="mod_subscribers_only">Чат только для подписчиков</string>
+    <string name="mod_emotes_only">Только смайлы</string>
+    <string name="mod_settings_updated">Настройки чата обновлены</string>
+    <string name="mod_settings_update_failed">Не удалось обновить настройки чата.</string>
+    <string name="mod_preset_options">Быстрый выбор</string>
+    <string name="mod_custom_duration">Своя длительность</string>
+    <string name="mod_slow_mode_title">Продолжительность медленного режима</string>
+    <string name="mod_followers_mode_title">Минимальное время отслеживания</string>
+    <string name="mod_unit_seconds">Секунды</string>
+    <string name="mod_unit_minutes">Минуты</string>
+    <string name="mod_unit_hours">Часы</string>
+    <string name="mod_unit_days">Дни</string>
+    <string name="mod_duration_format_seconds">%d сек.</string>
+    <string name="mod_duration_format_minutes">%d мин.</string>
+    <string name="mod_duration_format_hours">%d час</string>
+    <string name="mod_duration_format_days">%d день</string>
+    <string name="mod_followers_any">Любой подписчик</string>
+    <string name="mod_error_slow_mode_limit">Продолжительность медленного режима должна составлять от 1 до 300 секунд.</string>
+    <string name="mod_error_followers_limit">Превышен лимит продолжительности подписчиков (максимум 1 год).</string>
+    <string name="mod_error_invalid_input">Пожалуйста, введите действительный номер.</string>
+    <string name="mod_stream_title">Название трансляции</string>
+    <string name="mod_category">Категория трансляции</string>
+    <string name="mod_search_category">Категория поиска</string>
+    <string name="mod_error_metadata_offline">Только владелец может изменять метаданные в автономном режиме.</string>
+    <string name="mod_mature_content">Контент для взрослых (+18)</string>
+    <string name="mod_timeout_success">Время ожидания пользователя для %s истекло</string>
+    <string name="mod_unban_success">Пользователь разбанен</string>
+    <string name="mod_unban_failed">Не удалось разблокировать пользователя</string>
+    <string name="mod_ban_success">Пользователь %s забанен</string>
+    <string name="mod_ban_confirm_title">Забанить</string>
+    <string name="mod_ban_confirm_msg">Вы уверены, что хотите навсегда забанить %s?</string>
+    <string name="mod_pin_confirm_title">Закрепить сообщение</string>
+    <string name="mod_pin_confirm_msg">Вы уверены, что хотите закрепить это сообщение?</string>
+    <string name="mod_delete_success">Сообщение удалено</string>
+    <string name="mod_view_title">Действия модератора</string>
+    <string name="mod_create_poll">Создать опрос</string>
+    <string name="mod_edit_stream_title">Изменить информацию о потоке</string>
+    <string name="duration_picker_title">Выберите продолжительность</string>
+
+    <!-- Chat Overlays -->
+    <string name="chat_banned_overlay">Вы забанены на этом канале!</string>
+    <string name="chat_timed_out_overlay">У вас истекло время на этом канале!</string>
+    <string name="chat_timeout_remaining_format">Время истекло. (Осталось: %s)</string>
+
+    <!-- Chat Clear -->
+    <string name="chat_cleared">Чат очищен</string>
+    <string name="chat_restore_messages">Восстановить %d сообщ.</string>
+    <string name="chat_background_divider">Фоновые сообщения</string>
+    <string name="chat_background_messages_start">Фоновые сообщения — Старт</string>
+    <string name="chat_background_messages_end">Фоновые сообщения — конец</string>
+    <string name="chat_resumed">Чат возобновлен</string>
+    <string name="chat_load_missed_messages">Загрузить пропущенные сообщения</string>
+    <string name="chat_load_missed_messages_more">Загрузить пропущенные сообщения (подробнее)</string>
+    <string name="chat_paused_battery_saver">Чат приостановлен (экономия заряда батареи)</string>
+
+    <!-- Ban Status -->
+    <string name="ban_permanent">Постоянный бан</string>
+    <string name="ban_timeout">Тайм-аут</string>
+    <string name="ban_remaining_format">Осталось: %s</string>
+    <string name="ban_banned_by_format">Забанен: %s</string>
+    <string name="ban_reason_format">Причина: %s</string>
+    <string name="ban_date_format">Дата: %s</string>
+    <string name="ban_label_caps">БАН</string>
+    <string name="banned_users">Забаненные пользователи</string>
+    <string name="no_banned_users">Забаненных пользователей не обнаружено</string>
+
+    <!-- User Actions -->
+    <string name="action_watch_stream">Смотреть трансляцию</string>
+    <string name="action_go_to_chat">Перейти в чат</string>
+    <string name="action_share_channel">Поделиться каналом</string>
+    <string name="save_video">Сохранить видео</string>
+    <string name="send_action">Отправить</string>
+    <string name="clear_action">Очистить</string>
+    <string name="hide_action">Скрыть</string>
+    <string name="action_unban">Разбанить</string>
+    <string name="action_reply">Ответить</string>
+    <string name="action_mention">Упоминание</string>
+    <string name="action_pin">Закрепить сообщение</string>
+    <string name="action_user_info">Действия пользователя</string>
+    <string name="action_timeout">Тайм-аут</string>
+    <string name="action_delete">Удалить</string>
+    <string name="action_ban_with_label">Забанить</string>
+    <string name="action_delete_message">Удалить сообщение</string>
+    <string name="action_follow">Отслеживать</string>
+    <string name="action_load_all">Загрузить все</string>
+    <string name="action_redeem">Получить</string>
+    <string name="action_previous">Предыдущий</string>
+    <string name="action_next">Далее</string>
+
+    <!-- Timeout Durations -->
+    <string name="timeout_1m">1 мин.</string>
+    <string name="timeout_5m">5 минут</string>
+    <string name="timeout_1h">1 час</string>
+    <string name="timeout_1d">1 день</string>
+    <string name="timeout_1w">1 неделя</string>
+
+    <!-- User Info -->
+    <string name="user_history_session">История сообщений (сеанс)</string>
+    <string name="user_history_empty">Сообщений пока нет</string>
+    <string name="follow_date_format">Отслеживает с: %s</string>
+    <string name="date_format_label">Дата: %s</string>
+    <string name="sub_duration_format">Подписался: %s</string>
+    <string name="subscription_months_format">Подписка: %d Месяцы</string>
+    <string name="user_banned_success">Пользователь заблокирован</string>
+    <string name="user_unbanned_success">Запрет снят</string>
+    <string name="anonymous_user">Анонимный</string>
+
+    <!-- Chat UI -->
+    <string name="chat_login_prompt_prefix">Пообщаться </string>
+    <string name="auto_scroll">Автоматическая прокрутка</string>
+    <string name="chat_jump_to_bottom">Вниз</string>
+    <string name="chat_new_messages_count">%s Новые сообщения ↓</string>
+    <string name="chat_replying_to">Отвечаю на: %s</string>
+    <string name="message_copied">Сообщение скопировано</string>
+    <string name="delete_message_confirm_msg">Вы уверены, что хотите удалить это сообщение?</string>
+    <string name="login_to_chat">Войдите в чат</string>
+    <string name="slow_mode_active">Медленный режим: %d с</string>
+    <string name="slow_mode_exempt">Медленный режим: %d с (без ограничений)</string>
+    <string name="subscribers_only_mode">Только подписчики</string>
+    <string name="followers_only_mode">Только фолловеры</string>
+    <string name="followers_only_mode_min">Только фолловеры (%d мин+)</string>
+    <string name="emotes_only_mode">Только смайлы</string>
+    <string name="unknown_command">Неизвестная команда: /%s</string>
+    <string name="command_failed">Команда не выполнена</string>
+    <string name="chat_only_live_msg">Чат активен только во время прямой трансляции</string>
+
+    <!-- Chat Settings -->
+    <string name="chat_setting_highlighted">Выделенные сообщения</string>
+    <string name="chat_setting_highlights">Основные моменты</string>
+    <string name="chat_setting_own_messages">Собственные сообщения</string>
+    <string name="chat_setting_mod_messages">Сообщения модератора</string>
+    <string name="chat_setting_vip_messages">VIP-сообщения</string>
+    <string name="chat_setting_og_messages">Сообщения OG</string>
+    <string name="chat_setting_name_color">Использовать цвет имени</string>
+    <string name="chat_setting_highlight_background">Выделить в качестве фона</string>
+    <string name="chat_settings_title">Настройки чата</string>
+    <string name="chat_identity_title">Идентификация чата</string>
+    <string name="chat_appearance_title">Внешний вид чата</string>
+    <string name="chat_rules_title">Правила чата</string>
+    <string name="chat_identity_preview">Предпросмотр</string>
+    <string name="chat_identity_badges_section">Значки</string>
+    <string name="chat_identity_badges_max">Можно показать максимум 4 значка.</string>
+    <string name="chat_identity_global_badges">Глобальные значки: видны на всех каналах.</string>
+    <string name="chat_identity_channel_badges">Значки канала: видны на канале стримера</string>
+    <string name="chat_identity_no_badges">Нет доступных значков</string>
+    <string name="chat_identity_badges">Значки</string>
+    <string name="chat_identity_color">Цвет имени</string>
+    <string name="chat_identity_random_color">Рандомизировать цвет после отправки</string>
+    <string name="chat_identity_random_color_subtitle">Автоматически переключается на другой цвет каждый раз, когда вы отправляете сообщение</string>
+    <string name="chat_font_size">Размер шрифта</string>
+    <string name="chat_emote_size">Размер смайлов</string>
+    <string name="chat_section_sizes">Размеры</string>
+    <string name="chat_section_features">Функции</string>
+    <string name="chat_section_advanced">Дополнительно</string>
+    <string name="chat_timestamps">Временные метки</string>
+    <string name="chat_seconds">Включить секунды</string>
+    <string name="show_pinned_gifts">Закрепленные подарки</string>
+    <string name="chat_low_battery_mode">Экономия заряда батареи</string>
+    <string name="chat_emote_combo">Комбо смайлов</string>
+    <string name="chat_settings_vibrate_on_mention">Вибрация при упоминании</string>
+    <string name="chat_settings_sound_on_mention">Звук при упоминании</string>
+    <string name="chat_settings_notify_on_mention">Отправить уведомление</string>
+    <string name="notif_mention_title">%1$s упомянул тебя</string>
+    <string name="notif_reply_title">%1$s ответил вам</string>
+    <string name="notif_reply_original">↩ Вы: %1$s</string>
+    <string name="notif_mentions_channel">Упоминания</string>
+    <string name="notif_mentions_channel_desc">Оповещения, когда вас упомянули или вам ответили</string>
+    <string name="notif_chat_connected">Чат подключен</string>
+    <string name="chat_settings_floating_emotes">Плавающие смайлы</string>
+    <string name="chat_settings_nick_detection">Распознавание ника</string>
+    <string name="chat_settings_nick_detection_subtitle">Оповещение, когда ваше имя появляется без @</string>
+
+    <!-- Chat Connection -->
+    <string name="chat_low_battery_paused">Фоновый режим активен. Чат приостановлен (экономия заряда батареи)</string>
+    <string name="chat_battery_saver_subtitle">Ограничивает качество до 720p, уменьшает анимацию, замедляет таймеры и пинг.</string>
+
+    <!-- Battery saver: per-surface animation settings -->
+    <string name="battery_saver_settings">Экономия заряда батареи</string>
+    <string name="battery_saver_settings_subtitle">Анимация переключается для экономии заряда батареи и процессора</string>
+    <string name="battery_animations_header">Анимации</string>
+    <string name="battery_animated_badges">Анимированные значки подписчиков</string>
+    <string name="battery_animated_chat_emotes">Анимированные смайлы (чат)</string>
+    <string name="battery_chat_emote_fps">Частота кадров смайлов (FPS)</string>
+    <string name="battery_animated_quick_panel">Анимированные смайлы (быстрая панель)</string>
+    <string name="battery_general_header">Общие</string>
+    <string name="battery_chat_refresh_rate">Частота обновления чата (мс)</string>
+    <string name="battery_refresh_locked_by_slow_timers">1500 мс заблокировано, пока включена функция «Замедлить чат».</string>
+    <string name="battery_effects_header">Эффекты экономии заряда батареи</string>
+    <string name="battery_effect_limit_quality">Ограничьте качество до 720p.</string>
+    <string name="battery_effect_slow_timers">Замедлить чат/пинг/таймеры</string>
+    <string name="battery_effect_disable_shimmer">Отключить анимацию загрузки</string>
+    <string name="battery_effect_pause_chat_pip">Пауза чата в мини-плеере / PiP</string>
+
+    <!-- Chat appearance subtitles -->
+    <string name="chat_timestamps_subtitle">Показывать время отправки рядом с каждым сообщением</string>
+    <string name="chat_pinned_gifts_subtitle">Закрепите баннеры с подарками вверху чата</string>
+    <string name="chat_emote_combo_subtitle">Подсвечивать серию одинаковых смайлов подряд</string>
+    <string name="chat_floating_emotes_subtitle">Анимированные смайлы пролетают по экрану</string>
+    <string name="chat_setting_highlighted_subtitle">Выбирайте, какие сообщения выделяются визуально</string>
+    <string name="chat_anim_subtitle">Анимация входа для новых сообщений</string>
+
+    <!-- Chat Rules -->
+    <string name="chat_rules_not_found">Для этого канала не найдены правила чата.</string>
+    <string name="chat_rules_load_error">Произошла ошибка при загрузке правил.</string>
+    <string name="chat_rules_close">Закрыть</string>
+    <string name="chat_rules_agree">Я согласен</string>
+
+    <!-- Gifted Subs -->
+    <string name="gift_message_hint">Напишите сообщение о подарке</string>
+    <string name="chat_gifted_subs_plural">%1$s подарил сообществу подписки на %2$d! Всего на этом канале они подарили подписки %3$d.</string>
+    <string name="chat_gifted_sub_single">%1$s подарил подписку сообществу! Всего подарено подписок на этом канале: %2$d.</string>
+    <string name="chat_gifted_sub_individual">%1$s подарил подписку %2$s!</string>
+    <!-- Stream host -->
+    <string name="chat_stream_hosted">&lt;b&gt;%1$s&lt;/b&gt; хостит стрим с %2$d зрителями!</string>
+    <string name="chat_stream_hosted_no_count">&lt;b&gt;%1$s&lt;/b&gt; хостит стрим!</string>
+    <!-- Subscription -->
+    <string name="chat_subscribed_new">&lt;b&gt;%1$s&lt;/b&gt; только что подписался!</string>
+    <string name="chat_subscribed_resub">&lt;b&gt;%1$s&lt;/b&gt; повторно подписался на %2$d месяцев!</string>
+    <string name="chat_celebration_sub_renew_title">празднует продление подписки!</string>
+    <string name="chat_celebration_generic_title">празднует!</string>
+    <string name="chat_celebration_sub_renew_duration">Общий срок подписки: %d месяцев!</string>
+    <string name="celebration_banner_sub_renew_title">Вы празднуете продление подписки!</string>
+    <string name="celebration_banner_sub_renew_duration">Вы подписаны на %d месяцев!</string>
+    <string name="celebration_action_celebrate">Поделиться</string>
+    <string name="celebration_action_dismiss">Скрыть</string>
+    <string name="celebration_context_title">Поделиться юбилеем подписки</string>
+    <string name="celebration_context_info_sub">Сообщите, что вы подписались на %1$s на %2$d месяцев.</string>
+
+    <!-- Mentions -->
+    <string name="mentions_title">Упоминания</string>
+    <string name="mentions_empty">Пока нет упоминаний</string>
+    <string name="mentions_count_format">%d сообщ.</string>
+    <string name="mentions_clear_confirm_title">Удалить все упоминания?</string>
+    <string name="mentions_clear_confirm_msg">Это приведет к безвозвратному удалению всей истории упоминаний этого канала.</string>
+    <string name="go_to_message">Перейти к сообщению</string>
+    <string name="time_ago_just_now">только что</string>
+    <string name="time_ago_minutes">%d мин назад</string>
+    <string name="time_ago_hours">%d часов назад</string>
+    <string name="error_generic">Что-то пошло не так</string>
+
+    <!-- Reward Queue (Moderator) -->
+    <string name="reward_queue_title">Очередь запроса вознаграждения</string>
+    <string name="reward_queue_all">Все награды</string>
+    <string name="reward_queue_empty">Нет ожидающих запросов</string>
+    <string name="reward_queue_complete">Завершить</string>
+    <string name="reward_queue_reject">Отклонить</string>
+    <string name="reward_queue_complete_all">Завершить все</string>
+    <string name="reward_queue_reject_all">Отклонить все</string>
+    <string name="reward_queue_action_failed">Не удалось выполнить действие. Повторите попытку.</string>
+    <string name="reward_queue_just_now">только что</string>
+    <string name="reward_queue_select_all">Выбрать все</string>
+    <string name="reward_queue_complete_selected">Завершить выбранное</string>
+    <string name="reward_queue_reject_selected">Отклонить выбранное</string>
+    <string name="reward_queue_pause_redemptions">Приостановить награды</string>
+    <string name="reward_queue_paused_badge">на паузе</string>
+
+    <!-- Mod Emote Channels -->
+    <string name="mod_emote_channels_title">Эмоуты мод-каналов</string>
+    <string name="mod_emote_channels_search_hint">Поиск каналов…</string>
+
+    <!-- Background Audio -->
+    <string name="background_audio_active">Режим фонового звука активен</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">Главная</string>
+    <string name="nav_browse">Обзор</string>
+    <string name="nav_following">Подписки</string>
+    <string name="nav_search">Поиск</string>
+
+    <!-- Home Screen -->
+    <string name="home_featured_title">Каналы в эфире</string>
+    <string name="home_top_categories_title">Популярные категории</string>
+    <string name="home_following_title">Каналы, на которые вы подписаны</string>
+    <string name="home_popular_clips_title">Популярные клипы</string>
+    <string name="featured_watch_now_cta">Смотреть сейчас</string>
+    <string name="featured_no_live">Сейчас нет прямых трансляций</string>
+    <string name="chat_title">Онлайн-чат</string>
+
+    <!-- PIP and Notifications -->
+    <string name="pip_action_return_to_live">Вернуться в эфир</string>
+    <string name="pip_action_mute">Без звука</string>
+    <string name="pip_action_unmute">Включить звук</string>
+    <string name="pip_action_audio_only">Только аудио</string>
+    <string name="pip_action_audio_only_desc">Фоновое воспроизведение аудио</string>
+    <string name="notification_action_close">Закрыть</string>
+
+    <!-- Loading States -->
+    <string name="history_loading">Загрузка...</string>
+    <string name="history_all_loaded">Все загружено</string>
+
+    <!-- Action Feedback -->
+    <string name="vote_failed">Голосование не удалось: %s</string>
+    <string name="operation_failed">Операция не удалась: %s</string>
+    <string name="login_failed_code">Ошибка входа в систему (%d)</string>
+    <string name="operation_failed_code">Операция не удалась (Код: %d)</string>
+    <string name="follow_rate_limited">Слишком много запросов. Пожалуйста, подождите немного и повторите попытку.</string>
+
+    <!-- Polls -->
+    <string name="poll_header">ОПРОС</string>
+    <string name="poll_option_hint">Опция %d</string>
+    <string name="poll_question_required">Пожалуйста, введите вопрос</string>
+    <string name="poll_min_options_required">Требуется минимум 2 варианта</string>
+    <string name="poll_create_failed">Не удалось создать опрос: %s.</string>
+    <string name="poll_result">Результат</string>
+    <string name="poll_result_title">РЕЗУЛЬТАТ ОПРОСА</string>
+    <string name="poll_label">ОПРОС</string>
+    <string name="poll_result_label">РЕЗУЛЬТАТ ОПРОСА</string>
+    <string name="total_votes">Всего голосов: %d</string>
+    <string name="delete_poll_title">Удалить опрос</string>
+    <string name="delete_poll_message">Вы уверены, что хотите завершить этот опрос?</string>
+    <string name="poll_deleted">Опрос удален</string>
+    <string name="poll_delete_failed">Не удалось удалить опрос</string>
+    <string name="poll_created">Опрос создан!</string>
+    <string name="create_poll">Создать опрос</string>
+    <string name="poll_question_label">Вопрос</string>
+    <string name="poll_question_hint">Напишите вопрос для опроса...</string>
+    <string name="poll_options_label">Опции</string>
+    <string name="poll_option_1_hint">Вариант 1</string>
+    <string name="poll_option_2_hint">Вариант 2</string>
+    <string name="poll_option_3_hint">Вариант 3</string>
+    <string name="poll_option_4_hint">Вариант 4</string>
+    <string name="poll_option_5_hint">Вариант 5</string>
+    <string name="poll_option_6_hint">Вариант 6</string>
+    <string name="poll_duration_label">Продолжительность</string>
+    <string name="poll_result_duration_label">Продолжительность отображения результата</string>
+    <string name="enter_question">Пожалуйста, введите вопрос.</string>
+    <string name="min_2_options">Требуется как минимум 2 варианта.</string>
+    <string name="creating">Создание…</string>
+
+    <!-- Clips -->
+    <string name="check_out_clip">Посмотрите этот клип!</string>
+    <string name="trim_label">ОБРЕЗКА: </string>
+    <string name="clip_title_label">Название клипа</string>
+    <string name="popular_clips_header">Популярные клипы</string>
+    <string name="clip_url_copied">Ссылка на клип скопирована</string>
+    <string name="share_clip">Поделиться клипом</string>
+    <string name="clip_only_live">Клипы можно снимать только во время прямых трансляций (Slug не найден)</string>
+    <string name="clip_login_required">Вы должны войти в систему, чтобы создавать клипы</string>
+    <string name="clip_error">Ошибка клипа: %s</string>
+    <string name="create_clip">Создать клип: %s</string>
+    <string name="publishing">Публикация…</string>
+    <string name="clip_prepared_info_error">Клип подготовлен, но информацию прочитать не удалось.</string>
+    <string name="clip_publish_failed">Не удалось опубликовать клип: %d.</string>
+    <string name="untitled_clip">Клип без названия</string>
+    <string name="clipped_by">Вырезано %s</string>
+
+    <!-- Channel Profile -->
+    <string name="channel_info_title">Информация о канале</string>
+    <string name="follow">Отслеживать</string>
+    <string name="unfollow">Отписаться</string>
+    <string name="following_status">Отслеживается</string>
+    <string name="unfollow_confirm_title">Отписаться от %s?</string>
+    <string name="unfollow_confirm_message">Вы уверены, что хотите отписаться от %s?</string>
+    <string name="followers_millions">%.1f млн фолловеров</string>
+    <string name="followers_thousands">%.1f тыс. фолловеров</string>
+    <string name="followers_count">%d фолловеров</string>
+    <string name="category_stream">поток</string>
+    <string name="uptime_hours_minutes">%1$d ч %2$d мин</string>
+    <string name="uptime_minutes">%d мин</string>
+    <string name="no_channel_info">Никакой информации об этом канале.</string>
+    <string name="followed">Отслеживается</string>
+    <string name="unfollowed">Отменено</string>
+
+    <!-- Tabs -->
+    <string name="live_streams_tab">Прямые трансляции</string>
+    <string name="tab_home">Главная</string>
+    <string name="tab_live">Эфир</string>
+    <string name="tab_categories">Категории</string>
+    <string name="tab_about">О канале</string>
+    <string name="tab_videos">Видео</string>
+    <string name="tab_clips">Клипы</string>
+
+    <!-- Loyalty Points -->
+    <string name="channel_points">Очки канала</string>
+    <string name="default_prediction_title">Прогнозы</string>
+    <string name="loyalty_rewards_empty">В этом канале нет наград в виде баллов лояльности.</string>
+    <string name="loyalty_reward_cost_label">Стоимость: </string>
+    <string name="loyalty_add_message_label">Добавить сообщение</string>
+    <string name="loyalty_redeem_action">Получить</string>
+    <string name="input_message_hint">Введите сообщение...</string>
+    <string name="points_needed_format">Для этой награды необходимо больше очков %s</string>
+    <string name="reward_redeemed">Награда получена: %s.</string>
+    <string name="reward_redeem_failed">Ошибка: не удалось получить вознаграждение.</string>
+    <string name="enter_message_required">Пожалуйста, введите сообщение</string>
+    <string name="processing">Обработка…</string>
+
+    <!-- Predictions -->
+    <string name="prediction_header">ПРОГНОЗ</string>
+    <string name="prediction_ended_desc">Прогноз завершен / Распространено: </string>
+    <string name="prediction_active">Активный</string>
+    <string name="prediction_bet_title_format">Проголосовать за %s</string>
+    <string name="bet_amount_label">Сумма баллов</string>
+    <string name="prediction_balance_label">Баланс: %s</string>
+    <string name="prediction_max_bet">ВА-БАНК</string>
+    <string name="error_prediction_conflict">Вы не можете управлять этим прогнозом, поскольку вы проголосовали.</string>
+    <string name="prediction_control">Управление прогнозом</string>
+    <string name="winner_label">ПОБЕДИТЕЛЬ</string>
+    <string name="prediction_status_open">Прогнозы открыты</string>
+    <string name="prediction_status_open_format">Прогнозы открыты - %s</string>
+    <string name="prediction_status_locked">Заблокировано</string>
+    <string name="prediction_status_resolved">Решено</string>
+    <string name="prediction_status_refunded">Возвращено</string>
+    <string name="points_contributed_format">Внесенные баллы - %s</string>
+    <string name="bet_amount_total_format">Вы ставите на общую сумму %1$s очков.</string>
+    <string name="bet_on_format">Ставка на %s</string>
+    <string name="new_prediction_start">Начать новый прогноз</string>
+    <string name="lock_submissions">Закрыть приём ставок</string>
+    <string name="select_result">Выберите результат</string>
+    <string name="select_winning_result">Выберите выигрышный результат</string>
+    <string name="resolve_prediction">Решить прогноз</string>
+    <string name="prediction_label">ПРОГНОЗ</string>
+    <string name="prediction_result_label">РЕЗУЛЬТАТ</string>
+    <string name="points_label">%s Очки</string>
+    <string name="delete_prediction_title">Удалить прогноз</string>
+    <string name="prediction_delete_desc">Это действие удалит текущую игру-прогноз. Зрители больше не смогут участвовать, голоса будут отменены, а баллы канала будут автоматически возвращены.</string>
+    <string name="prediction_refund_info_format">При выборе «Удалить и вернуть баллы» участвующим зрителям будут возвращены баллы канала %s.</string>
+    <string name="go_back">Вернуться назад</string>
+    <string name="delete_and_refund">Удаление и возврат баллов</string>
+    <string name="invalid_amount">Неверная сумма</string>
+    <string name="prediction_saved">Ваш прогноз сохранен!</string>
+    <string name="lock_failed">Блокировка не удалась</string>
+    <string name="prediction_locked">Прогноз заблокирован</string>
+    <string name="cancel_failed">Отменить не удалось</string>
+    <string name="prediction_cancelled">Прогноз отменен</string>
+    <string name="resolve_failed">Не удалось завершить прогноз</string>
+    <string name="prediction_resolved">Прогноз завершён</string>
+    <string name="prediction_login_required">Вы должны войти в систему, чтобы создавать прогнозы</string>
+    <string name="fill_all_fields">Пожалуйста, заполните все поля</string>
+    <string name="prediction_created">Прогноз создан!</string>
+    <string name="prediction_resolved_title">Решено</string>
+    <string name="prediction_default_title">Прогноз</string>
+    <string name="prediction_cancelled_desc">прогноз отменен/баллы возвращены</string>
+    <string name="prediction_menu_title">Прогнозы</string>
+    <string name="start_prediction">Начать прогноз</string>
+    <string name="prediction_presets_label">Пресеты (история)</string>
+    <string name="prediction_question_label">Вопрос-прогноз</string>
+    <string name="prediction_question_hint">Пример: Кто победит?</string>
+    <string name="prediction_outcomes_label">Результаты</string>
+    <string name="prediction_yes_hint">ДА</string>
+    <string name="prediction_no_hint">НЕТ</string>
+    <string name="prediction_duration_label">Продолжительность</string>
+
+    <!-- Miscellaneous -->
+    <string name="ban_temporary_label">Временный бан (тайм-аут)</string>
+    <string name="category_hidden_message">Вы скрыли эту категорию.</string>
+    <string name="max_badges_reached">Можно выбрать не более %d значков</string>
+    <string name="options_title">Опции</string>
+    <string name="make_selection">Сделать выбор...</string>
+    <string name="gift_sent_label">отправил %s</string>
+    <string name="chat_reward_used">использовал</string>
+    <string name="date_label_format">Дата: %s</string>
+    <string name="about_version_format">Версия: %s</string>
+    <string name="label_version">Версия</string>
+
+    <!-- About Page -->
+    <string name="about_title">О приложении</string>
+    <string name="about_developed_by">Разработано</string>
+    <string name="about_repo_label">Исходный код</string>
+    <string name="about_github_label">Мой GitHub</string>
+    <string name="about_coffee_label">Купи мне кофе</string>
+
+    <!-- Gift Shop -->
+    <string name="gift_shop_title">Магазин подарков</string>
+    <string name="gift_shop_basic_gifts">Базовые подарки</string>
+    <string name="gift_shop_basic_desc">Сделайте быстрый подарок</string>
+    <string name="gift_shop_level_up_gifts">Повышайте уровень подарков</string>
+    <string name="gift_shop_level_up_desc">Отправьте подарок с персонализированным сообщением</string>
+
+    <!-- Custom EQ -->
+    <string name="zero_db">0 дБ</string>
+    <string name="custom_eq_title">Пользовательский эквалайзер и шумоподавление</string>
+    <string name="eq_preset_flat">Ровный</string>
+    <string name="eq_preset_bass">Бас</string>
+    <string name="eq_preset_vocal">Вокал</string>
+    <string name="eq_preset_pop">Поп</string>
+    <string name="eq_preset_rock">Рок</string>
+    <string name="eq_preset_jazz">Джаз</string>
+    <string name="eq_preset_classical">Классический</string>
+    <string name="eq_preset_metal">Металл</string>
+    <string name="eq_pre_amp">Усиление предусилителя</string>
+    <string name="eq_reset">Сброс</string>
+    <string name="nr_title">Шумоподавление (экспериментальное)</string>
+    <string name="nr_desc">Подавляет фоновый шум и переводит речь вперед.</string>
+    <string name="nr_off">Выкл.</string>
+    <string name="nr_low">Низкое</string>
+    <string name="nr_medium">Среднее</string>
+    <string name="nr_high">Высокое</string>
+    <string name="nr_voice">Голосовой фокус</string>
+    <string name="nr_light">Лёгкое</string>
+    <string name="nr_balanced">Сбалансированное</string>
+    <string name="nr_strong">Сильное</string>
+    <string name="nr_max">Максимальное</string>
+
+    <!-- Pinned Messages -->
+    <string name="pinned_message_header">ЗАКРЕПЛЕННОЕ СООБЩЕНИЕ</string>
+    <string name="pin_removed">Закрепление снято</string>
+    <string name="message_pinned">Сообщение закреплено</string>
+    <string name="unpin_title">Открепить сообщение</string>
+    <string name="unpin_message">Вы уверены, что хотите удалить это закрепленное сообщение?</string>
+    <string name="message_unpinned">Сообщение откреплено</string>
+
+    <!-- Browse -->
+    <string name="streams_load_failed">Не удалось загрузить потоки: %s.</string>
+    <string name="viewer_count_label">%s зрителей</string>
+    <string name="watching_count_label">%s смотрит</string>
+    <string name="viewer_follower_format">%1$s зрителей • %2$s фолловеров</string>
+
+    <!-- VOD/Clip -->
+    <string name="video_url_not_found">Видео URL не найдено</string>
+    <string name="clip_url_not_found">URL клипа не найден</string>
+    <string name="category_clip">Клип</string>
+    <string name="vod_title">VOD</string>
+    <string name="unknown_category">Неизвестно</string>
+    <string name="video_default_title">Видео</string>
+
+    <!-- DVR/Rewind -->
+    <string name="dvr_mode_activating">Включение режима перемотки…</string>
+    <string name="returning_to_live">Возврат к эфиру…</string>
+    <string name="live_url_not_found">URL трансляции не найден</string>
+    <string name="dvr_not_available">Обратная перемотка недоступна для этого потока.</string>
+
+    <!-- Screenshot -->
+    <string name="screenshot_error">Ошибка снимка экрана: %d.</string>
+    <string name="android_version_not_supported">Не поддерживается в этой версии Android.</string>
+    <string name="screenshot_failed">Не удалось сделать скриншот.</string>
+    <string name="screenshot_saved">Скриншот сохранен в галерее.</string>
+    <string name="save_error">Ошибка сохранения: %s.</string>
+
+    <!-- Time Utils -->
+    <string name="daily_filter">Ежедневно</string>
+    <string name="time_year_ago">%d год(лет) назад</string>
+    <string name="time_month_ago">%d месяц(лет) назад</string>
+    <string name="time_day_ago">%d день(а) назад</string>
+    <string name="time_hour_ago">%d час(а) назад</string>
+    <string name="time_minute_ago">%d минуту(лет) назад</string>
+    <string name="time_just_now">только что</string>
+
+    <!-- Dialogs -->
+    <string name="link_warning_title">Предупреждение о ссылке</string>
+    <string name="link_warning_message">Вы собираетесь перейти по внешней ссылке.\nВас перенаправляют за пределы KCIKTV. Продолжите, если вы доверяете этой ссылке:\n\n%s</string>
+    <string name="link_warning_message_simple">Вы собираетесь перейти по внешней ссылке. Вы будете перенаправлены за пределы приложения.</string>
+    <string name="open_in_app">Открыть в приложении</string>
+    <string name="link_open_error">Не удалось открыть ссылку: %s</string>
+    <string name="visit_site">Перейти на сайт</string>
+
+    <!-- Sheets -->
+    <string name="message_history_all">История сообщений (все)</string>
+    <string name="message_history_session">История сообщений (сеанс)</string>
+    <string name="user_id_not_found">Идентификатор пользователя не найден</string>
+    <string name="channel_id_error">Ошибка идентификатора канала</string>
+    <string name="no_messages_in_session">В этом сеансе нет сообщений</string>
+
+    <!-- Channel Videos/Clips -->
+    <string name="go_to_chat">Чат</string>
+    <string name="stream_videos_title">Видео</string>
+    <string name="no_videos_found">Видео пока нет</string>
+    <string name="popular_clips_title">Популярные клипы</string>
+    <string name="no_clips_found">Клипов пока нет</string>
+    <string name="sort_label">Сортировать:</string>
+    <string name="sort_popular">Популярный</string>
+    <string name="sort_newest">Новейший</string>
+    <string name="time_label">Время:</string>
+    <string name="time_all">Все время</string>
+    <string name="time_24h">24 ч</string>
+    <string name="time_weekly">Еженедельно</string>
+    <string name="time_monthly">Ежемесячно</string>
+
+    <!-- Categories -->
+    <string name="channel_slug_error">Неверная или отсутствующая информация о канале.</string>
+    <string name="category_not_found">Категории не найдены.</string>
+    <string name="category_updated_success">Категория успешно обновлена.</string>
+    <string name="category_update_failed">Не удалось обновить категорию: %s.</string>
+    <string name="popular_categories_label">Популярные категории</string>
+    <string name="recent_categories_label">Недавние категории</string>
+
+    <!-- QR Login -->
+    <string name="qr_login_instructions">1. Убедитесь, что у вас установлено мобильное приложение Kick и вы вошли в систему.\n2. Отсканируйте QR-код своим телефоном.\n3. Убедитесь, что код на экране соответствует коду на вашем телефоне.</string>
+
+    <!-- Browser / sharing -->
+    <string name="browser_label_fallback">Браузер</string>
+    <string name="open_in_format">Открыть в %s</string>
+    <string name="copy_link">Копировать ссылку</string>
+    <string name="share_with">Поделиться через…</string>
+    <string name="open">Открыть</string>
+    <string name="external_redirect_title">Внешняя ссылка</string>
+    <string name="external_redirect_message">Эта страница хочет открыть внешнее приложение. Вы позволяете это?</string>
+    <string name="blerp_overlay_disabled_message">Оверлей Blerp отключён. Включить его для корректного отображения этого контента (аудио и эффектов)?</string>
+
+    <!-- Number Suffix -->
+    <string name="number_suffix_thousand">К</string>
+
+    <!-- Clip -->
+    <string name="clip_preparing">Готовим клип…</string>
+    <string name="clip_title_hint">Добавьте заголовок к клипу (необязательно)</string>
+    <string name="clip_created">Клип создан! 🎉</string>
+    <string name="clip_url_label">URL клипа</string>
+    <string name="clip_share">Поделиться</string>
+    <string name="clip_publish">Опубликовать</string>
+
+    <!-- Browse Clips -->
+    <string name="sort_date">Дата</string>
+    <string name="sort_views">Просмотры</string>
+    <string name="clips_load_failed">Не удалось загрузить клипы: %s.</string>
+    <string name="clip_stats_format">Просмотры %1$s • %2$s</string>
+    <string name="open_clip">Открыть клип</string>
+    <string name="browse_clips_filter_title">Фильтр клипов</string>
+
+    <!-- Stream Feed -->
+    <string name="no_streams_available">Нет доступных потоков</string>
+    <string name="is_live_on_kick">в прямом эфире на Kick!</string>
+    <string name="share_via">Поделиться через</string>
+    <string name="live_now">В эфире</string>
+
+    <!-- Theatre Mode -->
+    <string name="theatre_mode_enabled">Режим театра включен. Нажмите назад, чтобы выйти.</string>
+    <string name="continue_watching">Продолжить просмотр</string>
+
+    <!-- Whats New -->
+    <string name="whats_new_title">Что нового</string>
+
+    <!-- Clip Feed Filters -->
+    <string name="clip_filter_all">Все</string>
+    <string name="clip_filter_daily">Ежедневно</string>
+    <string name="clip_filter_weekly">Еженедельно</string>
+    <string name="clip_filter_monthly">Ежемесячно</string>
+    <string name="clip_filter_popular">Популярные клипы</string>
+    <string name="clip_filter_newest">Новейшие клипы</string>
+    <string name="clip_filter_featured">Рекомендуемые клипы</string>
+    <string name="clip_category_just_chatting">Общение</string>
+
+    <!-- Download Messages -->
+    <string name="download_getting_url">Получение ссылки…</string>
+    <string name="download_starting">Начинаю загрузку...</string>
+    <string name="download_complete">Загрузка завершена: %s</string>
+    <string name="download_failed_with_error">Загрузка не удалась: %s</string>
+    <string name="download_url_failed">Не удалось загрузить URL: %s.</string>
+
+    <!-- Gift Shop -->
+    <string name="gift_sent_success">Подарок успешно отправлен!</string>
+    <string name="gift_send_failed">Не удалось отправить подарок: %s</string>
+    <string name="gift_unknown_error">Неизвестная ошибка</string>
+    <string name="gift_sent_format">отправил %s</string>
+    <string name="gift_sent_format_pin">%1$s %2$s\nотправлено</string>
+
+    <!-- VOD/Clip Actions -->
+    <string name="watch_full_vod">Смотреть полную версию VOD</string>
+
+    <!-- Link Options -->
+    <string name="add_trusted_domain_preview">Добавить доверенный домен и просмотреть</string>
+
+    <!-- Adapter Items and Time -->
+    <string name="untitled_video">Видео без названия</string>
+    <string name="time_ago_years">%d лет назад</string>
+    <string name="time_ago_months">%d месяцев назад</string>
+    <string name="time_ago_days">%d дней назад</string>
+    <string name="chat_preview_text">: Выглядит вот так</string>
+    <string name="text_view_contains">Просмотры</string>
+    <string name="view_count_suffix">Просмотры</string>
+    <string name="unknown_channel">Неизвестно</string>
+    <string name="no_date">Без даты</string>
+
+
+    <string name="scan_qr_instruction">Отсканируйте QR-код для подключения</string>
+    <string name="qr_scan_success">QR-код отсканирован</string>
+    <string name="qr_confirm_message">Найден ключ: %s\nХотите продолжить?</string>
+    <string name="send_request">Отправить запрос</string>
+    <string name="request_sent">Запрос успешно отправлен</string>
+    <string name="request_failed">Запрос не выполнен: %s</string>
+    <string name="invalid_qr_code">Неверный формат QR-кода</string>
+    <string name="code_label">Код подтверждения</string>
+    <string name="qr_confirm_instruction">Если следующий код соответствует коду, отображаемому на вашем телевизоре, нажмите «Подтвердить», чтобы продолжить.</string>
+    <string name="tv_qr_login">QR-вход для ТВ</string>
+    <!-- Daily Reward -->
+    <string name="daily_reward_title">Получите ежедневную награду</string>
+    <string name="daily_reward_description">Получите ежедневную награду и получите шанс выиграть по-крупному! Разыгрываются эмоции и значки.</string>
+    <string name="daily_reward_view_rewards_link">Посмотреть награды</string>
+    <string name="daily_reward_already_have">Вы уже получили эту награду!</string>
+    <string name="daily_reward_congrats">Поздравляем!</string>
+    <string name="daily_reward_duplicate_note">Дублирующиеся награды автоматически конвертируются в прогресс уровня.</string>
+    <string name="daily_reward_claimed_button">Получено</string>
+    <string name="daily_reward_claim_button">Забрать</string>
+    <string name="daily_reward_claiming_button">Получение…</string>
+    <string name="daily_reward_locked_button">Заблокировано</string>
+    <string name="daily_reward_load_error">Не удалось загрузить сегодняшнюю награду.</string>
+    <string name="daily_reward_resets_at">Ежедневная награда сбрасывается в %s</string>
+    <string name="daily_reward_rarity_title">Награда Редкость</string>
+    <string name="daily_reward_consolation_hours_minutes">+%1$d ч %2$d мин к уровню</string>
+    <string name="daily_reward_consolation_minutes">+%1$d мин к уровню</string>
+    <string name="daily_reward_locked_progress_hours_minutes">Осталось %1$d ч %2$d мин</string>
+    <string name="daily_reward_locked_progress_minutes">Осталось %d мин</string>
+    <string name="rarity_common">Общий</string>
+    <string name="rarity_uncommon">Необычный</string>
+    <string name="rarity_rare">Редкий</string>
+    <string name="rarity_epic">Эпический</string>
+    <string name="rarity_legendary">Легендарный</string>
+    <string name="rarity_mythic">Мифический</string>
+    <!-- Collectibles -->
+    <string name="collectibles_title">Коллекция</string>
+    <string name="collectibles_description">Смотрите понемногу каждый день, чтобы разблокировать ежедневную награду, а затем вращайте ее, чтобы получить эмоцию или значок. Все, что вы извлекли до сих пор, сохраняется здесь — вместо этого дубликаты превращаются в время просмотра.</string>
+    <string name="collectibles_inventory">Инвентарь</string>
+    <string name="collectibles_unlocked_count">%1$d или %2$d разблокированы</string>
+    <string name="collectibles_sort_by">Сортировать по:</string>
+    <string name="collectibles_sort_rarity">Редкость</string>
+    <string name="collectibles_sort_type">Тип</string>
+    <string name="collectibles_sort_unlocked">Разблокировано</string>
+    <string name="collectibles_group_unlocked">Разблокировано</string>
+    <string name="collectibles_group_locked">Заблокировано</string>
+    <string name="collectibles_type_emote">Смайлы</string>
+    <string name="collectibles_type_badge">Значки</string>
+    <string name="collectibles_locked">Заблокировано</string>
+    <string name="collectibles_load_error">Не удалось загрузить коллекцию</string>
+
+    <!-- Daily reward streak -->
+    <string name="streak_days">x%d дней</string>
+    <string name="streak_label">Серия</string>
+
+    <!-- Drops -->
+    <string name="drops_title">Drops</string>
+    <string name="drops_tab_active">Активный</string>
+    <string name="drops_tab_ended">Завершены</string>
+    <string name="drops_empty_ended">Нет кампаний с истекшим сроком действия</string>
+    <string name="drops_description">Смотрите трансляции участников, чтобы заработать награды. Нажмите «Присоединиться», чтобы просмотреть прямые трансляции, в которых включены Drops кампании.</string>
+    <string name="drops_ends_in">Заканчивается на %s</string>
+    <string name="drops_starts_in">Начинается в %s</string>
+    <string name="drops_ended_on">Закончился %s</string>
+    <string name="drops_any_channel">Трансляция любого канала %s</string>
+    <string name="drops_any_channel_generic">Любой канал</string>
+    <string name="drops_empty">Сейчас нет дроп-кампаний</string>
+    <string name="drops_load_error">Не удалось загрузить Drops. Нажмите, чтобы повторить.</string>
+    <string name="drops_category_no_streams">В этой категории нет прямых трансляций с включенными Drops.</string>
+    <string name="drops_connect">Подключиться</string>
+    <string name="drops_join">Участвовать</string>
+    <string name="drops_rule_watch">Смотрите, чтобы получить</string>
+    <string name="drops_details">Подробности</string>
+    <string name="drops_reward_claimed">Получено</string>
+    <string name="drops_reward_remaining">%s осталось разблокировать</string>
+    <string name="drops_claim">Забрать</string>
+    <string name="drops_claim_success">Награда получена</string>
+    <string name="drops_claim_error">Не удалось получить награду</string>
+
+    <!-- Active Chatters -->
+    <string name="active_chatters_title">Участники чата</string>
+    <string name="active_chatters_search_hint">Поиск зрителя…</string>
+    <string name="active_chatters_empty">Никто еще не общался</string>
+    <string name="active_chatters_no_results">Никто не соответствует этим фильтрам</string>
+    <string name="active_chatters_summary">Болтовня %1$d · Сообщения %2$d</string>
+    <string name="active_chatters_message_count">%d сообщ.</string>
+    <string name="active_chatters_chip_format">%1$s (%2$d)</string>
+    <string name="active_chatters_grouping">Группировка</string>
+    <string name="active_chatters_grouping_role">Роль</string>
+    <string name="active_chatters_grouping_activity">Деятельность</string>
+    <string name="active_chatters_grouping_none">Нет</string>
+    <string name="active_chatters_group_moderators">Модераторы</string>
+    <string name="active_chatters_group_vips">VIP</string>
+    <string name="active_chatters_group_ogs">OG</string>
+    <string name="active_chatters_group_viewers">Зрители</string>
+    <string name="active_chatters_activity_high">Очень активен (10+ сообщений)</string>
+    <string name="active_chatters_activity_medium">Активный (3–9 сообщ.)</string>
+    <string name="active_chatters_activity_low">Тихий (1–2 сообщ.)</string>
+    <string name="active_chatters_activity_silent">Без сообщений</string>
+    <string name="badge_name_broadcaster">Стример</string>
+    <string name="badge_name_moderator">Модератор</string>
+    <string name="badge_name_vip">VIP</string>
+    <string name="badge_name_og">OG</string>
+    <string name="badge_name_subscriber">Подписчик</string>
+    <string name="badge_name_sub_gifter">Даритель подписок</string>
+    <string name="badge_name_founder">Основатель</string>
+    <string name="badge_name_verified">Проверено</string>
+    <string name="badge_name_staff">Персонал</string>
+    <string name="badge_name_sidekick">Помощник</string>
+    <string name="badge_name_bot">Бот</string>
+    <string name="badge_name_none">Нет значка</string>
+    <string name="active_chatters_grouping_badge">Значок</string>
+    <string name="active_chatters_grouping_alphabet">А-Я</string>
+    <string name="active_chatters_sort">Сортировать</string>
+    <string name="active_chatters_sort_messages">Сообщения</string>
+    <string name="active_chatters_sort_name">Имя</string>
+    <string name="active_chatters_sort_level">Уровень</string>
+    <string name="active_chatters_sort_recent">Недавние</string>
+    <string name="active_chatters_sort_direction">Обратный порядок сортировки</string>
+
+    <!-- ReTwitch & VOD Chat Improvements -->
+    <string name="chat_message_scale">Масштаб сообщений</string>
+    <string name="chat_message_spacing">Расстояние между сообщениями</string>
+    <string name="chat_pinch_to_resize">Жест масштабирования чата</string>
+    <string name="chat_pinch_to_resize_subtitle">Масштабировать чат сведением и разведением двух пальцев</string>
+    <string name="chat_pinch_scale_toast">Масштаб чата: %d%%</string>
+    <string name="side_chat_width">Ширина бокового чата</string>
+    <string name="side_chat_resize_handle">Ручка ширины бокового чата</string>
+    <string name="side_chat_resize_handle_subtitle">Показывать перетаскиваемый разделитель на границе бокового чата</string>
+    <string name="side_chat_width_reset_toast">Ширина бокового чата сброшена до значения по умолчанию</string>
+    <string name="setting_fullscreen_sensor_rotation">Поворот в полноэкранном режиме</string>
+    <string name="setting_fullscreen_sensor_rotation_desc">Поворачивать экран в полноэкранном режиме даже при выключенном автоповороте</string>
+
+    <!-- Updates -->
+    <string name="whats_new_empty">Релизов пока нет.</string>
+
+    <!-- Fullscreen Cutout & Video Scaling -->
+    <string name="setting_draw_under_cutout">Видео под вырезом камеры</string>
+    <string name="setting_draw_under_cutout_desc">Растягивать полноэкранное видео на область выреза камеры в альбомной ориентации</string>
+    <string name="setting_fullscreen_scale_mode">Полноэкранное масштабирование видео</string>
+    <string name="video_scale_fit">Вписать</string>
+    <string name="video_scale_zoom">Заполнение (без рамок)</string>
+    <string name="video_scale_fill">Растянуть</string>
+    <string name="video_scale_mode_toast">Масштабирование видео: %1$s</string>
+
+    <!-- Transparent Chat Overlay -->
+    <string name="setting_transparent_chat_overlay">Прозрачный чат поверх видео</string>
+    <string name="setting_transparent_chat_overlay_desc">Показывать полупрозрачный чат поверх полноэкранного видео в альбомной ориентации</string>
+    <string name="setting_chat_overlay_opacity">Непрозрачность фона чата</string>
+</resources>

@@ -976,10 +976,10 @@ class SettingsPanelManager(
     }
     
     private fun getAppLanguageValue(): String {
-        val savedLangRaw = prefs.languageRaw
+        val savedLangRaw = SupportedLanguages.normalizeLanguageCode(prefs.languageRaw)
         return when (savedLangRaw) {
-            "system" -> activity.getString(R.string.system_default)
-            else -> SupportedLanguages.getDisplayName(savedLangRaw)
+            SupportedLanguages.SYSTEM_CODE -> activity.getString(R.string.system_default)
+            else -> SupportedLanguages.getDisplayName(savedLangRaw, activity.getString(R.string.system_default))
         }
     }
 
@@ -1273,21 +1273,18 @@ class SettingsPanelManager(
         AlertDialog.Builder(activity)
             .setTitle(R.string.setting_app_language)
             .setSingleChoiceItems(languages, currentIndex) { dialog, which ->
-                val selectedLocale = locales[which]
+                val selectedLocale = SupportedLanguages.normalizeLanguageCode(locales[which])
                 
                 // Save to SharedPreferences
                 prefs.language = selectedLocale
                 
-                val locale = if (selectedLocale == "system") {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                        android.content.res.Resources.getSystem().configuration.locales.get(0)
-                    } else {
-                        @Suppress("DEPRECATION")
-                        android.content.res.Resources.getSystem().configuration.locale
-                    }
+                val systemLocale = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    android.content.res.Resources.getSystem().configuration.locales.get(0)
                 } else {
-                    java.util.Locale(selectedLocale)
+                    @Suppress("DEPRECATION")
+                    android.content.res.Resources.getSystem().configuration.locale
                 }
+                val locale = SupportedLanguages.resolveLocale(selectedLocale, systemLocale)
                 
                 java.util.Locale.setDefault(locale)
                 val config = activity.resources.configuration

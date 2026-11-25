@@ -83,17 +83,13 @@ class LoginActivity : ComponentActivity() {
 
     override fun attachBaseContext(newBase: android.content.Context) {
         val prefs = AppPreferences(newBase)
-        val savedLang = prefs.language
-        val locale = if (savedLang == "system" || savedLang.isEmpty()) {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
-                android.content.res.Resources.getSystem().configuration.locales.get(0)
-            } else {
-                @Suppress("DEPRECATION")
-                android.content.res.Resources.getSystem().configuration.locale
-            }
+        val systemLocale = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+            android.content.res.Resources.getSystem().configuration.locales.get(0)
         } else {
-            java.util.Locale(savedLang)
+            @Suppress("DEPRECATION")
+            android.content.res.Resources.getSystem().configuration.locale
         }
+        val locale = dev.xacnio.kciktv.shared.util.SupportedLanguages.resolveLocale(prefs.language, systemLocale)
         java.util.Locale.setDefault(locale)
         // Only override the locale
         val config = android.content.res.Configuration()

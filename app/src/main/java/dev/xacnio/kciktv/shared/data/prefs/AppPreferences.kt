@@ -13,6 +13,7 @@ import android.content.SharedPreferences
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import dev.xacnio.kciktv.shared.util.CryptoManager
+import dev.xacnio.kciktv.shared.util.SupportedLanguages
 import dev.xacnio.kciktv.shared.data.prefs.AppPreferences
 import dev.xacnio.kciktv.R
 import dev.xacnio.kciktv.mobile.ui.player.VideoCutoutScalingPolicy
@@ -125,8 +126,8 @@ class AppPreferences(private val context: Context) {
         set(value) = prefs.edit().putString("update_channel", value).apply()
 
     var language: String
-        get() = prefs.getString("language", "system") ?: "system"
-        set(value) = prefs.edit().putString("language", value).apply()
+        get() = SupportedLanguages.normalizeLanguageCode(prefs.getString("language", SupportedLanguages.SYSTEM_CODE))
+        set(value) = prefs.edit().putString("language", SupportedLanguages.normalizeLanguageCode(value)).apply()
 
     val languageRaw: String
         get() = language

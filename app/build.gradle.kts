@@ -47,6 +47,9 @@ android {
             ?: System.getenv("VERSION")?.takeIf { it.isNotBlank() }
             ?: "$baseVersion-${getGitHash()}"
 
+        // Ship only English and Russian UI resources (strips unused third-party library locales).
+        resourceConfigurations += listOf("en", "ru")
+
         // Native RNNoise noise-suppression library (see src/main/cpp).
         externalNativeBuild {
             cmake {

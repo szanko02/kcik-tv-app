@@ -922,18 +922,13 @@ class MobilePlayerActivity : FragmentActivity() {
     override fun attachBaseContext(newBase: Context) {
         // Apply saved language before context is attached
         val prefs = AppPreferences(newBase)
-        val savedLang = prefs.language
-        
-        val locale = if (savedLang == "system" || savedLang.isEmpty()) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                android.content.res.Resources.getSystem().configuration.locales.get(0)
-            } else {
-                @Suppress("DEPRECATION")
-                android.content.res.Resources.getSystem().configuration.locale
-            }
+        val systemLocale = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            android.content.res.Resources.getSystem().configuration.locales.get(0)
         } else {
-            java.util.Locale(savedLang)
+            @Suppress("DEPRECATION")
+            android.content.res.Resources.getSystem().configuration.locale
         }
+        val locale = dev.xacnio.kciktv.shared.util.SupportedLanguages.resolveLocale(prefs.language, systemLocale)
         
         java.util.Locale.setDefault(locale)
         // Only override the locale; copying the full config would freeze orientation and size
