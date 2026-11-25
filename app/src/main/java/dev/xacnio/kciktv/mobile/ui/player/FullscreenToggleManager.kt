@@ -154,10 +154,12 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
     // Side Chat Resize Handle State
     private var isDividerSetup = false
     private var isDraggingDivider = false
+    private var isPreviewingSideChatWidth = false
     private var lastHandleTapMs = 0L
     private var lastDraggedPercent = -1
     private var pillDrawable: android.graphics.drawable.GradientDrawable? = null
     private var badgeDrawable: android.graphics.drawable.GradientDrawable? = null
+    private var sideChatWidthPreviewLine: View? = null
 
     private fun effectiveRootWidth(rootWidth: Int = binding.root.width): Int {
         if (rootWidth > 0) return rootWidth
@@ -165,10 +167,10 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         return kotlin.math.max(dm.widthPixels, dm.heightPixels)
     }
 
-    private fun computeSideChatWidthPx(rootWidth: Int): Int {
+    private fun computeSideChatWidthPx(rootWidth: Int, percent: Int = prefs.sideChatWidthPercent): Int {
         return SideChatWidthUtils.widthPxForPercent(
             effectiveRootWidth(rootWidth),
-            prefs.sideChatWidthPercent
+            percent
         )
     }
 
@@ -209,6 +211,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
                     isDoubleTap = (now - lastHandleTapMs) < 300L
                     lastHandleTapMs = now
                     isDraggingDivider = true
+                    clearSideChatWidthPreview()
                     pillDrawable?.setColor(Color.parseColor("#53FC18"))
                     v.alpha = 1.0f
                     true
@@ -257,7 +260,59 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         isDraggingDivider = false
         lastDraggedPercent = -1
         binding.sideChatDividerHandle.visibility = View.GONE
+        clearSideChatWidthPreview()
         binding.sideChatWidthBadge.visibility = View.GONE
+    }
+
+    fun previewSideChatWidthPercent(percent: Int) {
+        if (!isSideChatVisible || binding.sideChatContainer.visibility != View.VISIBLE) {
+            clearSideChatWidthPreview()
+            return
+        }
+        ensureSideChatDividerSetup()
+        val clamped = SideChatWidthUtils.clampPercent(percent)
+        val parent = binding.playerScreenContainer
+        val parentWidth = effectiveRootWidth(parent.width)
+        val targetChatWidthPx = computeSideChatWidthPx(parentWidth, clamped)
+
+        val line = sideChatWidthPreviewLine ?: View(activity).apply {
+            val density = activity.resources.displayMetrics.density
+            val lineWidthPx = (2f * density).toInt().coerceAtLeast(1)
+            layoutParams = ConstraintLayout.LayoutParams(
+                lineWidthPx,
+                ConstraintLayout.LayoutParams.MATCH_CONSTRAINT
+            ).apply {
+                leftToLeft = ConstraintLayout.LayoutParams.PARENT_ID
+                topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+            }
+            setBackgroundColor(Color.parseColor("#53FC18"))
+            isClickable = false
+            isFocusable = false
+            // Keep above sideChatContainer (180dp) and sideChatDividerHandle (190dp)
+            // so the preview line remains visible when dragging left over the chat panel.
+            elevation = kotlin.math.max(120f, binding.sideChatContainer.elevation + 14f * density)
+            visibility = View.GONE
+            parent.addView(this)
+        }.also { sideChatWidthPreviewLine = it }
+
+        val lineWidthPx = line.layoutParams.width.coerceAtLeast(1)
+        val maxX = (parentWidth - lineWidthPx).coerceAtLeast(0).toFloat()
+        val splitX = (parentWidth - targetChatWidthPx).toFloat().coerceIn(0f, maxX)
+        line.translationX = splitX
+        line.visibility = View.VISIBLE
+
+        isPreviewingSideChatWidth = true
+        binding.sideChatWidthBadge.text = "$clamped%"
+        binding.sideChatWidthBadge.visibility = View.VISIBLE
+    }
+
+    fun clearSideChatWidthPreview() {
+        isPreviewingSideChatWidth = false
+        sideChatWidthPreviewLine?.visibility = View.GONE
+        if (!isDraggingDivider) {
+            binding.sideChatWidthBadge.visibility = View.GONE
+        }
     }
 
     fun applySideChatWidthPercent(percent: Int, persist: Boolean = false) {
@@ -297,7 +352,9 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         val shouldShow = isSideChatVisible && prefs.sideChatResizeHandleEnabled
         binding.sideChatDividerHandle.visibility = if (shouldShow) View.VISIBLE else View.GONE
         if (!shouldShow) {
-            binding.sideChatWidthBadge.visibility = View.GONE
+            if (!isPreviewingSideChatWidth) {
+                binding.sideChatWidthBadge.visibility = View.GONE
+            }
             return
         }
         if (isDraggingDivider) {
@@ -310,7 +367,9 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             val emphasized = overlayVisible == true || (overlayVisible == null && binding.videoOverlay.visibility == View.VISIBLE)
             binding.sideChatDividerHandle.alpha = if (emphasized) 1.0f else 0.28f
             pillDrawable?.setColor(Color.parseColor("#CCFFFFFF"))
-            binding.sideChatWidthBadge.visibility = View.GONE
+            if (!isPreviewingSideChatWidth) {
+                binding.sideChatWidthBadge.visibility = View.GONE
+            }
         }
     }
 
@@ -1817,6 +1876,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             return
         }
 
+        clearSideChatWidthPreview()
         hideSideChatDivider()
 
         val isTablet = activity.resources.configuration.smallestScreenWidthDp >= 720
@@ -2324,6 +2384,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
      * Restores the video to full screen size.
      */
     fun hideSideChat() {
+        clearSideChatWidthPreview()
         if (!isSideChatVisible) return
         hideSideChatDivider()
 

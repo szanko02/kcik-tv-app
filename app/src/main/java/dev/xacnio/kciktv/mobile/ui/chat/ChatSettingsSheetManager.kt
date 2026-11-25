@@ -71,6 +71,7 @@ class ChatSettingsSheetManager(
     private var currentPanelView: View? = null
     private var scrimView: View? = null
     private var pendingRulesChannel: ChannelItem? = null
+    private var isTrackingSideChatWidth: Boolean = false
 
     private companion object {
         const val PAGE_ROOT = 0
@@ -84,6 +85,8 @@ class ChatSettingsSheetManager(
     fun isPanelShowing(): Boolean = currentPanelView != null
 
     fun dismissPanel() {
+        isTrackingSideChatWidth = false
+        activity.fullscreenToggleManager.clearSideChatWidthPreview()
         val view = currentPanelView ?: return
         if (hasProfileChanges) saveProfileIdentity()
         scrimView?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }
@@ -141,6 +144,10 @@ class ChatSettingsSheetManager(
         }
 
         fun navigate(page: Int) {
+            if (page != PAGE_CHAT_SETTINGS) {
+                isTrackingSideChatWidth = false
+                activity.fullscreenToggleManager.clearSideChatWidthPreview()
+            }
             currentPage = page
             val targetHeight = when (page) {
                 PAGE_ROOT    -> dpToPx(320)
@@ -405,6 +412,7 @@ class ChatSettingsSheetManager(
         })
 
         // Side Chat Width Slider (15% to 70%)
+        isTrackingSideChatWidth = false
         var currentSideChatWidth = prefs.sideChatWidthPercent.coerceIn(
             AppPreferences.SIDE_CHAT_WIDTH_MIN,
             AppPreferences.SIDE_CHAT_WIDTH_MAX
@@ -419,11 +427,20 @@ class ChatSettingsSheetManager(
                 textValueSideChatWidth.text = "${pct}%"
                 currentSideChatWidth = pct
                 if (fromUser) {
-                    activity.fullscreenToggleManager.applySideChatWidthPercent(pct, persist = false)
+                    if (isTrackingSideChatWidth) {
+                        activity.fullscreenToggleManager.previewSideChatWidthPercent(pct)
+                    } else {
+                        activity.fullscreenToggleManager.applySideChatWidthPercent(pct, persist = true)
+                    }
                 }
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                isTrackingSideChatWidth = true
+                activity.fullscreenToggleManager.previewSideChatWidthPercent(currentSideChatWidth)
+            }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                isTrackingSideChatWidth = false
+                activity.fullscreenToggleManager.clearSideChatWidthPreview()
                 activity.fullscreenToggleManager.applySideChatWidthPercent(currentSideChatWidth, persist = true)
             }
         })

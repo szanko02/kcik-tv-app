@@ -27,6 +27,7 @@ import com.github.penfeizhou.animation.apng.APNGDrawable
 import java.lang.ref.WeakReference
 import java.util.Collections
 import java.util.WeakHashMap
+import kotlin.math.roundToInt
 import dev.xacnio.kciktv.shared.ui.adapter.ChatAdapter
 import dev.xacnio.kciktv.shared.util.Constants
 
@@ -37,6 +38,7 @@ import dev.xacnio.kciktv.shared.util.Constants
 object EmoteManager {
     private const val EMOTE_BASE_URL = "https://files.kick.com/emotes/"
     private val EMOTE_PATTERN = java.util.regex.Pattern.compile("\\[emote:(\\d+):([^\\]]+)\\]")
+    private const val MIN_MASTER_BUFFER_SIZE = 96
     
     // Default frame interval (33ms ≈ 30fps) used for badges and as the chat-emote
     // default. Emotes are tiny, so 30fps is visually indistinguishable from 60 here while
@@ -204,8 +206,14 @@ object EmoteManager {
         for (entry in snapshot) if (entry.category == category) action(entry)
     }
     
-    // Pending callbacks for emotes that are currently loading (original implementation for loadSynchronizedImage)
-    private val pendingCallbacks = mutableMapOf<String, MutableList<Pair<WeakReference<View>, (Drawable) -> Unit>>>()
+    private data class PendingRequest(
+        val viewRef: WeakReference<View>,
+        val size: Int,
+        val onReady: (Drawable) -> Unit
+    )
+
+    // Pending callbacks for drawables/badges that are currently loading, preserving per-caller size
+    private val pendingCallbacks = mutableMapOf<String, MutableList<PendingRequest>>()
     
     // Shared pending callbacks for synchronized emotes (receives EmoteEntry instead of Drawable)
     private val sharedPendingCallbacks = mutableMapOf<String, MutableList<Pair<WeakReference<View>, (EmoteEntry) -> Unit>>>()
@@ -249,15 +257,16 @@ object EmoteManager {
         private val bufferCanvas: Canvas
 
         init {
+            val safeSize = size.coerceAtLeast(1)
             val artWidth = master.intrinsicWidth
             val artHeight = master.intrinsicHeight
             if (preserveAspect && artWidth > 0 && artHeight > 0) {
-                val scale = size.toFloat() / artHeight
-                bufferWidth = (artWidth * scale).toInt().coerceAtLeast(1)
-                bufferHeight = size
+                val scale = safeSize.toFloat() / artHeight
+                bufferWidth = (artWidth * scale).roundToInt().coerceAtLeast(1)
+                bufferHeight = safeSize
             } else {
-                bufferWidth = size
-                bufferHeight = size
+                bufferWidth = safeSize
+                bufferHeight = safeSize
             }
             buffer = Bitmap.createBitmap(bufferWidth, bufferHeight, Bitmap.Config.ARGB_8888)
             bufferCanvas = Canvas(buffer)
@@ -377,7 +386,7 @@ object EmoteManager {
         fun captureFrame() {
             val currentTime = SystemClock.uptimeMillis()
             // Only re-capture if at least the per-surface frame interval has passed
-            if (currentTime - lastCaptureTime < frameIntervalMs()) return
+            if (lastCaptureTime >= 0L && currentTime - lastCaptureTime < frameIntervalMs()) return
             lastCaptureTime = currentTime
             try {
                 buffer.eraseColor(Color.TRANSPARENT)
@@ -426,22 +435,40 @@ object EmoteManager {
 
     /**
      * ScalingProxyDrawable - Scales the shared master buffer to the target display size.
-     * This allows all emote instances to share the same animation frame regardless of display size.
+     * This allows all emote and badge instances to share the same animation frame regardless of display size.
      */
     internal class ScalingProxyDrawable(
         private val entry: EmoteEntry,
         view: View,
-        private val targetSize: Int
+        targetSize: Int
     ) : Drawable() {
-        private val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
         internal val viewRef = WeakReference(view)
-        private val srcRect = Rect(0, 0, entry.bufferWidth, entry.bufferHeight)
+        private val targetHeight = targetSize.coerceAtLeast(1)
+        private val hasValidBuffer = entry.bufferWidth > 0 && entry.bufferHeight > 0
+        private val srcRect = Rect(
+            0,
+            0,
+            entry.bufferWidth.coerceAtLeast(1),
+            entry.bufferHeight.coerceAtLeast(1)
+        )
 
         // Scale by height, matching how the buffer was sized — width follows from the art's ratio.
-        private val fitScale = targetSize.toFloat() / entry.bufferHeight
-        private val drawnWidth = (entry.bufferWidth * fitScale).toInt().coerceAtLeast(1)
-        private val drawnHeight = targetSize
+        private val drawnWidth: Int = if (hasValidBuffer) {
+            val fitScale = targetHeight.toFloat() / entry.bufferHeight.toFloat()
+            (entry.bufferWidth * fitScale).roundToInt().coerceAtLeast(1)
+        } else {
+            targetHeight
+        }
+        private val drawnHeight: Int = targetHeight
         private val dstRect = RectF(0f, 0f, drawnWidth.toFloat(), drawnHeight.toFloat())
+
+        override fun onBoundsChange(bounds: Rect) {
+            super.onBoundsChange(bounds)
+            if (!bounds.isEmpty) {
+                dstRect.set(bounds)
+            }
+        }
 
         fun triggerInvalidation() {
             val view = viewRef.get() ?: return
@@ -451,6 +478,7 @@ object EmoteManager {
         }
 
         override fun draw(canvas: Canvas) {
+            if (!hasValidBuffer || entry.buffer.isRecycled) return
             entry.captureFrame()
             // Scale the master buffer to target size
             canvas.drawBitmap(entry.buffer, srcRect, dstRect, paint)
@@ -474,7 +502,7 @@ object EmoteManager {
     }
 
     /**
-     * Loads an emote and returns a ProxyDrawable that shares animation state with all other instances.
+     * Loads an emote and returns a ScalingProxyDrawable that shares animation state with all other instances.
      * All emotes with the same ID share the same animation frame, regardless of display size.
      */
     fun loadSynchronizedEmote(
@@ -486,16 +514,17 @@ object EmoteManager {
     ) {
         // Use ONLY emoteId as key - this ensures all sizes share the same animation
         val key = emoteId
-        
-        // Master size for shared buffer (use largest common size for quality)
-        val masterSize = 48
+        val safeSize = size.coerceAtLeast(1)
+
+        // Master size for shared buffer (high enough for 200% scale, scales down cleanly to 50%)
+        val masterSize = maxOf(safeSize, MIN_MASTER_BUFFER_SIZE)
         
         // Bounds come from the proxy's own intrinsics rather than a square `size`, or a
         // card-shaped emote would be stretched back out — chat spans size off these bounds.
         // 1. Check if already loaded
         val entry = emoteEntries[key]
         if (entry != null) {
-            val proxy = ScalingProxyDrawable(entry, targetView, size)
+            val proxy = ScalingProxyDrawable(entry, targetView, safeSize)
             entry.attachViewer(proxy)
             proxy.setBounds(0, 0, proxy.intrinsicWidth, proxy.intrinsicHeight)
             onReady(proxy)
@@ -506,7 +535,7 @@ object EmoteManager {
         val pending = sharedPendingCallbacks[key]
         if (pending != null) {
             pending.add(Pair(WeakReference(targetView), { loadedEntry: EmoteEntry ->
-                val proxy = ScalingProxyDrawable(loadedEntry, targetView, size)
+                val proxy = ScalingProxyDrawable(loadedEntry, targetView, safeSize)
                 loadedEntry.attachViewer(proxy)
                 proxy.setBounds(0, 0, proxy.intrinsicWidth, proxy.intrinsicHeight)
                 onReady(proxy)
@@ -516,7 +545,7 @@ object EmoteManager {
 
         // 3. Start new load
         sharedPendingCallbacks[key] = mutableListOf(Pair(WeakReference(targetView), { loadedEntry: EmoteEntry ->
-            val proxy = ScalingProxyDrawable(loadedEntry, targetView, size)
+            val proxy = ScalingProxyDrawable(loadedEntry, targetView, safeSize)
             loadedEntry.attachViewer(proxy)
             proxy.setBounds(0, 0, proxy.intrinsicWidth, proxy.intrinsicHeight)
             onReady(proxy)
@@ -533,14 +562,16 @@ object EmoteManager {
         targetView: View,
         onReady: (Drawable) -> Unit
     ) {
-        val key = "url_${url.hashCode()}_$size"
+        val safeSize = size.coerceAtLeast(1)
+        val masterSize = maxOf(safeSize, MIN_MASTER_BUFFER_SIZE)
+        val key = "url_${url.hashCode()}"
         
         // 1. Check if already loaded
         val entry = emoteEntries[key]
         if (entry != null) {
-            val proxy = ProxyDrawable(entry, targetView)
+            val proxy = ScalingProxyDrawable(entry, targetView, safeSize)
             entry.attachViewer(proxy)
-            proxy.setBounds(0, 0, size, size)
+            proxy.setBounds(0, 0, proxy.intrinsicWidth, proxy.intrinsicHeight)
             onReady(proxy)
             return
         }
@@ -548,42 +579,41 @@ object EmoteManager {
         // 2. Check if currently loading - add to pending queue
         val pending = pendingCallbacks[key]
         if (pending != null) {
-            pending.add(Pair(WeakReference(targetView), onReady))
+            pending.add(PendingRequest(WeakReference(targetView), safeSize, onReady))
             return
         }
         
         // 3. Start new load
-        pendingCallbacks[key] = mutableListOf(Pair(WeakReference(targetView), onReady))
-        loadInternal(context, url, key, size, onReady)
+        pendingCallbacks[key] = mutableListOf(PendingRequest(WeakReference(targetView), safeSize, onReady))
+        loadInternal(context.applicationContext, url, key, masterSize)
     }
 
     private fun loadInternal(
         context: Context,
         url: String,
         key: String,
-        size: Int,
-        @Suppress("UNUSED_PARAMETER") onReady: (Drawable) -> Unit
+        masterSize: Int
     ) {
         // Use APNGDrawable for PNG URLs (animated subscriber badges)
         if (url.contains(".png", ignoreCase = true)) {
-            loadInternalApng(url, key, size)
+            loadInternalApng(context, url, key, masterSize)
             return
         }
 
-        val target = object : CustomTarget<Drawable>(size, size) {
+        val target = object : CustomTarget<Drawable>(masterSize, masterSize) {
             override fun onResourceReady(resource: Drawable, transition: Transition<in Drawable>?) {
                 android.util.Log.d("EmoteManager", "✅ Loaded emote: $url")
-                val newEntry = EmoteEntry(key, resource, size)
+                val newEntry = EmoteEntry(key, resource, masterSize)
                 emoteEntries[key] = newEntry
                 
-                // Notify all pending callbacks
+                // Notify all pending callbacks with each caller's requested size
                 val callbacks = pendingCallbacks.remove(key) ?: return
-                for ((viewRef, callback) in callbacks) {
-                    val view = viewRef.get() ?: continue
-                    val proxy = ProxyDrawable(newEntry, view)
+                for (req in callbacks) {
+                    val view = req.viewRef.get() ?: continue
+                    val proxy = ScalingProxyDrawable(newEntry, view, req.size)
                     newEntry.attachViewer(proxy)
-                    proxy.setBounds(0, 0, size, size)
-                    callback(proxy)
+                    proxy.setBounds(0, 0, proxy.intrinsicWidth, proxy.intrinsicHeight)
+                    req.onReady(proxy)
                 }
                 
                 activeTargets.remove(key)
@@ -620,43 +650,45 @@ object EmoteManager {
      * Loads APNG animated badges. Glide reduces PNG to a static bitmap;
      * penfeizhou APNGDrawable correctly plays APNG animation frames.
      */
-    private fun loadInternalApng(url: String, key: String, size: Int) {
-        val targetView = pendingCallbacks[key]?.firstOrNull()?.first?.get()
+    private fun loadInternalApng(appContext: Context, url: String, key: String, masterSize: Int) {
+        // Battery saver: when badge animation is off, an APNGDrawable that is never started
+        // decodes no frames and draws blank. Load the static first frame via Glide instead
+        // (non-animated PNG decoders render the APNG default image) so the badge is visible.
+        if (!badgesAnimated) {
+            loadStaticBadge(appContext, url, key, masterSize)
+            return
+        }
+
+        val targetView = pendingCallbacks[key]?.firstNotNullOfOrNull { it.viewRef.get() }
         if (targetView == null) {
             android.util.Log.e("EmoteManager", "❌ Failed to load APNG badge: targetView is null for key $key")
             pendingCallbacks.remove(key)
             return
         }
 
-        // Battery saver: when badge animation is off, an APNGDrawable that is never started
-        // decodes no frames and draws blank. Load the static first frame via Glide instead
-        // (non-animated PNG decoders render the APNG default image) so the badge is visible.
-        if (!badgesAnimated) {
-            loadStaticBadge(targetView.context.applicationContext, url, key, size)
-            return
-        }
-
-        ApngBadgeManager.loadBadge(url, size, targetView) { apngDrawable ->
+        ApngBadgeManager.loadBadge(url, masterSize, targetView) { apngDrawable ->
             if (apngDrawable != null) {
                 (apngDrawable as? APNGDrawable)?.setAutoPlay(true)
                 android.util.Log.d("EmoteManager", "✅ Loaded APNG badge via ApngBadgeManager: $url")
 
                 Handler(Looper.getMainLooper()).post {
-                    val newEntry = EmoteEntry(key, apngDrawable, size, Category.BADGE)
+                    val newEntry = EmoteEntry(key, apngDrawable, masterSize, Category.BADGE)
                     emoteEntries[key] = newEntry
 
                     val callbacks = pendingCallbacks.remove(key) ?: return@post
-                    for ((viewRef, callback) in callbacks) {
-                        val view = viewRef.get() ?: continue
-                        val proxy = ProxyDrawable(newEntry, view)
+                    for (req in callbacks) {
+                        val view = req.viewRef.get() ?: continue
+                        val proxy = ScalingProxyDrawable(newEntry, view, req.size)
                         newEntry.attachViewer(proxy)
-                        proxy.setBounds(0, 0, size, size)
-                        callback(proxy)
+                        proxy.setBounds(0, 0, proxy.intrinsicWidth, proxy.intrinsicHeight)
+                        req.onReady(proxy)
                     }
                 }
             } else {
-                android.util.Log.e("EmoteManager", "❌ Failed to load APNG badge: $url")
-                pendingCallbacks.remove(key)
+                android.util.Log.e("EmoteManager", "❌ Failed to load APNG badge, falling back to static: $url")
+                Handler(Looper.getMainLooper()).post {
+                    loadStaticBadge(appContext, url, key, masterSize)
+                }
             }
         }
     }
@@ -666,7 +698,7 @@ object EmoteManager {
      * animation is disabled — guarantees a visible first frame without relying on
      * APNGDrawable's start()-driven decode (which would otherwise render blank).
      */
-    private fun loadStaticBadge(context: Context, url: String, key: String, size: Int) {
+    private fun loadStaticBadge(context: Context, url: String, key: String, masterSize: Int) {
         val glideUrl = com.bumptech.glide.load.model.GlideUrl(
             url,
             com.bumptech.glide.load.model.LazyHeaders.Builder()
@@ -677,20 +709,20 @@ object EmoteManager {
             .asDrawable()
             .load(glideUrl)
             .dontAnimate()
-            .signature(ObjectKey("static_badge_$key"))
+            .signature(ObjectKey("static_badge_v2_$key"))
             .diskCacheStrategy(DiskCacheStrategy.DATA)
             .disallowHardwareConfig()
-            .into(object : CustomTarget<Drawable>(size, size) {
+            .into(object : CustomTarget<Drawable>(masterSize, masterSize) {
                 override fun onResourceReady(resource: Drawable, transition: Transition<in Drawable>?) {
-                    val newEntry = EmoteEntry(key, resource, size, Category.BADGE)
+                    val newEntry = EmoteEntry(key, resource, masterSize, Category.BADGE)
                     emoteEntries[key] = newEntry
                     val callbacks = pendingCallbacks.remove(key) ?: return
-                    for ((viewRef, callback) in callbacks) {
-                        val view = viewRef.get() ?: continue
-                        val proxy = ProxyDrawable(newEntry, view)
+                    for (req in callbacks) {
+                        val view = req.viewRef.get() ?: continue
+                        val proxy = ScalingProxyDrawable(newEntry, view, req.size)
                         newEntry.attachViewer(proxy)
-                        proxy.setBounds(0, 0, size, size)
-                        callback(proxy)
+                        proxy.setBounds(0, 0, proxy.intrinsicWidth, proxy.intrinsicHeight)
+                        req.onReady(proxy)
                     }
                 }
 
@@ -705,34 +737,36 @@ object EmoteManager {
 
     /**
      * Shared loading function specifically for Badges (subscriber badges, etc).
-     * Bypasses PNG URL check and directly attempts APNG load.
+     * Bypasses PNG URL check and directly attempts APNG load, scaling per caller via ScalingProxyDrawable.
      */
     fun loadBadgeSynchronized(
-        @Suppress("UNUSED_PARAMETER") context: Context,
+        context: Context,
         url: String,
         size: Int,
         targetView: View,
         onReady: (Drawable) -> Unit
     ) {
+        val safeSize = size.coerceAtLeast(1)
+        val masterSize = maxOf(safeSize, MIN_MASTER_BUFFER_SIZE)
         val key = "v6_$url"
-
-        val callbacks = pendingCallbacks[key]
-        if (callbacks != null) {
-            callbacks.add(Pair(WeakReference(targetView), onReady))
-            return
-        }
 
         val entry = emoteEntries[key]
         if (entry != null) {
-            val proxy = ProxyDrawable(entry, targetView)
+            val proxy = ScalingProxyDrawable(entry, targetView, safeSize)
             entry.attachViewer(proxy)
-            proxy.setBounds(0, 0, size, size)
+            proxy.setBounds(0, 0, proxy.intrinsicWidth, proxy.intrinsicHeight)
             onReady(proxy)
             return
         }
 
-        pendingCallbacks[key] = mutableListOf(Pair(WeakReference(targetView), onReady))
-        loadInternalApng(url, key, size)
+        val callbacks = pendingCallbacks[key]
+        if (callbacks != null) {
+            callbacks.add(PendingRequest(WeakReference(targetView), safeSize, onReady))
+            return
+        }
+
+        pendingCallbacks[key] = mutableListOf(PendingRequest(WeakReference(targetView), safeSize, onReady))
+        loadInternalApng(context.applicationContext, url, key, masterSize)
     }
 
     /**
@@ -842,18 +876,21 @@ object EmoteManager {
 
         if (emotePlaceholders.isEmpty()) return
 
+        val safeEmoteSize = emoteSize.coerceAtLeast(1)
+        val emoteRightMargin = (safeEmoteSize * 0.12f).roundToInt().coerceAtLeast(1)
+
         // Track how many emotes are still loading so we do ONE layout refresh at the end
         val remaining = java.util.concurrent.atomic.AtomicInteger(emotePlaceholders.size)
         pendingEmoteLoads[textView] = remaining
 
         for ((pos, emoteId, _) in emotePlaceholders) {
-            loadSynchronizedEmote(textView.context, emoteId, emoteSize, textView) { sharedDrawable ->
+            loadSynchronizedEmote(textView.context, emoteId, safeEmoteSize, textView) { sharedDrawable ->
                 try {
                     val currentText = textView.text
                     if (currentText is android.text.Spannable && pos < currentText.length) {
-                        // Use the custom CenterImageSpan with margin
+                        // Use the custom CenterImageSpan with proportional margin
                         val span = try {
-                           dev.xacnio.kciktv.shared.ui.adapter.ChatAdapter.CenterImageSpan(sharedDrawable, 4)
+                           dev.xacnio.kciktv.shared.ui.adapter.ChatAdapter.CenterImageSpan(sharedDrawable, emoteRightMargin)
                          } catch (e: Exception) {
                            android.text.style.ImageSpan(sharedDrawable, android.text.style.ImageSpan.ALIGN_BOTTOM)
                          }

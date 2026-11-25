@@ -33,6 +33,7 @@
                 app:layout_constraintEnd_toEndOf="parent" />
 
             <androidx.constraintlayout.widget.ConstraintLayout
+                android:id="@+id/rewardContentLayout"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:padding="10dp">
@@ -105,6 +106,7 @@
                     app:layout_constraintBottom_toBottomOf="parent">
                     
                     <ImageView
+                         android:id="@+id/rewardCostIcon"
                          android:layout_width="10dp"
                          android:layout_height="10dp"
                          android:src="@drawable/ic_loyalty"

@@ -32,6 +32,7 @@ import com.bumptech.glide.request.transition.Transition
 import dev.xacnio.kciktv.R
 import dev.xacnio.kciktv.shared.data.model.ChatMessage
 import java.util.regex.Pattern
+import kotlin.math.roundToInt
 import dev.xacnio.kciktv.shared.util.Constants
 import dev.xacnio.kciktv.shared.ui.widget.ShimmerLayout
 import dev.xacnio.kciktv.shared.ui.utils.EmoteManager
@@ -346,6 +347,62 @@ class ChatAdapter(
     private fun effectiveTextSize(): Float =
         ChatSizingMath.effectiveTextSizeSp(textSize, messageScalePercent)
 
+    private fun spScaled(baseSp: Float): Float =
+        ChatSizingMath.effectiveTextSizeSp(baseSp, messageScalePercent)
+
+    private fun dpScaled(view: View, baseDp: Float, minPx: Int = 0): Int =
+        ChatSizingMath.scaledDpToPx(
+            baseDp,
+            view.resources.displayMetrics.density,
+            messageScalePercent,
+            minPx
+        )
+
+    private fun spanRightMarginPx(view: View): Int =
+        dpScaled(view, 2f, minPx = 1)
+
+    private fun setScaledSize(view: View, widthPx: Int? = null, heightPx: Int? = null) {
+        val lp = view.layoutParams ?: return
+        var changed = false
+        if (widthPx != null && lp.width != widthPx) {
+            lp.width = widthPx
+            changed = true
+        }
+        if (heightPx != null && lp.height != heightPx) {
+            lp.height = heightPx
+            changed = true
+        }
+        if (changed) view.layoutParams = lp
+    }
+
+    private fun setScaledMargins(
+        view: View,
+        startPx: Int? = null,
+        topPx: Int? = null,
+        endPx: Int? = null,
+        bottomPx: Int? = null
+    ) {
+        val lp = view.layoutParams as? ViewGroup.MarginLayoutParams ?: return
+        var changed = false
+        if (startPx != null && lp.marginStart != startPx) {
+            lp.marginStart = startPx
+            changed = true
+        }
+        if (topPx != null && lp.topMargin != topPx) {
+            lp.topMargin = topPx
+            changed = true
+        }
+        if (endPx != null && lp.marginEnd != endPx) {
+            lp.marginEnd = endPx
+            changed = true
+        }
+        if (bottomPx != null && lp.bottomMargin != bottomPx) {
+            lp.bottomMargin = bottomPx
+            changed = true
+        }
+        if (changed) view.layoutParams = lp
+    }
+
     fun setChatMessageScale(scalePercent: Int) {
         val clamped = ChatSizingMath.clampScale(scalePercent)
         if (this.messageScalePercent != clamped) {
@@ -362,13 +419,30 @@ class ChatAdapter(
         }
     }
 
-    private fun applyRowSpacing(itemView: View, textView: TextView? = null) {
+    private fun applyRowSpacing(
+        itemView: View,
+        textView: TextView? = null,
+        itemHorizontalDp: Float? = null,
+        textHorizontalDp: Float? = null
+    ) {
         val density = itemView.resources.displayMetrics.density
-        val vPad = Math.round(messageSpacingDp * density)
-        itemView.setPadding(itemView.paddingLeft, vPad, itemView.paddingRight, vPad)
+        val vPad = (messageSpacingDp * density).roundToInt()
+        val hPadLeft = if (itemHorizontalDp != null) {
+            ChatSizingMath.scaledDpToPx(itemHorizontalDp, density, messageScalePercent)
+        } else {
+            itemView.paddingLeft
+        }
+        val hPadRight = if (itemHorizontalDp != null) hPadLeft else itemView.paddingRight
+        itemView.setPadding(hPadLeft, vPad, hPadRight, vPad)
         if (textView != null) {
-            val tvPad = Math.round(ChatSizingMath.messageTextVerticalPaddingDp(messageSpacingDp) * density)
-            textView.setPadding(textView.paddingLeft, tvPad, textView.paddingRight, tvPad)
+            val tvPad = (ChatSizingMath.messageTextVerticalPaddingDp(messageSpacingDp) * density).roundToInt()
+            val tvHPadLeft = if (textHorizontalDp != null) {
+                ChatSizingMath.scaledDpToPx(textHorizontalDp, density, messageScalePercent)
+            } else {
+                textView.paddingLeft
+            }
+            val tvHPadRight = if (textHorizontalDp != null) tvHPadLeft else textView.paddingRight
+            textView.setPadding(tvHPadLeft, tvPad, tvHPadRight, tvPad)
         }
     }
 
@@ -401,6 +475,7 @@ class ChatAdapter(
         val clipPreviewContainer: android.widget.FrameLayout = view.findViewById(R.id.clipPreviewContainer)
         val clipShimmerLayout: dev.xacnio.kciktv.shared.ui.widget.ShimmerLayout = view.findViewById(R.id.clipShimmerLayout)
         val clipContentLayout: androidx.constraintlayout.widget.ConstraintLayout = view.findViewById(R.id.clipContentLayout)
+        val clipThumbCard: androidx.cardview.widget.CardView = view.findViewById(R.id.clipThumbCard)
         val clipThumbnail: ImageView = view.findViewById(R.id.clipThumbnail)
         val clipTitle: TextView = view.findViewById(R.id.clipTitle)
         val clipChannel: TextView = view.findViewById(R.id.clipChannel)
@@ -463,6 +538,7 @@ class ChatAdapter(
     }
 
     class SystemViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+        val systemContentLayout: View = view.findViewById(R.id.systemContentLayout)
         val systemMessageText: TextView = view.findViewById(R.id.systemMessageText)
         val systemMessageIcon: ImageView = view.findViewById(R.id.systemMessageIcon)
     }
@@ -481,9 +557,12 @@ class ChatAdapter(
     }
 
     class RewardViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+        val rewardContentLayout: View = view.findViewById(R.id.rewardContentLayout)
         val rewardHeader: TextView = view.findViewById(R.id.rewardHeader)
         val rewardTitle: TextView = view.findViewById(R.id.rewardTitle)
         val rewardInput: TextView = view.findViewById(R.id.rewardInput)
+        val costLayout: View = view.findViewById(R.id.costLayout)
+        val rewardCostIcon: ImageView = view.findViewById(R.id.rewardCostIcon)
         val rewardCost: TextView = view.findViewById(R.id.rewardCost)
         val rewardIcon: ImageView = view.findViewById(R.id.rewardIcon)
         val accentStripe: View = view.findViewById(R.id.accentStripe)
@@ -491,6 +570,8 @@ class ChatAdapter(
     }
 
     class CelebrationViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+        val cardContainer: androidx.cardview.widget.CardView = view.findViewById(R.id.cardContainer)
+        val celebrationContentLayout: View = view.findViewById(R.id.celebrationContentLayout)
         val accentStripe: View = view.findViewById(R.id.accentStripe)
         val celebrationIcon: ImageView = view.findViewById(R.id.celebrationIcon)
         val celebrationUser: TextView = view.findViewById(R.id.celebrationUser)
@@ -545,6 +626,7 @@ class ChatAdapter(
     class GiftViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         val giftHeaderText: TextView = view.findViewById(R.id.giftHeaderText)
         val giftMessageText: TextView = view.findViewById(R.id.giftMessageText)
+        val amountIcon: ImageView = view.findViewById(R.id.amountIcon)
         val amountText: TextView = view.findViewById(R.id.amountText)
         val amountLayout: View = view.findViewById(R.id.amountLayout)
         val giftImage: ImageView = view.findViewById(R.id.giftImage)
@@ -664,7 +746,9 @@ class ChatAdapter(
 
 
     private fun bindGiftMessage(holder: GiftViewHolder, message: ChatMessage) {
-        applyRowSpacing(holder.itemView, null)
+        applyRowSpacing(holder.itemView, null, itemHorizontalDp = 0f)
+        val containerMarginV = dpScaled(holder.itemView, 3f)
+        setScaledMargins(holder.itemView, topPx = containerMarginV, bottomPx = containerMarginV)
         val data = message.giftData ?: return
         
         // Parse user color
@@ -693,19 +777,22 @@ class ChatAdapter(
             holder.gradientBackground.background = gradient
         }
 
-        // Adjust Layout based on gift size
-        val density = holder.itemView.resources.displayMetrics.density
-        val paddingHorizontal = ((if (isSmallGift) 12 else 10) * density).toInt()
-        val paddingVertical = ((if (isSmallGift) 6 else 10) * density).toInt()
+        // Scale gift layout proportionally with messageScalePercent (from constant base dp)
+        val paddingHorizontal = dpScaled(holder.itemView, if (isSmallGift) 12f else 10f)
+        val paddingVertical = dpScaled(holder.itemView, if (isSmallGift) 6f else 10f)
         holder.giftContentLayout.setPadding(paddingHorizontal, paddingVertical, paddingHorizontal, paddingVertical)
-        
-        val imageSize = ((if (isSmallGift) 40 else 56) * density).toInt()
-        holder.giftImage.layoutParams.width = imageSize
-        holder.giftImage.layoutParams.height = imageSize
-        holder.giftImage.requestLayout()
-        
-        val amountMarginTop = ((if (isSmallGift) 4 else 8) * density).toInt()
-        (holder.amountLayout.layoutParams as? ViewGroup.MarginLayoutParams)?.topMargin = amountMarginTop
+
+        val imageSize = dpScaled(holder.itemView, if (isSmallGift) 40f else 56f, minPx = 1)
+        setScaledSize(holder.giftImage, widthPx = imageSize, heightPx = imageSize)
+
+        val textEndMargin = dpScaled(holder.itemView, 12f)
+        setScaledMargins(holder.giftHeaderText, endPx = textEndMargin)
+        setScaledMargins(holder.giftMessageText, topPx = dpScaled(holder.itemView, 6f), endPx = textEndMargin)
+        setScaledMargins(holder.amountLayout, topPx = dpScaled(holder.itemView, if (isSmallGift) 4f else 8f))
+
+        val amountIconSize = dpScaled(holder.itemView, 16f, minPx = 1)
+        setScaledSize(holder.amountIcon, widthPx = amountIconSize, heightPx = amountIconSize)
+        setScaledMargins(holder.amountText, startPx = dpScaled(holder.itemView, 4f))
 
         // Header: User Color + White Text
         val builder = SpannableStringBuilder()
@@ -736,7 +823,7 @@ class ChatAdapter(
         
         // Amount (formatted with thousands separator)
         holder.amountText.text = java.text.NumberFormat.getIntegerInstance().format(amount).replace(",", ".")
-        holder.amountText.textSize = effectiveTextSize() * 0.9f
+        holder.amountText.textSize = ChatSizingMath.effectiveTextSizeSp(textSize * 0.9f, messageScalePercent)
         
         // Gift Image
         val giftId = data.gift?.giftId
@@ -753,7 +840,24 @@ class ChatAdapter(
     }
 
     private fun bindRewardMessage(holder: RewardViewHolder, message: ChatMessage) {
-        applyRowSpacing(holder.itemView, null)
+        applyRowSpacing(holder.itemView, null, itemHorizontalDp = 4f)
+        holder.cardContainer.radius = dpScaled(holder.itemView, 8f, minPx = 1).toFloat()
+        setScaledSize(holder.accentStripe, heightPx = dpScaled(holder.itemView, 3f, minPx = 1))
+        val contentPad = dpScaled(holder.itemView, 10f)
+        holder.rewardContentLayout.setPadding(contentPad, contentPad, contentPad, contentPad)
+        val rewardIconSize = dpScaled(holder.itemView, 20f, minPx = 1)
+        setScaledSize(holder.rewardIcon, widthPx = rewardIconSize, heightPx = rewardIconSize)
+        setScaledMargins(holder.rewardHeader, startPx = dpScaled(holder.itemView, 8f))
+        setScaledMargins(holder.rewardTitle, topPx = dpScaled(holder.itemView, 6f))
+        val inputPadH = dpScaled(holder.itemView, 8f)
+        val inputPadV = dpScaled(holder.itemView, 6f)
+        holder.rewardInput.setPadding(inputPadH, inputPadV, inputPadH, inputPadV)
+        setScaledMargins(holder.rewardInput, topPx = dpScaled(holder.itemView, 8f))
+        setScaledMargins(holder.costLayout, topPx = dpScaled(holder.itemView, 6f))
+        val coinSize = dpScaled(holder.itemView, 10f, minPx = 1)
+        setScaledSize(holder.rewardCostIcon, widthPx = coinSize, heightPx = coinSize)
+        setScaledMargins(holder.rewardCost, startPx = dpScaled(holder.itemView, 3f))
+
         val data = message.rewardData ?: return
         
         val username = data.username ?: "User"
@@ -831,11 +935,11 @@ class ChatAdapter(
         val cost = data.rewardCost ?: 0
         if (cost > 0) {
             holder.rewardCost.text = "-${cost}"
-            holder.rewardCost.textSize = effectiveTextSize() * 0.85f
+            holder.rewardCost.textSize = ChatSizingMath.effectiveTextSizeSp(textSize * 0.85f, messageScalePercent)
             holder.rewardCost.visibility = View.VISIBLE
-            (holder.rewardCost.parent as? View)?.visibility = View.VISIBLE
+            holder.costLayout.visibility = View.VISIBLE
         } else {
-            (holder.rewardCost.parent as? View)?.visibility = View.GONE
+            holder.costLayout.visibility = View.GONE
         }
         
         val colorHex = data.rewardBackgroundColor ?: "#53FC18"
@@ -849,7 +953,25 @@ class ChatAdapter(
     }
 
     private fun bindCelebrationMessage(holder: CelebrationViewHolder, message: ChatMessage) {
-        applyRowSpacing(holder.itemView, null)
+        dev.xacnio.kciktv.shared.ui.utils.EmoteManager.unregisterViewer(holder.messageText)
+        holder.clear()
+        applyRowSpacing(holder.itemView, null, itemHorizontalDp = 0f)
+        val cardMarginV = dpScaled(holder.itemView, 4f)
+        setScaledMargins(holder.itemView, topPx = cardMarginV, bottomPx = cardMarginV)
+        holder.cardContainer.radius = dpScaled(holder.itemView, 4f, minPx = 1).toFloat()
+        setScaledSize(holder.accentStripe, widthPx = dpScaled(holder.itemView, 4f, minPx = 1))
+        val contentPad = dpScaled(holder.itemView, 12f)
+        holder.celebrationContentLayout.setPadding(contentPad, contentPad, contentPad, contentPad)
+        val iconSize = dpScaled(holder.itemView, 20f, minPx = 1)
+        setScaledSize(holder.celebrationIcon, widthPx = iconSize, heightPx = iconSize)
+        holder.celebrationUser.textSize = spScaled(14f)
+        setScaledMargins(holder.celebrationUser, startPx = dpScaled(holder.itemView, 8f))
+        holder.celebrationTitle.textSize = spScaled(13f)
+        setScaledMargins(holder.celebrationTitle, topPx = dpScaled(holder.itemView, 4f))
+        holder.celebrationSubTitle.textSize = spScaled(13f)
+        setScaledMargins(holder.celebrationSubTitle, topPx = dpScaled(holder.itemView, 2f))
+        setScaledMargins(holder.messageText, topPx = dpScaled(holder.itemView, 8f))
+
         val data = message.celebrationData ?: return
         val context = holder.itemView.context
         
@@ -950,7 +1072,8 @@ class ChatAdapter(
         messageText.textSize = effectiveTextSize()
         
         val context = messageText.context
-        val badgeSize = (messageText.textSize * 1.2).toInt()
+        val badgeSize = (messageText.textSize * 1.2f).roundToInt().coerceAtLeast(1)
+        val spanMargin = spanRightMarginPx(messageText)
         val builder = SpannableStringBuilder()
         
         // In celebration, we don't show reply header or timestamps usually to keep it clean inside the card
@@ -981,10 +1104,13 @@ class ChatAdapter(
                     if (d != null) {
                         d.setBounds(0, 0, badgeSize, badgeSize)
                         builder.append("  ")
-                        builder.setSpan(CenterImageSpan(d), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        builder.setSpan(CenterImageSpan(d, spanMargin), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     }
                 } else if (!badge.imageUrl.isNullOrEmpty()) {
                     builder.append("  ")
+                    val placeholder = android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT)
+                    placeholder.setBounds(0, 0, badgeSize, badgeSize)
+                    builder.setSpan(CenterImageSpan(placeholder, spanMargin), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     badgePlaceholders.add(startPos to badge.imageUrl)
                 }
             }
@@ -997,7 +1123,7 @@ class ChatAdapter(
                     if (d != null) {
                         d.setBounds(0, 0, badgeSize, badgeSize)
                         builder.append("  ")
-                        builder.setSpan(CenterImageSpan(d), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        builder.setSpan(CenterImageSpan(d, spanMargin), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     } else builder.append("🎬 ")
                 }
                 "moderator" -> {
@@ -1005,7 +1131,7 @@ class ChatAdapter(
                     if (d != null) {
                         d.setBounds(0, 0, badgeSize, badgeSize)
                         builder.append("  ")
-                        builder.setSpan(CenterImageSpan(d), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        builder.setSpan(CenterImageSpan(d, spanMargin), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     } else builder.append("🛡️ ")
                 }
                 "vip" -> {
@@ -1013,7 +1139,7 @@ class ChatAdapter(
                     if (d != null) {
                         d.setBounds(0, 0, badgeSize, badgeSize)
                         builder.append("  ")
-                        builder.setSpan(CenterImageSpan(d), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        builder.setSpan(CenterImageSpan(d, spanMargin), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     } else builder.append("💎 ")
                 }
                 "og" -> {
@@ -1021,7 +1147,7 @@ class ChatAdapter(
                     if (d != null) {
                         d.setBounds(0, 0, badgeSize, badgeSize)
                         builder.append("  ")
-                        builder.setSpan(CenterImageSpan(d), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        builder.setSpan(CenterImageSpan(d, spanMargin), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     } else builder.append("👑 ")
                 }
                 "verified" -> {
@@ -1029,7 +1155,7 @@ class ChatAdapter(
                     if (d != null) {
                         d.setBounds(0, 0, badgeSize, badgeSize)
                         builder.append("  ")
-                        builder.setSpan(CenterImageSpan(d), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        builder.setSpan(CenterImageSpan(d, spanMargin), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     } else builder.append("✓ ")
                 }
                 "founder" -> {
@@ -1037,7 +1163,7 @@ class ChatAdapter(
                     if (d != null) {
                         d.setBounds(0, 0, badgeSize, badgeSize)
                         builder.append("  ")
-                        builder.setSpan(CenterImageSpan(d), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        builder.setSpan(CenterImageSpan(d, spanMargin), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     } else builder.append("🏆 ")
                 }
                 "staff" -> {
@@ -1045,7 +1171,7 @@ class ChatAdapter(
                     if (d != null) {
                         d.setBounds(0, 0, badgeSize, badgeSize)
                         builder.append("  ")
-                        builder.setSpan(CenterImageSpan(d), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        builder.setSpan(CenterImageSpan(d, spanMargin), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     } else builder.append("🔧 ")
                 }
                 "subscriber" -> {
@@ -1053,13 +1179,16 @@ class ChatAdapter(
                     val badgeUrl = subscriberBadges.keys.filter { it <= months }.maxOrNull()?.let { subscriberBadges[it] }
                     if (badgeUrl != null) {
                         builder.append("  ")
+                        val placeholder = android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT)
+                        placeholder.setBounds(0, 0, badgeSize, badgeSize)
+                        builder.setSpan(CenterImageSpan(placeholder, spanMargin), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                         badgePlaceholders.add(startPos to badgeUrl)
                     } else {
                         val d = androidx.core.content.ContextCompat.getDrawable(context, R.drawable.ic_badge_subscriber_default)?.mutate()
                         if (d != null) {
                             d.setBounds(0, 0, badgeSize, badgeSize)
                             builder.append("  ")
-                            builder.setSpan(CenterImageSpan(d), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                            builder.setSpan(CenterImageSpan(d, spanMargin), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                         } else builder.append("⭐ ")
                     }
                 }
@@ -1071,7 +1200,7 @@ class ChatAdapter(
                     if (d != null) {
                         d.setBounds(0, 0, badgeSize, badgeSize)
                         builder.append("  ")
-                        builder.setSpan(CenterImageSpan(d), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        builder.setSpan(CenterImageSpan(d, spanMargin), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     } else builder.append("🎁 ")
                 }
                 "sidekick" -> {
@@ -1079,7 +1208,7 @@ class ChatAdapter(
                     if (d != null) {
                         d.setBounds(0, 0, badgeSize, badgeSize)
                         builder.append("  ")
-                        builder.setSpan(CenterImageSpan(d), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        builder.setSpan(CenterImageSpan(d, spanMargin), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     } else builder.append("🤝 ")
                 }
                 "bot" -> {
@@ -1087,7 +1216,7 @@ class ChatAdapter(
                     if (d != null) {
                         d.setBounds(0, 0, badgeSize, badgeSize)
                         builder.append("  ")
-                        builder.setSpan(CenterImageSpan(d), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        builder.setSpan(CenterImageSpan(d, spanMargin), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     } else builder.append("🤖 ")
                 }
                 // Add more badges as needed...
@@ -1109,12 +1238,12 @@ class ChatAdapter(
         builder.append(": ")
         val messageStartIndex = builder.length
         
-        val emoteSize = (messageText.textSize * emoteScale).toInt()
+        val emoteSize = (messageText.textSize * emoteScale).roundToInt().coerceAtLeast(1)
         val emotePlaceholders = mutableListOf<EmotePlaceholder>()
         val processedContent = processEmotesInContent(message.content, messageStartIndex, emotePlaceholders)
         builder.append(processedContent)
         
-        applyEmoteAnnotations(builder, emotePlaceholders, emoteSize)
+        applyEmoteAnnotations(builder, emotePlaceholders, emoteSize, spanMargin)
         
         // Detect hyperlinks and make them clickable (without underline)
         val matcher = URL_PATTERN.matcher(builder)
@@ -1143,16 +1272,16 @@ class ChatAdapter(
 
         // Load badges
         for ((pos, url) in badgePlaceholders) {
-            loadBadgeImageInternal(messageText, scheduleLayoutUpdate, pos, url, badgeSize)
+            loadBadgeImageInternal(messageText, scheduleLayoutUpdate, pos, url, badgeSize, spanMargin)
         }
         
         // Load emotes
         for (p in emotePlaceholders) {
-            loadEmoteImageInternal(messageText, scheduleLayoutUpdate, p.id, p.name, emoteSize)
+            loadEmoteImageInternal(messageText, scheduleLayoutUpdate, p.id, p.name, emoteSize, spanMargin)
         }
     }
 
-    private fun loadBadgeImageInternal(textView: TextView, scheduleLayoutUpdate: () -> Unit, position: Int, url: String, size: Int) {
+    private fun loadBadgeImageInternal(textView: TextView, scheduleLayoutUpdate: () -> Unit, position: Int, url: String, size: Int, rightMargin: Int) {
         dev.xacnio.kciktv.shared.ui.utils.EmoteManager.loadBadgeSynchronized(
             textView.context, url, size, textView
         ) { drawable ->
@@ -1160,24 +1289,24 @@ class ChatAdapter(
                 val currentText = textView.text
                 if (currentText is Spannable && position < currentText.length) {
                     currentText.getSpans(position, position + 1, CenterImageSpan::class.java).forEach { currentText.removeSpan(it) }
-                    currentText.setSpan(CenterImageSpan(drawable), position, position + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    currentText.setSpan(CenterImageSpan(drawable, rightMargin), position, position + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     scheduleLayoutUpdate()
                 }
             } catch (e: Exception) {}
         }
     }
 
-    private fun loadEmoteImageInternal(textView: TextView, scheduleLayoutUpdate: () -> Unit, emoteId: String, emoteName: String, size: Int) {
+    private fun loadEmoteImageInternal(textView: TextView, scheduleLayoutUpdate: () -> Unit, emoteId: String, emoteName: String, size: Int, rightMargin: Int) {
         val tag = "[emote:$emoteId:$emoteName]"
         dev.xacnio.kciktv.shared.ui.utils.EmoteManager.loadSynchronizedEmote(textView.context, emoteId, size, textView) { sharedDrawable ->
             val currentSpannable = textView.text as? Spannable
             if (currentSpannable != null) {
-                applyEmoteSpanToTagInternal(textView, scheduleLayoutUpdate, currentSpannable, tag, sharedDrawable, emoteId, emoteName)
+                applyEmoteSpanToTagInternal(textView, scheduleLayoutUpdate, currentSpannable, tag, sharedDrawable, emoteId, emoteName, rightMargin)
             }
         }
     }
 
-    private fun applyEmoteSpanToTagInternal(textView: TextView, scheduleLayoutUpdate: () -> Unit, spannable: Spannable, tag: String, drawable: Drawable, emoteId: String, emoteName: String) {
+    private fun applyEmoteSpanToTagInternal(textView: TextView, scheduleLayoutUpdate: () -> Unit, spannable: Spannable, tag: String, drawable: Drawable, emoteId: String, emoteName: String, rightMargin: Int) {
         try {
             val annotations = spannable.getSpans(0, spannable.length, android.text.Annotation::class.java)
             val target = annotations.find { ann ->
@@ -1192,7 +1321,7 @@ class ChatAdapter(
                 val start = spannable.getSpanStart(target)
                 val end = spannable.getSpanEnd(target)
                 if (start == -1) return
-                applyEmoteSpanInternal(textView, scheduleLayoutUpdate, spannable, start, end, drawable, emoteId, emoteName, 4)
+                applyEmoteSpanInternal(textView, scheduleLayoutUpdate, spannable, start, end, drawable, emoteId, emoteName, rightMargin)
             }
         } catch (e: Exception) {}
     }
@@ -1216,7 +1345,35 @@ class ChatAdapter(
         } catch (e: Exception) {}
     }
 
+    private fun applyRestoreButtonScaling(holder: RestoreButtonViewHolder) {
+        val outerPad = dpScaled(holder.itemView, 8f)
+        holder.itemView.setPadding(outerPad, outerPad, outerPad, outerPad)
+
+        holder.restoreButton.minHeight = 0
+        holder.restoreButton.minimumHeight = 0
+        holder.restoreButton.minWidth = 0
+        holder.restoreButton.minimumWidth = 0
+        holder.restoreButton.textSize = spScaled(14f)
+        val btnPadH = dpScaled(holder.itemView, 16f)
+        val btnPadV = dpScaled(holder.itemView, 12f)
+        holder.restoreButton.setPadding(btnPadH, btnPadV, btnPadH, btnPadV)
+        holder.restoreButton.compoundDrawablePadding = dpScaled(holder.itemView, 8f)
+        val restoreIcon = androidx.core.content.ContextCompat.getDrawable(holder.itemView.context, R.drawable.ic_restore)?.mutate()
+        if (restoreIcon != null) {
+            val restoreIconSize = dpScaled(holder.itemView, 24f, minPx = 1)
+            restoreIcon.setBounds(0, 0, restoreIconSize, restoreIconSize)
+            holder.restoreButton.setCompoundDrawablesRelative(restoreIcon, null, null, null)
+        }
+
+        val dismissSize = dpScaled(holder.itemView, 40f, minPx = 1)
+        setScaledSize(holder.dismissButton, widthPx = dismissSize, heightPx = dismissSize)
+        val dismissPad = dpScaled(holder.itemView, 8f)
+        holder.dismissButton.setPadding(dismissPad, dismissPad, dismissPad, dismissPad)
+        setScaledMargins(holder.dismissButton, endPx = dpScaled(holder.itemView, 8f))
+    }
+
     private fun bindRestoreButton(holder: RestoreButtonViewHolder, message: ChatMessage) {
+        applyRestoreButtonScaling(holder)
         holder.restoreButton.text = message.content
         holder.restoreButton.setOnClickListener {
             onRestoreClick?.invoke()
@@ -1227,11 +1384,15 @@ class ChatAdapter(
     }
 
     private fun bindDivider(holder: DividerViewHolder, message: ChatMessage) {
-        applyRowSpacing(holder.itemView, null)
+        applyRowSpacing(holder.itemView, null, itemHorizontalDp = 16f)
         holder.dividerText.text = message.content
+        holder.dividerText.textSize = spScaled(11f)
+        val marginH = dpScaled(holder.itemView, 12f)
+        setScaledMargins(holder.dividerText, startPx = marginH, endPx = marginH)
     }
 
     private fun bindLoadMissedButton(holder: RestoreButtonViewHolder, message: ChatMessage) {
+        applyRestoreButtonScaling(holder)
         holder.restoreButton.text = message.content
         holder.restoreButton.setOnClickListener {
             onLoadMissedClick?.invoke(message)
@@ -1242,7 +1403,7 @@ class ChatAdapter(
     }
 
     private fun bindInfoMessage(holder: InfoViewHolder, message: ChatMessage) {
-        applyRowSpacing(holder.itemView, null)
+        applyRowSpacing(holder.itemView, null, itemHorizontalDp = 12f)
         val content = message.content
         val htmlRes = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
             android.text.Html.fromHtml(content, android.text.Html.FROM_HTML_MODE_COMPACT)
@@ -1282,7 +1443,10 @@ class ChatAdapter(
     }
 
     private fun bindSystemMessage(holder: SystemViewHolder, message: ChatMessage) {
-        applyRowSpacing(holder.itemView, null)
+        applyRowSpacing(holder.itemView, null, itemHorizontalDp = 0f)
+        val boxPadH = dpScaled(holder.itemView, 12f)
+        val boxPadV = dpScaled(holder.itemView, 8f)
+        holder.systemContentLayout.setPadding(boxPadH, boxPadV, boxPadH, boxPadV)
         val content = message.content
         val htmlRes = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
             android.text.Html.fromHtml(content, android.text.Html.FROM_HTML_MODE_COMPACT)
@@ -1382,11 +1546,11 @@ class ChatAdapter(
         holder.systemMessageText.textSize = effectiveTextSize()
         holder.systemMessageText.movementMethod = android.text.method.LinkMovementMethod.getInstance()
         
-        // Scale icon based on text size
+        // Scale icon and end margin based on text size and messageScalePercent
         val density = holder.itemView.resources.displayMetrics.density
-        val iconSize = (effectiveTextSize() * density * 1.2f).toInt()
-        holder.systemMessageIcon.layoutParams.width = iconSize
-        holder.systemMessageIcon.layoutParams.height = iconSize
+        val iconSize = (effectiveTextSize() * density * 1.2f).roundToInt().coerceAtLeast(1)
+        setScaledSize(holder.systemMessageIcon, widthPx = iconSize, heightPx = iconSize)
+        setScaledMargins(holder.systemMessageIcon, endPx = dpScaled(holder.itemView, 8f))
         
         if (message.iconResId != null) {
             holder.systemMessageIcon.setImageResource(message.iconResId)
@@ -1416,6 +1580,57 @@ class ChatAdapter(
             val matcher = CLIP_URL_PATTERN.matcher(message.content)
             if (matcher.find()) {
                 val clipId = matcher.group(1) ?: return
+
+                val view = holder.itemView
+                val clipMargin = dpScaled(view, 4f)
+                setScaledMargins(holder.clipPreviewContainer, startPx = clipMargin, topPx = clipMargin)
+
+                val desiredCardWidth = dpScaled(view, 280f, minPx = 1)
+                val parentWidth = view.width.takeIf { it > 0 }
+                    ?: (view.parent as? View)?.width?.takeIf { it > 0 }
+                    ?: 0
+                val rowHPad = dpScaled(view, 8f)
+                val cardWidth = if (parentWidth > 0) {
+                    val maxAvail = (parentWidth - rowHPad * 2 - clipMargin).coerceAtLeast(dpScaled(view, 96f, minPx = 1))
+                    minOf(desiredCardWidth, maxAvail)
+                } else {
+                    desiredCardWidth
+                }
+                val shimmerHeight = dpScaled(view, 76f, minPx = 1)
+                setScaledSize(holder.clipShimmerLayout, widthPx = cardWidth, heightPx = shimmerHeight)
+                setScaledSize(holder.clipContentLayout, widthPx = cardWidth)
+                val contentPad = dpScaled(view, 4f)
+                holder.clipContentLayout.setPadding(contentPad, contentPad, contentPad, contentPad)
+
+                val baseThumbW = dpScaled(view, 120f, minPx = 1)
+                val thumbW = minOf(baseThumbW, (cardWidth * 0.5f).roundToInt().coerceAtLeast(1))
+                val thumbH = if (thumbW < baseThumbW) {
+                    (thumbW * 68f / 120f).roundToInt().coerceAtLeast(1)
+                } else {
+                    dpScaled(view, 68f, minPx = 1)
+                }
+                setScaledSize(holder.clipThumbCard, widthPx = thumbW, heightPx = thumbH)
+                holder.clipThumbCard.radius = dpScaled(view, 6f, minPx = 1).toFloat()
+
+                (holder.clipShimmerLayout.getChildAt(0) as? ViewGroup)?.let { shimmerInner ->
+                    shimmerInner.setPadding(contentPad, contentPad, contentPad, contentPad)
+                    if (shimmerInner.childCount > 0) {
+                        setScaledSize(shimmerInner.getChildAt(0), widthPx = thumbW)
+                    }
+                }
+
+                val durPadH = dpScaled(view, 4f)
+                val durPadV = dpScaled(view, 1f)
+                holder.clipDuration.setPadding(durPadH, durPadV, durPadH, durPadV)
+                holder.clipDuration.textSize = spScaled(10f)
+
+                val textMarginStart = dpScaled(view, 8f)
+                holder.clipTitle.textSize = spScaled(13f)
+                setScaledMargins(holder.clipTitle, startPx = textMarginStart)
+                holder.clipChannel.textSize = spScaled(11f)
+                setScaledMargins(holder.clipChannel, startPx = textMarginStart, topPx = dpScaled(view, 2f))
+                holder.clipViews.textSize = spScaled(10f)
+                setScaledMargins(holder.clipViews, startPx = textMarginStart)
                 
                 holder.clipPreviewContainer.visibility = View.VISIBLE
                 
@@ -1463,7 +1678,8 @@ class ChatAdapter(
     }
 
     private fun bindChatMessage(holder: ChatViewHolder, message: ChatMessage) {
-        applyRowSpacing(holder.itemView, holder.messageText)
+        applyRowSpacing(holder.itemView, holder.messageText, itemHorizontalDp = 8f, textHorizontalDp = 4f)
+        dev.xacnio.kciktv.shared.ui.utils.EmoteManager.unregisterViewer(holder.messageText)
         
         // ABSOLUTELY CRITICAL: Clear text and spans immediately to stop any 
         // lingering drawing operations before we clear the Glide targets.
@@ -1523,16 +1739,16 @@ class ChatAdapter(
 
         if (borderColor != null) {
             val highlight = android.graphics.drawable.GradientDrawable().apply {
-                cornerRadius = 8f
+                cornerRadius = dpScaled(holder.itemView, 4f, minPx = 1).toFloat()
                 if (useBackgroundForHighlight) {
                     // Filled style: translucent background of the same hue, with a slightly
                     // stronger same-hue border so the box edge stays legible.
                     setColor((borderColor and 0x00FFFFFF) or (0x33 shl 24))
-                    setStroke(2, (borderColor and 0x00FFFFFF) or (0x80 shl 24))
+                    setStroke(dpScaled(holder.itemView, 1f, minPx = 1), (borderColor and 0x00FFFFFF) or (0x80 shl 24))
                 } else {
                     // Border style: transparent fill with a solid coloured border.
                     setColor(Color.TRANSPARENT)
-                    setStroke(3, borderColor)
+                    setStroke(dpScaled(holder.itemView, 1.5f, minPx = 1), borderColor)
                 }
             }
             val layers = if (baseBg != null) arrayOf(baseBg, highlight) else arrayOf(highlight)
@@ -1605,12 +1821,12 @@ class ChatAdapter(
         holder.itemView.alpha = 1.0f
         
         val emotePlaceholdersReply = mutableListOf<EmotePlaceholder>() // Reply emotes
-        val badgeSize = (holder.messageText.textSize * 1.2).toInt()
+        val badgeSize = (holder.messageText.textSize * 1.2f).roundToInt().coerceAtLeast(1)
+        val spanMargin = spanRightMarginPx(holder.messageText)
         
         // Build styled message: [badges] username: message
         val builder = SpannableStringBuilder()
         
-        // Add Reply Header if present
         // Add Reply Header if present
         message.metadata?.originalSender?.let { originalSender ->
             val start = builder.length
@@ -1622,11 +1838,11 @@ class ChatAdapter(
 
             val replyIcon = androidx.core.content.ContextCompat.getDrawable(context, R.drawable.ic_reply)?.mutate()
             if (replyIcon != null) {
-                val iconSize = (holder.messageText.textSize * 0.8f).toInt()
+                val iconSize = (holder.messageText.textSize * 0.8f).roundToInt().coerceAtLeast(1)
                 replyIcon.setBounds(0, 0, iconSize, iconSize)
                 replyIcon.setTint(0xFF999999.toInt())
                 builder.append("  ") // Placeholder space
-                builder.setSpan(CenterImageSpan(replyIcon), start, start + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                builder.setSpan(CenterImageSpan(replyIcon, spanMargin), start, start + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                 builder.append(" @${originalSender.username}")
             } else {
                 builder.append("↪ @${originalSender.username}")
@@ -1647,8 +1863,8 @@ class ChatAdapter(
                 builder.append(processedReplyContent)
                 
                 // Add Annotation spans and transparent placeholders for reliable async tracking in replies
-                val replyEmoteSize = (holder.messageText.textSize * 0.8f).toInt()
-                applyEmoteAnnotations(builder, emotePlaceholdersReply, replyEmoteSize)
+                val replyEmoteSize = (holder.messageText.textSize * 0.8f).roundToInt().coerceAtLeast(1)
+                applyEmoteAnnotations(builder, emotePlaceholdersReply, replyEmoteSize, spanMargin)
             }
             
             builder.append("\n")
@@ -1735,10 +1951,13 @@ class ChatAdapter(
                     if (d != null) {
                         d.setBounds(0, 0, badgeSize, badgeSize)
                         builder.append("  ")
-                        builder.setSpan(CenterImageSpan(d), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        builder.setSpan(CenterImageSpan(d, spanMargin), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     }
                 } else if (!badge.imageUrl.isNullOrEmpty()) {
                     builder.append("  ")
+                    val placeholder = android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT)
+                    placeholder.setBounds(0, 0, badgeSize, badgeSize)
+                    builder.setSpan(CenterImageSpan(placeholder, spanMargin), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     badgePlaceholders.add(startPos to badge.imageUrl)
                 }
             }
@@ -1752,7 +1971,7 @@ class ChatAdapter(
                     if (d != null) {
                         d.setBounds(0, 0, badgeSize, badgeSize)
                         builder.append("  ")
-                        builder.setSpan(CenterImageSpan(d), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        builder.setSpan(CenterImageSpan(d, spanMargin), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     } else {
                         builder.append("🎬 ")
                     }
@@ -1763,7 +1982,7 @@ class ChatAdapter(
                     if (d != null) {
                         d.setBounds(0, 0, badgeSize, badgeSize)
                         builder.append("  ")
-                        builder.setSpan(CenterImageSpan(d), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        builder.setSpan(CenterImageSpan(d, spanMargin), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     } else {
                         builder.append("🛡️ ")
                     }
@@ -1774,7 +1993,7 @@ class ChatAdapter(
                     if (d != null) {
                         d.setBounds(0, 0, badgeSize, badgeSize)
                         builder.append("  ")
-                        builder.setSpan(CenterImageSpan(d), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        builder.setSpan(CenterImageSpan(d, spanMargin), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     } else {
                         builder.append("💎 ")
                     }
@@ -1785,7 +2004,7 @@ class ChatAdapter(
                     if (d != null) {
                         d.setBounds(0, 0, badgeSize, badgeSize)
                         builder.append("  ")
-                        builder.setSpan(CenterImageSpan(d), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        builder.setSpan(CenterImageSpan(d, spanMargin), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     } else {
                         builder.append("👑 ")
                     }
@@ -1796,7 +2015,7 @@ class ChatAdapter(
                     if (d != null) {
                         d.setBounds(0, 0, badgeSize, badgeSize)
                         builder.append("  ")
-                        builder.setSpan(CenterImageSpan(d), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        builder.setSpan(CenterImageSpan(d, spanMargin), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     } else {
                         builder.append("✓ ")
                     }
@@ -1807,7 +2026,7 @@ class ChatAdapter(
                     if (d != null) {
                         d.setBounds(0, 0, badgeSize, badgeSize)
                         builder.append("  ")
-                        builder.setSpan(CenterImageSpan(d), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        builder.setSpan(CenterImageSpan(d, spanMargin), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     } else {
                         builder.append("🏆 ")
                     }
@@ -1818,7 +2037,7 @@ class ChatAdapter(
                     if (d != null) {
                         d.setBounds(0, 0, badgeSize, badgeSize)
                         builder.append("  ")
-                        builder.setSpan(CenterImageSpan(d), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        builder.setSpan(CenterImageSpan(d, spanMargin), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     } else {
                         builder.append("🔧 ")
                     }
@@ -1837,7 +2056,7 @@ class ChatAdapter(
                         // Add transparent placeholder to prevent jumping as images load
                         val placeholder = android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT)
                         placeholder.setBounds(0, 0, badgeSize, badgeSize)
-                        builder.setSpan(CenterImageSpan(placeholder, 4), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        builder.setSpan(CenterImageSpan(placeholder, spanMargin), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                         badgePlaceholders.add(startPos to badgeUrl)
                     } else {
     
@@ -1845,7 +2064,7 @@ class ChatAdapter(
                         if (d != null) {
                             d.setBounds(0, 0, badgeSize, badgeSize)
                             builder.append("  ")
-                            builder.setSpan(CenterImageSpan(d), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                            builder.setSpan(CenterImageSpan(d, spanMargin), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                         } else {
                             builder.append("⭐ ")
                         }
@@ -1859,7 +2078,7 @@ class ChatAdapter(
                     if (d != null) {
                         d.setBounds(0, 0, badgeSize, badgeSize)
                         builder.append("  ")
-                        builder.setSpan(CenterImageSpan(d), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        builder.setSpan(CenterImageSpan(d, spanMargin), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     } else {
                         builder.append("🎁 ")
                     }
@@ -1870,7 +2089,7 @@ class ChatAdapter(
                     if (d != null) {
                         d.setBounds(0, 0, badgeSize, badgeSize)
                         builder.append("  ")
-                        builder.setSpan(CenterImageSpan(d), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        builder.setSpan(CenterImageSpan(d, spanMargin), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     } else {
                         builder.append("🤝 ")
                     }
@@ -1881,7 +2100,7 @@ class ChatAdapter(
                     if (d != null) {
                         d.setBounds(0, 0, badgeSize, badgeSize)
                         builder.append("  ")
-                        builder.setSpan(CenterImageSpan(d), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        builder.setSpan(CenterImageSpan(d, spanMargin), startPos, startPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     } else {
                         builder.append("🤖 ")
                     }
@@ -1919,28 +2138,28 @@ class ChatAdapter(
         val messageStartIndex = builder.length
         
         // Parse emotes and process with placeholders
-        val emoteSize = (holder.messageText.textSize * emoteScale).toInt()
+        val emoteSize = (holder.messageText.textSize * emoteScale).roundToInt().coerceAtLeast(1)
         val emotePlaceholders = mutableListOf<EmotePlaceholder>() 
         
         val processedContent = processEmotesInContent(message.content, messageStartIndex, emotePlaceholders)
         builder.append(processedContent)
         
         // Add Annotation spans and transparent placeholders for reliable async tracking
-        applyEmoteAnnotations(builder, emotePlaceholders, emoteSize)
+        applyEmoteAnnotations(builder, emotePlaceholders, emoteSize, spanMargin)
 
 
         // Add reply emotes placeholders
-        val replyEmoteSize = (holder.messageText.textSize * 0.8f).toInt()
+        val replyEmoteSize = (holder.messageText.textSize * 0.8f).roundToInt().coerceAtLeast(1)
         // Note: processEmotesInContent for reply was handled during reply header construction
         // but we need to load them here.
         
         // Load emotes BEFORE setting text to ensure cached emotes are shown immediately
         // IMPORTANT: Process reply emotes first because they appear earlier in the builder string
         for (p in emotePlaceholdersReply) {
-            loadEmoteImage(holder, builder, p.start, p.end, p.id, p.name, replyEmoteSize)
+            loadEmoteImage(holder, builder, p.start, p.end, p.id, p.name, replyEmoteSize, spanMargin)
         }
         for (p in emotePlaceholders) {
-            loadEmoteImage(holder, builder, p.start, p.end, p.id, p.name, emoteSize)
+            loadEmoteImage(holder, builder, p.start, p.end, p.id, p.name, emoteSize, spanMargin)
         }
 
         // Apply message status color to content
@@ -2070,7 +2289,7 @@ class ChatAdapter(
         
         // Load subscriber badge images
         for ((pos, url) in badgePlaceholders) {
-            loadBadgeImage(holder, pos, url, badgeSize)
+            loadBadgeImage(holder, pos, url, badgeSize, spanMargin)
         }
         
         // Click and Long click listeners for message actions
@@ -2186,7 +2405,7 @@ class ChatAdapter(
         }
     }
     
-    private fun loadBadgeImage(holder: ChatViewHolder, position: Int, url: String, size: Int) {
+    private fun loadBadgeImage(holder: ChatViewHolder, position: Int, url: String, size: Int, rightMargin: Int) {
         val textView = holder.messageText
         dev.xacnio.kciktv.shared.ui.utils.EmoteManager.loadBadgeSynchronized(
             textView.context, url, size, textView
@@ -2198,7 +2417,7 @@ class ChatAdapter(
                         currentText.removeSpan(it)
                     }
                     currentText.setSpan(
-                        CenterImageSpan(drawable),
+                        CenterImageSpan(drawable, rightMargin),
                         position,
                         position + 1,
                         Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
@@ -2255,7 +2474,7 @@ class ChatAdapter(
     /**
      * Helper to apply Annotation spans and transparent placeholders to a builder
      */
-    private fun applyEmoteAnnotations(builder: SpannableStringBuilder, placeholders: List<EmotePlaceholder>, size: Int) {
+    private fun applyEmoteAnnotations(builder: SpannableStringBuilder, placeholders: List<EmotePlaceholder>, size: Int, rightMargin: Int) {
         for (p in placeholders) {
             val tag = "[emote:${p.id}:${p.name}]"
             
@@ -2271,7 +2490,7 @@ class ChatAdapter(
             val placeholder = android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT)
             placeholder.setBounds(0, 0, size, size)
             builder.setSpan(
-                CenterImageSpan(placeholder, 4),
+                CenterImageSpan(placeholder, rightMargin),
                 p.start,
                 p.end,
                 Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
@@ -2282,7 +2501,7 @@ class ChatAdapter(
     /**
      * Load emote image at specific position (supports animated GIF/WebP)
      */
-    private fun loadEmoteImage(holder: ChatViewHolder, targetSpannable: Spannable?, start: Int, end: Int, emoteId: String, emoteName: String, size: Int) {
+    private fun loadEmoteImage(holder: ChatViewHolder, targetSpannable: Spannable?, start: Int, end: Int, emoteId: String, emoteName: String, size: Int, rightMargin: Int) {
         val textView = holder.messageText
         val tag = "[emote:$emoteId:$emoteName]"
         
@@ -2301,16 +2520,16 @@ class ChatAdapter(
                 
                 if (isStillSame) {
                     // Apply to exact position
-                    applyEmoteSpan(holder, currentSpannable, start, end, sharedDrawable, emoteId, emoteName, 4)
+                    applyEmoteSpan(holder, currentSpannable, start, end, sharedDrawable, emoteId, emoteName, rightMargin)
                 } else {
                     // Fallback to tag search if text content shifted (rare in our adapter)
-                    applyEmoteSpanToTag(holder, currentSpannable, tag, sharedDrawable, emoteId, emoteName)
+                    applyEmoteSpanToTag(holder, currentSpannable, tag, sharedDrawable, emoteId, emoteName, rightMargin)
                 }
             }
             
             // Also update the provided builder if it's different (initial load optimization)
             if (targetSpannable != null && targetSpannable !== currentSpannable) {
-                applyEmoteSpan(holder, targetSpannable, start, end, sharedDrawable, emoteId, emoteName, 4)
+                applyEmoteSpan(holder, targetSpannable, start, end, sharedDrawable, emoteId, emoteName, rightMargin)
             }
         }
     }
@@ -2318,7 +2537,7 @@ class ChatAdapter(
     /**
      * Find the target range using Annotation spans and apply the emote span
      */
-    private fun applyEmoteSpanToTag(holder: ChatViewHolder, spannable: Spannable, tag: String, drawable: Drawable, emoteId: String, emoteName: String) {
+    private fun applyEmoteSpanToTag(holder: ChatViewHolder, spannable: Spannable, tag: String, drawable: Drawable, emoteId: String, emoteName: String, rightMargin: Int) {
         try {
             val annotations = spannable.getSpans(0, spannable.length, android.text.Annotation::class.java)
             val target = annotations.find { ann ->
@@ -2339,7 +2558,7 @@ class ChatAdapter(
                 if (start == -1) return
                 
                 // Final application
-                applyEmoteSpan(holder, spannable, start, end, drawable, emoteId, emoteName, 4)
+                applyEmoteSpan(holder, spannable, start, end, drawable, emoteId, emoteName, rightMargin)
             }
         } catch (e: Exception) {
             android.util.Log.e("ChatAdapter", "Tag span error: ${e.message}")
@@ -2616,10 +2835,11 @@ class ChatAdapter(
             val d = drawable
             var rect = d.bounds
             
-            // If bounds are empty, try to use intrinsic size
+            // If bounds are empty, use intrinsic size or fall back proportionally to text paint size
             if (rect.isEmpty) {
-                val w = d.intrinsicWidth.takeIf { it > 0 } ?: 66
-                val h = d.intrinsicHeight.takeIf { it > 0 } ?: 66
+                val fallbackSize = (paint.textSize * 1.2f).roundToInt().coerceAtLeast(1)
+                val w = d.intrinsicWidth.takeIf { it > 0 } ?: fallbackSize
+                val h = d.intrinsicHeight.takeIf { it > 0 } ?: fallbackSize
                 d.setBounds(0, 0, w, h)
                 rect = d.bounds
             }

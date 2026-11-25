@@ -23,6 +23,7 @@
             android:background="#DEB2FF" />
 
         <LinearLayout
+            android:id="@+id/celebrationContentLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"

@@ -42,7 +42,7 @@ android {
         minSdk = 23
         targetSdk = 34
         versionCode = 100 + getGitCommitCount()
-        val baseVersion = "2.5.0"
+        val baseVersion = "2.5.1"
         versionName = providers.gradleProperty("appVersionName").orNull
             ?: System.getenv("VERSION")?.takeIf { it.isNotBlank() }
             ?: "$baseVersion-${getGitHash()}"
