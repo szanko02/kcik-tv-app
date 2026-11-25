@@ -49,6 +49,9 @@ class AppPreferences(private val context: Context) {
         const val CHAT_SPACING_MIN = 0
         const val CHAT_SPACING_MAX = 16
         const val CHAT_SPACING_DEFAULT = 4
+        const val CHAT_HORIZONTAL_PADDING_MIN = 0
+        const val CHAT_HORIZONTAL_PADDING_MAX = 24
+        const val CHAT_HORIZONTAL_PADDING_DEFAULT = 24
         const val RESIZE_MODE_FIT = "FIT"
         const val RESIZE_MODE_ZOOM = "ZOOM"
         const val RESIZE_MODE_FILL = "FILL"
@@ -992,6 +995,14 @@ class AppPreferences(private val context: Context) {
         get() = prefs.getInt("chat_message_spacing_dp", CHAT_SPACING_DEFAULT).coerceIn(CHAT_SPACING_MIN, CHAT_SPACING_MAX)
         set(value) = prefs.edit().putInt("chat_message_spacing_dp", value.coerceIn(CHAT_SPACING_MIN, CHAT_SPACING_MAX)).apply()
 
+    var chatHorizontalPaddingDp: Int
+        get() = prefs.getInt("chat_horizontal_padding_dp", CHAT_HORIZONTAL_PADDING_DEFAULT)
+            .coerceIn(CHAT_HORIZONTAL_PADDING_MIN, CHAT_HORIZONTAL_PADDING_MAX)
+        set(value) = prefs.edit().putInt(
+            "chat_horizontal_padding_dp",
+            value.coerceIn(CHAT_HORIZONTAL_PADDING_MIN, CHAT_HORIZONTAL_PADDING_MAX)
+        ).apply()
+
     var chatPinchToResizeEnabled: Boolean
         get() = prefs.getBoolean("chat_pinch_to_resize_enabled", true)
         set(value) = prefs.edit().putBoolean("chat_pinch_to_resize_enabled", value).apply()
@@ -1036,6 +1047,7 @@ object ChatSettingsDefaults {
     const val CHAT_EMOTE_SIZE = 1.8f
     const val CHAT_MESSAGE_SCALE = AppPreferences.CHAT_SCALE_DEFAULT
     const val CHAT_MESSAGE_SPACING_DP = AppPreferences.CHAT_SPACING_DEFAULT
+    const val CHAT_HORIZONTAL_PADDING_DP = AppPreferences.CHAT_HORIZONTAL_PADDING_DEFAULT
     const val SIDE_CHAT_WIDTH_PERCENT = AppPreferences.SIDE_CHAT_WIDTH_DEFAULT
     const val TRANSPARENT_CHAT_OVERLAY_ENABLED = false
     const val CHAT_OVERLAY_OPACITY_PERCENT = AppPreferences.CHAT_OVERLAY_OPACITY_DEFAULT
@@ -1070,6 +1082,7 @@ object ChatSettingsDefaults {
         "chat_emote_size" to CHAT_EMOTE_SIZE,
         "chat_message_scale" to CHAT_MESSAGE_SCALE,
         "chat_message_spacing_dp" to CHAT_MESSAGE_SPACING_DP,
+        "chat_horizontal_padding_dp" to CHAT_HORIZONTAL_PADDING_DP,
         "side_chat_width_percent" to SIDE_CHAT_WIDTH_PERCENT,
         "transparent_chat_overlay_enabled" to TRANSPARENT_CHAT_OVERLAY_ENABLED,
         "chat_overlay_opacity_percent" to CHAT_OVERLAY_OPACITY_PERCENT,

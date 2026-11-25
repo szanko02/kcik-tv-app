@@ -239,6 +239,7 @@ class ChatAdapter(
     private var emoteScale: Float = 1.8f
     private var messageScalePercent: Int = ChatSizingMath.DEFAULT_SCALE
     private var messageSpacingDp: Int = ChatSizingMath.DEFAULT_SPACING_DP
+    private var messageHorizontalPaddingDp: Int = ChatSizingMath.DEFAULT_HORIZONTAL_PADDING_DP
     private var lastLinkClickTime: Long = 0
     
     private var currentUsername: String? = null
@@ -419,6 +420,14 @@ class ChatAdapter(
         }
     }
 
+    fun setChatHorizontalPadding(paddingDp: Int) {
+        val clamped = ChatSizingMath.clampHorizontalPaddingDp(paddingDp)
+        if (this.messageHorizontalPaddingDp != clamped) {
+            this.messageHorizontalPaddingDp = clamped
+            notifyDataSetChanged()
+        }
+    }
+
     private var useTransparentOverlayShadow: Boolean = false
 
     fun setTransparentOverlayMode(enabled: Boolean) {
@@ -446,7 +455,7 @@ class ChatAdapter(
         val density = itemView.resources.displayMetrics.density
         val vPad = (messageSpacingDp * density).roundToInt()
         val hPadLeft = if (itemHorizontalDp != null) {
-            ChatSizingMath.scaledDpToPx(itemHorizontalDp, density, messageScalePercent)
+            (itemHorizontalDp * density).roundToInt()
         } else {
             itemView.paddingLeft
         }
@@ -455,7 +464,7 @@ class ChatAdapter(
         if (textView != null) {
             val tvPad = (ChatSizingMath.messageTextVerticalPaddingDp(messageSpacingDp) * density).roundToInt()
             val tvHPadLeft = if (textHorizontalDp != null) {
-                ChatSizingMath.scaledDpToPx(textHorizontalDp, density, messageScalePercent)
+                (textHorizontalDp * density).roundToInt()
             } else {
                 textView.paddingLeft
             }
@@ -861,7 +870,11 @@ class ChatAdapter(
     }
 
     private fun bindRewardMessage(holder: RewardViewHolder, message: ChatMessage) {
-        applyRowSpacing(holder.itemView, null, itemHorizontalDp = 4f)
+        applyRowSpacing(
+            holder.itemView,
+            null,
+            itemHorizontalDp = ChatSizingMath.scaledHorizontalPaddingDp(messageHorizontalPaddingDp, 4f)
+        )
         applyOverlayTextShadow(holder.rewardHeader)
         applyOverlayTextShadow(holder.rewardTitle)
         applyOverlayTextShadow(holder.rewardInput)
@@ -1414,7 +1427,11 @@ class ChatAdapter(
     }
 
     private fun bindDivider(holder: DividerViewHolder, message: ChatMessage) {
-        applyRowSpacing(holder.itemView, null, itemHorizontalDp = 16f)
+        applyRowSpacing(
+            holder.itemView,
+            null,
+            itemHorizontalDp = ChatSizingMath.scaledHorizontalPaddingDp(messageHorizontalPaddingDp, 16f)
+        )
         applyOverlayTextShadow(holder.dividerText)
         holder.dividerText.text = message.content
         holder.dividerText.textSize = spScaled(11f)
@@ -1434,7 +1451,11 @@ class ChatAdapter(
     }
 
     private fun bindInfoMessage(holder: InfoViewHolder, message: ChatMessage) {
-        applyRowSpacing(holder.itemView, null, itemHorizontalDp = 12f)
+        applyRowSpacing(
+            holder.itemView,
+            null,
+            itemHorizontalDp = ChatSizingMath.scaledHorizontalPaddingDp(messageHorizontalPaddingDp, 12f)
+        )
         applyOverlayTextShadow(holder.infoMessageText)
         val content = message.content
         val htmlRes = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
@@ -1711,7 +1732,12 @@ class ChatAdapter(
     }
 
     private fun bindChatMessage(holder: ChatViewHolder, message: ChatMessage) {
-        applyRowSpacing(holder.itemView, holder.messageText, itemHorizontalDp = 8f, textHorizontalDp = 4f)
+        applyRowSpacing(
+            holder.itemView,
+            holder.messageText,
+            itemHorizontalDp = ChatSizingMath.messageItemHorizontalPaddingDp(messageHorizontalPaddingDp),
+            textHorizontalDp = ChatSizingMath.messageTextHorizontalPaddingDp(messageHorizontalPaddingDp)
+        )
         applyOverlayTextShadow(holder.messageText)
         applyOverlayTextShadow(holder.clipTitle)
         applyOverlayTextShadow(holder.clipChannel)

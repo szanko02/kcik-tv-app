@@ -24,6 +24,10 @@ object ChatSizingMath {
     const val MAX_SPACING_DP = 16
     const val DEFAULT_SPACING_DP = 4
 
+    const val MIN_HORIZONTAL_PADDING_DP = 0
+    const val MAX_HORIZONTAL_PADDING_DP = 24
+    const val DEFAULT_HORIZONTAL_PADDING_DP = 24
+
     fun clampScale(percent: Int): Int = percent.coerceIn(MIN_SCALE, MAX_SCALE)
 
     fun scaleFactor(scalePercent: Int): Float = clampScale(scalePercent) / 100f
@@ -54,4 +58,19 @@ object ChatSizingMath {
 
     fun messageTextVerticalPaddingDp(spacingDp: Int): Float =
         (clampSpacingDp(spacingDp) / 2f).coerceIn(0f, 3f)
+
+    fun clampHorizontalPaddingDp(dp: Int): Int =
+        dp.coerceIn(MIN_HORIZONTAL_PADDING_DP, MAX_HORIZONTAL_PADDING_DP)
+
+    fun scaledHorizontalPaddingDp(totalDp: Int, baseAtMaxDp: Float): Float {
+        if (baseAtMaxDp <= 0f) return 0f
+        val clamped = clampHorizontalPaddingDp(totalDp)
+        return baseAtMaxDp * (clamped.toFloat() / MAX_HORIZONTAL_PADDING_DP.toFloat())
+    }
+
+    fun listHorizontalPaddingDp(totalDp: Int): Float = scaledHorizontalPaddingDp(totalDp, 12f)
+
+    fun messageItemHorizontalPaddingDp(totalDp: Int): Float = scaledHorizontalPaddingDp(totalDp, 8f)
+
+    fun messageTextHorizontalPaddingDp(totalDp: Int): Float = scaledHorizontalPaddingDp(totalDp, 4f)
 }

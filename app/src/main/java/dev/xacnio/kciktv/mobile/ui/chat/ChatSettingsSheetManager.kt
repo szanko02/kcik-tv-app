@@ -130,6 +130,7 @@ class ChatSettingsSheetManager(
         chatUiManager.chatAdapter.setChatEmoteSize(prefs.chatEmoteSize)
         chatUiManager.chatAdapter.setChatMessageScale(prefs.chatMessageScale)
         chatUiManager.chatAdapter.setChatMessageSpacing(prefs.chatMessageSpacingDp)
+        chatUiManager.applyChatHorizontalPadding(prefs.chatHorizontalPaddingDp)
         chatUiManager.chatAdapter.setShowTimestamps(prefs.chatShowTimestamps)
         chatUiManager.chatAdapter.setShowSeconds(prefs.chatShowSeconds)
         chatUiManager.chatAdapter.setAnimationType(prefs.chatMessageAnimation)
@@ -379,6 +380,8 @@ class ChatSettingsSheetManager(
         val textValueMessageScale = view.findViewById<TextView>(R.id.textValueMessageScale)
         val seekBarMessageSpacing = view.findViewById<SeekBar>(R.id.seekBarMessageSpacing)
         val textValueMessageSpacing = view.findViewById<TextView>(R.id.textValueMessageSpacing)
+        val seekBarChatHorizontalPadding = view.findViewById<SeekBar>(R.id.seekBarChatHorizontalPadding)
+        val textValueChatHorizontalPadding = view.findViewById<TextView>(R.id.textValueChatHorizontalPadding)
         val seekBarSideChatWidth = view.findViewById<SeekBar>(R.id.seekBarSideChatWidth)
         val textValueSideChatWidth = view.findViewById<TextView>(R.id.textValueSideChatWidth)
         val switchTransparentChatOverlay = view.findViewById<SwitchCompat>(R.id.switchTransparentChatOverlay)
@@ -414,6 +417,7 @@ class ChatSettingsSheetManager(
             seekBarEmoteSize,
             seekBarMessageScale,
             seekBarMessageSpacing,
+            seekBarChatHorizontalPadding,
             seekBarSideChatWidth,
             seekBarChatOverlayOpacity,
             seekBarChatOverlayEdgeMargin
@@ -505,6 +509,28 @@ class ChatSettingsSheetManager(
                 if (isSyncingControls) return
                 prefs.chatMessageSpacingDp = currentMessageSpacing
                 chatUiManager.chatAdapter.setChatMessageSpacing(currentMessageSpacing)
+            }
+        })
+
+        // Chat Horizontal Padding Slider (0dp to 24dp)
+        var currentHorizontalPadding = ChatSizingMath.clampHorizontalPaddingDp(prefs.chatHorizontalPaddingDp)
+        seekBarChatHorizontalPadding.max = AppPreferences.CHAT_HORIZONTAL_PADDING_MAX
+        seekBarChatHorizontalPadding.progress = currentHorizontalPadding.coerceIn(0, AppPreferences.CHAT_HORIZONTAL_PADDING_MAX)
+        textValueChatHorizontalPadding.text = "${currentHorizontalPadding}dp"
+
+        seekBarChatHorizontalPadding.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (isSyncingControls) return
+                val clamped = ChatSizingMath.clampHorizontalPaddingDp(progress)
+                textValueChatHorizontalPadding.text = "${clamped}dp"
+                currentHorizontalPadding = clamped
+                if (fromUser) chatUiManager.applyChatHorizontalPadding(clamped)
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                if (isSyncingControls) return
+                prefs.chatHorizontalPaddingDp = currentHorizontalPadding
+                chatUiManager.applyChatHorizontalPadding(currentHorizontalPadding)
             }
         })
 
@@ -823,6 +849,10 @@ class ChatSettingsSheetManager(
                 currentMessageSpacing = ChatSizingMath.clampSpacingDp(prefs.chatMessageSpacingDp)
                 seekBarMessageSpacing.progress = currentMessageSpacing.coerceIn(0, AppPreferences.CHAT_SPACING_MAX)
                 textValueMessageSpacing.text = "${currentMessageSpacing}dp"
+
+                currentHorizontalPadding = ChatSizingMath.clampHorizontalPaddingDp(prefs.chatHorizontalPaddingDp)
+                seekBarChatHorizontalPadding.progress = currentHorizontalPadding.coerceIn(0, AppPreferences.CHAT_HORIZONTAL_PADDING_MAX)
+                textValueChatHorizontalPadding.text = "${currentHorizontalPadding}dp"
 
                 currentSideChatWidth = prefs.sideChatWidthPercent.coerceIn(
                     AppPreferences.SIDE_CHAT_WIDTH_MIN,

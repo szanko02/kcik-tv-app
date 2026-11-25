@@ -18,6 +18,8 @@ class ChatDefaultsResetTest {
         assertEquals(100, d["chat_message_scale"])
         assertEquals(AppPreferences.CHAT_SPACING_DEFAULT, d["chat_message_spacing_dp"])
         assertEquals(4, d["chat_message_spacing_dp"])
+        assertEquals(AppPreferences.CHAT_HORIZONTAL_PADDING_DEFAULT, d["chat_horizontal_padding_dp"])
+        assertEquals(24, d["chat_horizontal_padding_dp"])
         assertEquals(AppPreferences.SIDE_CHAT_WIDTH_DEFAULT, d["side_chat_width_percent"])
         assertEquals(35, d["side_chat_width_percent"])
 
@@ -119,6 +121,7 @@ class ChatDefaultsResetTest {
             "chat_emote_size" to 2.6f,
             "chat_message_scale" to 165,
             "chat_message_spacing_dp" to 12,
+            "chat_horizontal_padding_dp" to 0,
             "side_chat_width_percent" to 55,
             "transparent_chat_overlay_enabled" to true,
             "chat_overlay_opacity_percent" to 15,

@@ -33,8 +33,10 @@ import dev.xacnio.kciktv.shared.data.prefs.AppPreferences
 import dev.xacnio.kciktv.shared.data.repository.ChannelRepository
 import dev.xacnio.kciktv.databinding.ActivityMobilePlayerBinding
 import dev.xacnio.kciktv.shared.ui.adapter.ChatAdapter
+import dev.xacnio.kciktv.shared.ui.adapter.ChatSizingMath
 import dev.xacnio.kciktv.shared.ui.adapter.CommandSuggestionsAdapter
 import dev.xacnio.kciktv.shared.ui.adapter.UserSuggestionAdapter
+import kotlin.math.roundToInt
 import dev.xacnio.kciktv.mobile.ui.dialog.LoyaltyPointsBottomSheet
 import dev.xacnio.kciktv.shared.util.getLocalizedChatError
 import kotlinx.coroutines.launch
@@ -103,6 +105,7 @@ class ChatUiManager(
             setChatEmoteSize(prefs.chatEmoteSize)
             setChatMessageScale(prefs.chatMessageScale)
             setChatMessageSpacing(prefs.chatMessageSpacingDp)
+            setChatHorizontalPadding(prefs.chatHorizontalPaddingDp)
             setShowTimestamps(prefs.chatShowTimestamps)
             setShowSeconds(prefs.chatShowSeconds)
             setCurrentUser(prefs.username)
@@ -132,6 +135,7 @@ class ChatUiManager(
     private fun setupRecyclerView() {
         // Snapshot XML baseline paddings (12dp horizontal, 8dp top/bottom) before any setVodMode call
         baseChatListPadding
+        applyChatHorizontalPadding(prefs.chatHorizontalPaddingDp)
         binding.chatRecyclerView.apply {
             layoutManager = LinearLayoutManager(activity)
             adapter = chatAdapter
@@ -1225,15 +1229,23 @@ class ChatUiManager(
         chatStateManager.currentReplyMessageId = null
     }
     
+    fun applyChatHorizontalPadding(paddingDp: Int) {
+        val clamped = ChatSizingMath.clampHorizontalPaddingDp(paddingDp)
+        val density = binding.chatRecyclerView.resources.displayMetrics.density
+        val listSidePx = (ChatSizingMath.listHorizontalPaddingDp(clamped) * density).roundToInt()
+        binding.chatRecyclerView.setPadding(
+            listSidePx,
+            baseChatListPadding[1],
+            listSidePx,
+            baseChatListPadding[3]
+        )
+        chatAdapter.setChatHorizontalPadding(clamped)
+    }
+
     fun setVodMode(enabled: Boolean) {
         chatAdapter.isVodMode = enabled
 
-        binding.chatRecyclerView.setPadding(
-            baseChatListPadding[0],
-            baseChatListPadding[1],
-            baseChatListPadding[2],
-            baseChatListPadding[3]
-        )
+        applyChatHorizontalPadding(prefs.chatHorizontalPaddingDp)
         binding.chatRecyclerView.clipToPadding = false
 
         if (enabled) {

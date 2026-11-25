@@ -407,6 +407,7 @@ GLOSSARY_BY_KEY: dict[str, str] = {
     "tv_login_code_label": "КОД",
     "tv_update_check_failed_format": "Ошибка проверки обновлений: %1$s",
     "tv_login_exchange_failed": "Не удалось выполнить вход на ТВ. Попробуйте ещё раз.",
+    "chat_horizontal_padding": "Боковые отступы чата",
 }
 
 # Idiomatic Russian overrides for <string-array> items keyed by (array_name, 0-based index).

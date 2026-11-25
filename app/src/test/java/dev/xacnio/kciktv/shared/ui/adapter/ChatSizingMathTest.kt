@@ -102,4 +102,28 @@ class ChatSizingMathTest {
         assertEquals(3f, ChatSizingMath.messageTextVerticalPaddingDp(16), 0.001f)
         assertEquals(3f, ChatSizingMath.messageTextVerticalPaddingDp(50), 0.001f)
     }
+
+    @Test
+    fun clampHorizontalPaddingDp_clampsTo0And24() {
+        assertEquals(0, ChatSizingMath.clampHorizontalPaddingDp(-5))
+        assertEquals(0, ChatSizingMath.clampHorizontalPaddingDp(0))
+        assertEquals(12, ChatSizingMath.clampHorizontalPaddingDp(12))
+        assertEquals(24, ChatSizingMath.clampHorizontalPaddingDp(24))
+        assertEquals(24, ChatSizingMath.clampHorizontalPaddingDp(40))
+    }
+
+    @Test
+    fun scaledHorizontalPaddingDp_scalesProportionallyAcrossLayers() {
+        assertEquals(0f, ChatSizingMath.listHorizontalPaddingDp(0), 0.001f)
+        assertEquals(0f, ChatSizingMath.messageItemHorizontalPaddingDp(0), 0.001f)
+        assertEquals(0f, ChatSizingMath.messageTextHorizontalPaddingDp(0), 0.001f)
+
+        assertEquals(6f, ChatSizingMath.listHorizontalPaddingDp(12), 0.001f)
+        assertEquals(4f, ChatSizingMath.messageItemHorizontalPaddingDp(12), 0.001f)
+        assertEquals(2f, ChatSizingMath.messageTextHorizontalPaddingDp(12), 0.001f)
+
+        assertEquals(12f, ChatSizingMath.listHorizontalPaddingDp(24), 0.001f)
+        assertEquals(8f, ChatSizingMath.messageItemHorizontalPaddingDp(24), 0.001f)
+        assertEquals(4f, ChatSizingMath.messageTextHorizontalPaddingDp(24), 0.001f)
+    }
 }
