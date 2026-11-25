@@ -73,7 +73,7 @@ class SideChatWidthUtilsTest {
     }
 
     @Test
-    fun percentForTouchX_accountsForRightMarginPxInEdgeOffsetAndFloatingModes() {
+    fun percentForTouchX_accountsForRightMarginPxInEdgeOffsetMode() {
         // Parent width 1000, rightMarginPx = 100 -> right anchor is at x = 900.
         // Touch at x = 550 -> chat width = 350 -> 35%
         assertEquals(35, SideChatWidthUtils.percentForTouchX(550f, 0, 1000, rightMarginPx = 100))

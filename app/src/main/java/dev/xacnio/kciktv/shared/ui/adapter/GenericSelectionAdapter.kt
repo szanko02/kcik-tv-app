@@ -73,6 +73,7 @@ class GenericSelectionAdapter(
 
             // Normal Item Styling
             itemView.isFocusable = true
+            itemView.isFocusableInTouchMode = false
             itemView.isClickable = true
             itemView.setPadding(
                 (32 * itemView.resources.displayMetrics.density).toInt(),
@@ -168,7 +169,7 @@ class GenericSelectionAdapter(
             }
             holder.itemView.setOnClickListener { onItemSelected(item) }
             holder.itemView.isFocusable = true
-            holder.itemView.isFocusableInTouchMode = true
+            holder.itemView.isFocusableInTouchMode = false
         } else {
             holder.itemView.setOnFocusChangeListener(null)
             holder.itemView.setOnClickListener(null)

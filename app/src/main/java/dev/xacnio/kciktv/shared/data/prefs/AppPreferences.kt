@@ -17,6 +17,7 @@ import dev.xacnio.kciktv.shared.util.SupportedLanguages
 import dev.xacnio.kciktv.shared.data.prefs.AppPreferences
 import dev.xacnio.kciktv.R
 import dev.xacnio.kciktv.mobile.ui.player.VideoCutoutScalingPolicy
+import dev.xacnio.kciktv.shared.ui.tv.TvModeRoutingPolicy
 
 class AppPreferences(private val context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("kick_tv_prefs", Context.MODE_PRIVATE)
@@ -41,11 +42,6 @@ class AppPreferences(private val context: Context) {
         const val CHAT_OVERLAY_EDGE_MARGIN_MIN = 0
         const val CHAT_OVERLAY_EDGE_MARGIN_MAX = 30
         const val CHAT_OVERLAY_EDGE_MARGIN_DEFAULT = 0
-        const val FLOATING_CHAT_HEIGHT_MIN = 35
-        const val FLOATING_CHAT_HEIGHT_MAX = 100
-        const val FLOATING_CHAT_HEIGHT_DEFAULT = 75
-        const val FLOATING_CHAT_X_DEFAULT = 1.0f
-        const val FLOATING_CHAT_Y_DEFAULT = 0.5f
         const val CHAT_SCALE_MIN = 50
         const val CHAT_SCALE_MAX = 200
         const val CHAT_SCALE_DEFAULT = 100
@@ -55,6 +51,9 @@ class AppPreferences(private val context: Context) {
         const val RESIZE_MODE_FIT = "FIT"
         const val RESIZE_MODE_ZOOM = "ZOOM"
         const val RESIZE_MODE_FILL = "FILL"
+        const val UI_MODE_AUTO = "auto"
+        const val UI_MODE_TV = "tv"
+        const val UI_MODE_MOBILE = "mobile"
 
         private val decryptCache = java.util.concurrent.ConcurrentHashMap<String, String>()
         private const val ABSENT = "__kick_tv_absent__"
@@ -952,44 +951,12 @@ class AppPreferences(private val context: Context) {
             value.coerceIn(CHAT_OVERLAY_OPACITY_MIN, CHAT_OVERLAY_OPACITY_MAX)
         ).apply()
 
-    var floatingChatOverlayEnabled: Boolean
-        get() = prefs.getBoolean("floating_chat_overlay_enabled", false)
-        set(value) = prefs.edit().putBoolean("floating_chat_overlay_enabled", value).apply()
-
     var chatOverlayEdgeMarginPercent: Int
         get() = prefs.getInt("chat_overlay_edge_margin_percent", CHAT_OVERLAY_EDGE_MARGIN_DEFAULT)
             .coerceIn(CHAT_OVERLAY_EDGE_MARGIN_MIN, CHAT_OVERLAY_EDGE_MARGIN_MAX)
         set(value) = prefs.edit().putInt(
             "chat_overlay_edge_margin_percent",
             value.coerceIn(CHAT_OVERLAY_EDGE_MARGIN_MIN, CHAT_OVERLAY_EDGE_MARGIN_MAX)
-        ).apply()
-
-    var floatingChatHeightPercent: Int
-        get() = prefs.getInt("floating_chat_height_percent", FLOATING_CHAT_HEIGHT_DEFAULT)
-            .coerceIn(FLOATING_CHAT_HEIGHT_MIN, FLOATING_CHAT_HEIGHT_MAX)
-        set(value) = prefs.edit().putInt(
-            "floating_chat_height_percent",
-            value.coerceIn(FLOATING_CHAT_HEIGHT_MIN, FLOATING_CHAT_HEIGHT_MAX)
-        ).apply()
-
-    var floatingChatXPercent: Float
-        get() = ChatSettingsDefaults.clampNormalizedFloat(
-            prefs.getFloat("floating_chat_x_percent", FLOATING_CHAT_X_DEFAULT),
-            FLOATING_CHAT_X_DEFAULT
-        )
-        set(value) = prefs.edit().putFloat(
-            "floating_chat_x_percent",
-            ChatSettingsDefaults.clampNormalizedFloat(value, FLOATING_CHAT_X_DEFAULT)
-        ).apply()
-
-    var floatingChatYPercent: Float
-        get() = ChatSettingsDefaults.clampNormalizedFloat(
-            prefs.getFloat("floating_chat_y_percent", FLOATING_CHAT_Y_DEFAULT),
-            FLOATING_CHAT_Y_DEFAULT
-        )
-        set(value) = prefs.edit().putFloat(
-            "floating_chat_y_percent",
-            ChatSettingsDefaults.clampNormalizedFloat(value, FLOATING_CHAT_Y_DEFAULT)
         ).apply()
 
     fun resetChatSettingsToDefaults() {
@@ -1034,14 +1001,24 @@ class AppPreferences(private val context: Context) {
             "fullscreen_resize_mode",
             VideoCutoutScalingPolicy.fromPref(value).prefValue
         ).apply()
+
+    var uiMode: String
+        get() = TvModeRoutingPolicy.normalizeUiMode(
+            prefs.getString("ui_mode", UI_MODE_AUTO)
+        )
+        set(value) {
+            prefs.edit()
+                .putString("ui_mode", TvModeRoutingPolicy.normalizeUiMode(value))
+                .commit()
+        }
 }
 
 /**
- * Pure-Kotlin registry of chat appearance, layout, overlay, floating, feature, animation,
+ * Pure-Kotlin registry of chat appearance, layout, overlay, feature, animation,
  * highlight, and refresh preference keys and their default values.
  *
  * Kept free of Android runtime dependencies so JVM unit tests can verify default values
- * and guard against accidental resets of non-chat keys (auth, proxy, player, language, etc.).
+ * and guard against accidental resets of non-chat keys (auth, proxy, player, language, ui_mode, etc.).
  */
 object ChatSettingsDefaults {
     const val CHAT_TEXT_SIZE = 14f
@@ -1051,11 +1028,7 @@ object ChatSettingsDefaults {
     const val SIDE_CHAT_WIDTH_PERCENT = AppPreferences.SIDE_CHAT_WIDTH_DEFAULT
     const val TRANSPARENT_CHAT_OVERLAY_ENABLED = false
     const val CHAT_OVERLAY_OPACITY_PERCENT = AppPreferences.CHAT_OVERLAY_OPACITY_DEFAULT
-    const val FLOATING_CHAT_OVERLAY_ENABLED = false
     const val CHAT_OVERLAY_EDGE_MARGIN_PERCENT = AppPreferences.CHAT_OVERLAY_EDGE_MARGIN_DEFAULT
-    const val FLOATING_CHAT_HEIGHT_PERCENT = AppPreferences.FLOATING_CHAT_HEIGHT_DEFAULT
-    const val FLOATING_CHAT_X_PERCENT = AppPreferences.FLOATING_CHAT_X_DEFAULT
-    const val FLOATING_CHAT_Y_PERCENT = AppPreferences.FLOATING_CHAT_Y_DEFAULT
 
     const val CHAT_SHOW_TIMESTAMPS = false
     const val CHAT_SHOW_SECONDS = false
@@ -1089,11 +1062,7 @@ object ChatSettingsDefaults {
         "side_chat_width_percent" to SIDE_CHAT_WIDTH_PERCENT,
         "transparent_chat_overlay_enabled" to TRANSPARENT_CHAT_OVERLAY_ENABLED,
         "chat_overlay_opacity_percent" to CHAT_OVERLAY_OPACITY_PERCENT,
-        "floating_chat_overlay_enabled" to FLOATING_CHAT_OVERLAY_ENABLED,
         "chat_overlay_edge_margin_percent" to CHAT_OVERLAY_EDGE_MARGIN_PERCENT,
-        "floating_chat_height_percent" to FLOATING_CHAT_HEIGHT_PERCENT,
-        "floating_chat_x_percent" to FLOATING_CHAT_X_PERCENT,
-        "floating_chat_y_percent" to FLOATING_CHAT_Y_PERCENT,
         // Features & Gestures
         "chat_show_timestamps" to CHAT_SHOW_TIMESTAMPS,
         "chat_show_seconds" to CHAT_SHOW_SECONDS,
@@ -1121,11 +1090,6 @@ object ChatSettingsDefaults {
 
     val keys: Set<String>
         get() = defaults.keys
-
-    fun clampNormalizedFloat(value: Float, fallback: Float): Float {
-        if (!value.isFinite()) return fallback
-        return value.coerceIn(0f, 1f)
-    }
 
     fun applyToMap(store: MutableMap<String, Any?>) {
         defaults.forEach { (key, value) ->

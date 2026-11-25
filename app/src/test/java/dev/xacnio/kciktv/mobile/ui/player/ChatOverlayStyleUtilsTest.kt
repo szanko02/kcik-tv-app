@@ -82,28 +82,52 @@ class ChatOverlayStyleUtilsTest {
     }
 
     @Test
-    fun floatingBorderArgb_staysSubtleTranslucentWhiteAcrossOpacityRange() {
-        val atZero = ChatOverlayStyleUtils.floatingBorderArgb(0)
-        val atMid = ChatOverlayStyleUtils.floatingBorderArgb(50)
-        val atMax = ChatOverlayStyleUtils.floatingBorderArgb(100)
-
-        assertEquals(0x38FFFFFF, atZero)
-        assertEquals(0x4DFFFFFF, atMax)
-        assertEquals(0x00FFFFFF, atMid and 0x00FFFFFF)
-        val midAlpha = (atMid ushr 24) and 0xFF
-        assertTrue(midAlpha in 0x38..0x4D)
-        assertEquals(atZero, ChatOverlayStyleUtils.floatingBorderArgb(-20))
-        assertEquals(atMax, ChatOverlayStyleUtils.floatingBorderArgb(150))
+    fun clampEdgeMarginPercent_clampsOutOfRangeAndExposesConstants() {
+        assertEquals(0, ChatOverlayStyleUtils.MIN_EDGE_MARGIN_PERCENT)
+        assertEquals(30, ChatOverlayStyleUtils.MAX_EDGE_MARGIN_PERCENT)
+        assertEquals(0, ChatOverlayStyleUtils.DEFAULT_EDGE_MARGIN_PERCENT)
+        assertEquals(0.55f, ChatOverlayStyleUtils.MAX_CONTROLS_OVERLAP_RATIO, 0.0001f)
+        assertEquals(0, ChatOverlayStyleUtils.clampEdgeMarginPercent(-10))
+        assertEquals(0, ChatOverlayStyleUtils.clampEdgeMarginPercent(0))
+        assertEquals(15, ChatOverlayStyleUtils.clampEdgeMarginPercent(15))
+        assertEquals(30, ChatOverlayStyleUtils.clampEdgeMarginPercent(30))
+        assertEquals(30, ChatOverlayStyleUtils.clampEdgeMarginPercent(80))
     }
 
     @Test
-    fun floatingHandleBgArgb_enforcesMinimumFloorAndScalesWithOpacity() {
-        val expectedFloor = ChatOverlayStyleUtils.argbWithOpacity(0x181818, 35)
-        assertEquals(expectedFloor, ChatOverlayStyleUtils.floatingHandleBgArgb(0))
-        assertEquals(expectedFloor, ChatOverlayStyleUtils.floatingHandleBgArgb(20))
-        assertEquals(expectedFloor, ChatOverlayStyleUtils.floatingHandleBgArgb(35))
-        assertEquals(ChatOverlayStyleUtils.argbWithOpacity(0x181818, 70), ChatOverlayStyleUtils.floatingHandleBgArgb(70))
-        assertEquals(0xFF181818.toInt(), ChatOverlayStyleUtils.floatingHandleBgArgb(100))
-        assertEquals(0xFF181818.toInt(), ChatOverlayStyleUtils.floatingHandleBgArgb(140))
+    fun computeEdgeMarginPx_clampsToPercentAndRemainingParentWidth() {
+        assertEquals(0, ChatOverlayStyleUtils.computeEdgeMarginPx(2000, 700, 0))
+        assertEquals(200, ChatOverlayStyleUtils.computeEdgeMarginPx(2000, 700, 10))
+        assertEquals(600, ChatOverlayStyleUtils.computeEdgeMarginPx(2000, 700, 30))
+        // Clamped to max 30%
+        assertEquals(600, ChatOverlayStyleUtils.computeEdgeMarginPx(2000, 700, 50))
+        // Clamped so chat never clips off left edge (parentW - chatW = 200 < 300)
+        assertEquals(200, ChatOverlayStyleUtils.computeEdgeMarginPx(1000, 800, 30))
+        // Zero / negative parent width guarded
+        assertEquals(0, ChatOverlayStyleUtils.computeEdgeMarginPx(0, 400, 15))
+        assertEquals(0, ChatOverlayStyleUtils.computeEdgeMarginPx(-100, 400, 15))
+    }
+
+    @Test
+    fun computeRemainingRightCutoutPaddingPx_avoidsDoublePaddingAndGuardsNegatives() {
+        assertEquals(100, ChatOverlayStyleUtils.computeRemainingRightCutoutPaddingPx(100, 0))
+        assertEquals(60, ChatOverlayStyleUtils.computeRemainingRightCutoutPaddingPx(100, 40))
+        assertEquals(0, ChatOverlayStyleUtils.computeRemainingRightCutoutPaddingPx(100, 120))
+        assertEquals(0, ChatOverlayStyleUtils.computeRemainingRightCutoutPaddingPx(-20, 10))
+        assertEquals(100, ChatOverlayStyleUtils.computeRemainingRightCutoutPaddingPx(100, -10))
+    }
+
+    @Test
+    fun computeRightControlsOverlapInsetPx_addsEdgeMarginAndCapsAtFiftyFivePercentOfRootWidth() {
+        // Inactive -> 0
+        assertEquals(0, ChatOverlayStyleUtils.computeRightControlsOverlapInsetPx(false, 400, 100, 1000))
+        // Active under 55% cap -> chatWidth + edgeMarginPx
+        assertEquals(450, ChatOverlayStyleUtils.computeRightControlsOverlapInsetPx(true, 350, 100, 1000))
+        // Active over 55% cap -> capped at 55% of rootWidthPx
+        assertEquals(550, ChatOverlayStyleUtils.computeRightControlsOverlapInsetPx(true, 500, 200, 1000))
+        // Negative widths/margins coerced to 0
+        assertEquals(0, ChatOverlayStyleUtils.computeRightControlsOverlapInsetPx(true, -50, -20, 1000))
+        // Non-positive rootWidthPx leaves inset uncapped
+        assertEquals(700, ChatOverlayStyleUtils.computeRightControlsOverlapInsetPx(true, 500, 200, 0))
     }
 }

@@ -32,7 +32,6 @@ class PlayerGestureManager(private val activity: MobilePlayerActivity) {
         return activity.isFullscreen &&
             !activity.fullscreenToggleManager.isTheatreMode &&
             !activity.fullscreenToggleManager.isDockedSideChatActive() &&
-            !activity.fullscreenToggleManager.isDraggingFloatingChat &&
             !isInPip &&
             !activity.miniPlayerManager.isMiniPlayerMode
     }
@@ -93,7 +92,7 @@ class PlayerGestureManager(private val activity: MobilePlayerActivity) {
             }
 
             override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
-                if (isPinching || blockSingleFingerUntilUp || activity.fullscreenToggleManager.isDraggingFloatingChat) return false
+                if (isPinching || blockSingleFingerUntilUp) return false
                 // Ignore taps if an overlay was just hidden (e.g. closing pinned message)
                 if (System.currentTimeMillis() - activity.overlayManager.lastOverlayHideTime < 500) {
                     return false
@@ -129,13 +128,13 @@ class PlayerGestureManager(private val activity: MobilePlayerActivity) {
             }
             
             override fun onDoubleTap(e: MotionEvent): Boolean {
-                 if (isPinching || blockSingleFingerUntilUp || activity.fullscreenToggleManager.isDraggingFloatingChat) return false
+                 if (isPinching || blockSingleFingerUntilUp) return false
                  // Double tap rewind disabled
                  return super.onDoubleTap(e)
             }
 
             override fun onLongPress(e: MotionEvent) {
-                 if (isPinching || blockSingleFingerUntilUp || activity.fullscreenToggleManager.isDraggingFloatingChat) return
+                 if (isPinching || blockSingleFingerUntilUp) return
                  try {
                      // Handle Theatre Mode resizing on long press
                      if (activity.fullscreenToggleManager.isTheatreMode) {
@@ -147,7 +146,7 @@ class PlayerGestureManager(private val activity: MobilePlayerActivity) {
             }
             
             override fun onScroll(e1: MotionEvent?, e2: MotionEvent, distanceX: Float, distanceY: Float): Boolean {
-                if (isPinching || blockSingleFingerUntilUp || activity.fullscreenToggleManager.isDraggingFloatingChat) return false
+                if (isPinching || blockSingleFingerUntilUp) return false
                 if (e1 == null) return false
                 
                 val deltaX = e2.rawX - e1.rawX
@@ -225,7 +224,7 @@ class PlayerGestureManager(private val activity: MobilePlayerActivity) {
             }
             
             override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
-                 if (isPinching || blockSingleFingerUntilUp || activity.fullscreenToggleManager.isDraggingFloatingChat) return false
+                 if (isPinching || blockSingleFingerUntilUp) return false
                  if (e1 == null) return false
                  
                  val deltaX = e2.rawX - e1.rawX
@@ -319,9 +318,6 @@ class PlayerGestureManager(private val activity: MobilePlayerActivity) {
         })
 
         val touchListener = View.OnTouchListener { _, event ->
-            if (activity.fullscreenToggleManager.isDraggingFloatingChat) {
-                return@OnTouchListener false
-            }
             val dragManager = activity.dragToMiniPlayerManager
             val action = event.actionMasked
 

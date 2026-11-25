@@ -203,23 +203,6 @@ class SettingsPanelManager(
                 showChatOverlayOpacityDialog()
             }
 
-            // Floating Chat Overlay Toggle
-            addToggleSetting(container, R.drawable.ic_chat,
-                activity.getString(R.string.setting_floating_chat),
-                activity.getString(R.string.setting_floating_chat_desc),
-                prefs.floatingChatOverlayEnabled) { isEnabled ->
-                val enabledTransparentAutomatically = isEnabled && !prefs.transparentChatOverlayEnabled
-                if (enabledTransparentAutomatically) {
-                    prefs.transparentChatOverlayEnabled = true
-                }
-                prefs.floatingChatOverlayEnabled = isEnabled
-                activity.fullscreenToggleManager.onFloatingChatSettingChanged()
-                if (enabledTransparentAutomatically) {
-                    detailDialog?.dismiss()
-                    showPlayerSettings()
-                }
-            }
-
             // Chat Edge Offset
             val edgeMargin = prefs.chatOverlayEdgeMarginPercent.coerceIn(
                 AppPreferences.CHAT_OVERLAY_EDGE_MARGIN_MIN,
@@ -229,17 +212,6 @@ class SettingsPanelManager(
                 activity.getString(R.string.setting_chat_overlay_edge_margin),
                 "${edgeMargin}%") {
                 showChatOverlayEdgeMarginDialog()
-            }
-
-            // Floating Chat Height
-            val floatingHeight = prefs.floatingChatHeightPercent.coerceIn(
-                AppPreferences.FLOATING_CHAT_HEIGHT_MIN,
-                AppPreferences.FLOATING_CHAT_HEIGHT_MAX
-            )
-            addSettingItem(container, R.drawable.ic_fullscreen,
-                activity.getString(R.string.setting_floating_chat_height),
-                "${floatingHeight}%") {
-                showFloatingChatHeightDialog()
             }
 
             // Reset Chat to Defaults
@@ -291,6 +263,19 @@ class SettingsPanelManager(
     
     private fun showAppSettings() {
         showDetailSheet(activity.getString(R.string.settings_category_app)) { container ->
+            // Switch to TV UI
+            addSettingItem(container, R.drawable.ic_tv,
+                activity.getString(R.string.switch_to_tv_ui), null) {
+                prefs.uiMode = AppPreferences.UI_MODE_TV
+                detailDialog?.dismiss()
+                currentDialog?.dismiss()
+                val intent = Intent(activity, dev.xacnio.kciktv.tv.PlayerActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                }
+                activity.startActivity(intent)
+                activity.finish()
+            }
+
             // Auto-update Toggle
             addToggleSetting(container, R.drawable.ic_update,
                 activity.getString(R.string.setting_auto_update),
@@ -1143,29 +1128,7 @@ class SettingsPanelManager(
             .setTitle(R.string.setting_chat_overlay_edge_margin)
             .setSingleChoiceItems(labels, currentIndex) { dialog, which ->
                 prefs.chatOverlayEdgeMarginPercent = presets[which]
-                activity.fullscreenToggleManager.onFloatingChatSettingChanged()
-                dialog.dismiss()
-                detailDialog?.dismiss()
-                showPlayerSettings()
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
-    }
-
-    private fun showFloatingChatHeightDialog() {
-        val presets = intArrayOf(40, 50, 60, 75, 85, 100)
-        val labels = presets.map { "$it%" }.toTypedArray()
-        val currentHeight = prefs.floatingChatHeightPercent.coerceIn(
-            AppPreferences.FLOATING_CHAT_HEIGHT_MIN,
-            AppPreferences.FLOATING_CHAT_HEIGHT_MAX
-        )
-        val currentIndex = presets.indexOf(currentHeight)
-
-        AlertDialog.Builder(activity)
-            .setTitle(R.string.setting_floating_chat_height)
-            .setSingleChoiceItems(labels, currentIndex) { dialog, which ->
-                prefs.floatingChatHeightPercent = presets[which]
-                activity.fullscreenToggleManager.onFloatingChatSettingChanged()
+                activity.fullscreenToggleManager.onTransparentChatOverlaySettingChanged()
                 dialog.dismiss()
                 detailDialog?.dismiss()
                 showPlayerSettings()

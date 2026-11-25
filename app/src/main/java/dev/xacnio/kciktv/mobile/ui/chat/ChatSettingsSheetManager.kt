@@ -74,7 +74,6 @@ class ChatSettingsSheetManager(
     private var pendingRulesChannel: ChannelItem? = null
     private var isTrackingSideChatWidth: Boolean = false
     private var isTrackingEdgeMargin: Boolean = false
-    private var isTrackingFloatingHeight: Boolean = false
     private var isMountedOnPlayerScreen: Boolean = false
     private var isSyncingControls: Boolean = false
     private var syncCurrentPanelControls: (() -> Unit)? = null
@@ -93,7 +92,6 @@ class ChatSettingsSheetManager(
     fun dismissPanel() {
         isTrackingSideChatWidth = false
         isTrackingEdgeMargin = false
-        isTrackingFloatingHeight = false
         activity.fullscreenToggleManager.clearSideChatWidthPreview()
         val view = currentPanelView ?: return
         currentPanelView = null
@@ -137,7 +135,7 @@ class ChatSettingsSheetManager(
         chatUiManager.stopFlushing()
         chatUiManager.startFlushing()
 
-        // Apply to FullscreenToggleManager (width, transparent overlay, opacity, floating/edge)
+        // Apply to FullscreenToggleManager (width, transparent overlay, opacity, edge offset)
         activity.fullscreenToggleManager.clearSideChatWidthPreview()
         activity.fullscreenToggleManager.applyChatDefaultsReset()
 
@@ -203,7 +201,6 @@ class ChatSettingsSheetManager(
             if (page != PAGE_CHAT_SETTINGS) {
                 isTrackingSideChatWidth = false
                 isTrackingEdgeMargin = false
-                isTrackingFloatingHeight = false
                 activity.fullscreenToggleManager.clearSideChatWidthPreview()
             }
             currentPage = page
@@ -363,13 +360,9 @@ class ChatSettingsSheetManager(
         val switchTransparentChatOverlay = view.findViewById<SwitchCompat>(R.id.switchTransparentChatOverlay)
         val seekBarChatOverlayOpacity = view.findViewById<SeekBar>(R.id.seekBarChatOverlayOpacity)
         val textValueChatOverlayOpacity = view.findViewById<TextView>(R.id.textValueChatOverlayOpacity)
-        val switchFloatingChat = view.findViewById<SwitchCompat>(R.id.switchFloatingChat)
         val layoutChatOverlayEdgeMargin = view.findViewById<View>(R.id.layoutChatOverlayEdgeMargin)
         val seekBarChatOverlayEdgeMargin = view.findViewById<SeekBar>(R.id.seekBarChatOverlayEdgeMargin)
         val textValueChatOverlayEdgeMargin = view.findViewById<TextView>(R.id.textValueChatOverlayEdgeMargin)
-        val layoutFloatingChatHeight = view.findViewById<View>(R.id.layoutFloatingChatHeight)
-        val seekBarFloatingChatHeight = view.findViewById<SeekBar>(R.id.seekBarFloatingChatHeight)
-        val textValueFloatingChatHeight = view.findViewById<TextView>(R.id.textValueFloatingChatHeight)
         val switchPinnedGifts = view.findViewById<SwitchCompat>(R.id.switchPinnedGifts)
         val switchEmoteCombo = view.findViewById<SwitchCompat>(R.id.switchEmoteCombo)
         val switchFloatingEmotes = view.findViewById<SwitchCompat>(R.id.switchFloatingEmotes)
@@ -381,7 +374,6 @@ class ChatSettingsSheetManager(
             switchTimestamps,
             switchSeconds,
             switchTransparentChatOverlay,
-            switchFloatingChat,
             switchPinnedGifts,
             switchEmoteCombo,
             switchFloatingEmotes,
@@ -400,8 +392,7 @@ class ChatSettingsSheetManager(
             seekBarMessageSpacing,
             seekBarSideChatWidth,
             seekBarChatOverlayOpacity,
-            seekBarChatOverlayEdgeMargin,
-            seekBarFloatingChatHeight
+            seekBarChatOverlayEdgeMargin
         ).forEach { seekBar ->
             seekBar.progressTintList = themeColorStateListSingle
             seekBar.thumbTintList = themeColorStateListSingle
@@ -532,11 +523,8 @@ class ChatSettingsSheetManager(
 
         fun updateOverlayControlsEnabledState() {
             val transparentOn = switchTransparentChatOverlay.isChecked
-            val floatingOn = transparentOn && switchFloatingChat.isChecked
             seekBarChatOverlayEdgeMargin.isEnabled = transparentOn
             layoutChatOverlayEdgeMargin.alpha = if (transparentOn) 1.0f else 0.45f
-            seekBarFloatingChatHeight.isEnabled = floatingOn
-            layoutFloatingChatHeight.alpha = if (floatingOn) 1.0f else 0.45f
         }
 
         // Transparent Chat Overlay
@@ -581,21 +569,6 @@ class ChatSettingsSheetManager(
             }
         })
 
-        // Floating Chat Overlay
-        switchFloatingChat.isChecked = prefs.floatingChatOverlayEnabled
-        switchFloatingChat.setOnCheckedChangeListener { _, isChecked ->
-            if (isSyncingControls) return@setOnCheckedChangeListener
-            if (isChecked && !prefs.transparentChatOverlayEnabled) {
-                prefs.transparentChatOverlayEnabled = true
-                isSyncingControls = true
-                switchTransparentChatOverlay.isChecked = true
-                isSyncingControls = false
-            }
-            prefs.floatingChatOverlayEnabled = isChecked
-            updateOverlayControlsEnabledState()
-            activity.fullscreenToggleManager.onFloatingChatSettingChanged()
-        }
-
         // Chat Edge Offset Slider (0% to 30%)
         isTrackingEdgeMargin = false
         var currentEdgeMargin = prefs.chatOverlayEdgeMarginPercent.coerceIn(
@@ -620,7 +593,7 @@ class ChatSettingsSheetManager(
                         activity.fullscreenToggleManager.previewSideChatLayout(edgeMarginPercent = clamped)
                     } else {
                         prefs.chatOverlayEdgeMarginPercent = clamped
-                        activity.fullscreenToggleManager.onFloatingChatSettingChanged()
+                        activity.fullscreenToggleManager.onTransparentChatOverlaySettingChanged()
                     }
                 }
             }
@@ -634,51 +607,7 @@ class ChatSettingsSheetManager(
                 isTrackingEdgeMargin = false
                 activity.fullscreenToggleManager.clearSideChatWidthPreview()
                 prefs.chatOverlayEdgeMarginPercent = currentEdgeMargin
-                activity.fullscreenToggleManager.onFloatingChatSettingChanged()
-            }
-        })
-
-        // Floating Chat Height Slider (35% to 100%)
-        isTrackingFloatingHeight = false
-        val floatingHeightRange = AppPreferences.FLOATING_CHAT_HEIGHT_MAX - AppPreferences.FLOATING_CHAT_HEIGHT_MIN
-        var currentFloatingHeight = prefs.floatingChatHeightPercent.coerceIn(
-            AppPreferences.FLOATING_CHAT_HEIGHT_MIN,
-            AppPreferences.FLOATING_CHAT_HEIGHT_MAX
-        )
-        seekBarFloatingChatHeight.max = floatingHeightRange
-        seekBarFloatingChatHeight.progress = (currentFloatingHeight - AppPreferences.FLOATING_CHAT_HEIGHT_MIN)
-            .coerceIn(0, floatingHeightRange)
-        textValueFloatingChatHeight.text = "${currentFloatingHeight}%"
-
-        seekBarFloatingChatHeight.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (isSyncingControls) return
-                val pct = (AppPreferences.FLOATING_CHAT_HEIGHT_MIN + progress).coerceIn(
-                    AppPreferences.FLOATING_CHAT_HEIGHT_MIN,
-                    AppPreferences.FLOATING_CHAT_HEIGHT_MAX
-                )
-                textValueFloatingChatHeight.text = "${pct}%"
-                currentFloatingHeight = pct
-                if (fromUser) {
-                    if (isTrackingFloatingHeight) {
-                        activity.fullscreenToggleManager.previewSideChatLayout(heightPercent = pct)
-                    } else {
-                        prefs.floatingChatHeightPercent = pct
-                        activity.fullscreenToggleManager.onFloatingChatSettingChanged()
-                    }
-                }
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {
-                if (isSyncingControls) return
-                isTrackingFloatingHeight = true
-                activity.fullscreenToggleManager.previewSideChatLayout(heightPercent = currentFloatingHeight)
-            }
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {
-                if (isSyncingControls) return
-                isTrackingFloatingHeight = false
-                activity.fullscreenToggleManager.clearSideChatWidthPreview()
-                prefs.floatingChatHeightPercent = currentFloatingHeight
-                activity.fullscreenToggleManager.onFloatingChatSettingChanged()
+                activity.fullscreenToggleManager.onTransparentChatOverlaySettingChanged()
             }
         })
 
@@ -887,22 +816,12 @@ class ChatSettingsSheetManager(
                 seekBarChatOverlayOpacity.progress = opacity
                 textValueChatOverlayOpacity.text = "${opacity}%"
 
-                switchFloatingChat.isChecked = prefs.floatingChatOverlayEnabled
-
                 currentEdgeMargin = prefs.chatOverlayEdgeMarginPercent.coerceIn(
                     AppPreferences.CHAT_OVERLAY_EDGE_MARGIN_MIN,
                     AppPreferences.CHAT_OVERLAY_EDGE_MARGIN_MAX
                 )
                 seekBarChatOverlayEdgeMargin.progress = currentEdgeMargin
                 textValueChatOverlayEdgeMargin.text = "${currentEdgeMargin}%"
-
-                currentFloatingHeight = prefs.floatingChatHeightPercent.coerceIn(
-                    AppPreferences.FLOATING_CHAT_HEIGHT_MIN,
-                    AppPreferences.FLOATING_CHAT_HEIGHT_MAX
-                )
-                seekBarFloatingChatHeight.progress = (currentFloatingHeight - AppPreferences.FLOATING_CHAT_HEIGHT_MIN)
-                    .coerceIn(0, floatingHeightRange)
-                textValueFloatingChatHeight.text = "${currentFloatingHeight}%"
 
                 updateOverlayControlsEnabledState()
 
@@ -952,11 +871,10 @@ class ChatSettingsSheetManager(
                 .show()
         }
 
-        // Mount on playerScreenContainer when floating side chat is active, landscape side chat
-        // is visible (avoids cramping inside a narrow/short floating or side chat container), or
-        // chatContainer is hidden (e.g. opened from Video Settings gear in fullscreen).
-        val mountOnPlayerScreen = activity.fullscreenToggleManager.isFloatingSideChatActive() ||
-            activity.fullscreenToggleManager.isSideChatVisible ||
+        // Mount on playerScreenContainer when landscape side chat is visible (avoids cramping
+        // inside a narrow side chat container), or when chatContainer is hidden (e.g. opened
+        // from Video Settings gear in fullscreen).
+        val mountOnPlayerScreen = activity.fullscreenToggleManager.isSideChatVisible ||
             activity.binding.chatContainer.visibility != View.VISIBLE
         isMountedOnPlayerScreen = mountOnPlayerScreen
 

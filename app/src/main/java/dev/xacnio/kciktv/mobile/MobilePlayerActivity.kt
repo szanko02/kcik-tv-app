@@ -3838,10 +3838,7 @@ class MobilePlayerActivity : FragmentActivity() {
             val imeInsets = windowInsets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime())
             // Only apply padding when keyboard is visible using IME insets 
             // In standard mode, playerScreenContainer handles nav bar padding via systemBars()
-            // Floating side chat is already lifted/clamped above IME by FullscreenToggleManager
-            val isFloatingSideChat = ::fullscreenToggleManager.isInitialized &&
-                fullscreenToggleManager.isFloatingSideChatActive()
-            val bottomPadding = if (!isFloatingSideChat && imeInsets.bottom > 0) imeInsets.bottom else 0
+            val bottomPadding = if (imeInsets.bottom > 0) imeInsets.bottom else 0
             
             // Apply padding
             view.setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, bottomPadding)

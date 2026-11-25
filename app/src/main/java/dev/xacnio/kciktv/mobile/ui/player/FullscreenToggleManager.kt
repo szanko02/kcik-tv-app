@@ -20,12 +20,10 @@ import android.util.Log
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import android.view.ViewOutlineProvider
 import android.view.WindowManager
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.Toast
 import androidx.constraintlayout.widget.ConstraintLayout
-import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -159,7 +157,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
     private var theatreImeOpen: Boolean = false
     private var activeSideChatAnimator: android.animation.ValueAnimator? = null
 
-    // Side Chat Resize Handle & Floating Chat State
+    // Side Chat Resize Handle & Edge Offset State
     private var isDividerSetup = false
     private var isDraggingDivider = false
     private var isPreviewingSideChatWidth = false
@@ -168,16 +166,8 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
     private var pillDrawable: android.graphics.drawable.GradientDrawable? = null
     private var badgeDrawable: android.graphics.drawable.GradientDrawable? = null
     private var sideChatWidthPreviewLine: View? = null
-
-    var isDraggingFloatingChat: Boolean = false
-        private set
-    private var isFloatingDragSetup = false
-    private var lastFloatingHandleTapMs = 0L
-    private var floatingDragPillDrawable: android.graphics.drawable.GradientDrawable? = null
-    private var floatingChatPreviewBox: View? = null
-    private var floatingChatPreviewDrawable: android.graphics.drawable.GradientDrawable? = null
-    private var currentImeBottomPx: Int = 0
-    private var lastFloatingRect: FloatingChatBounds.RectPx? = null
+    private var sideChatEdgePreviewBox: View? = null
+    private var sideChatEdgePreviewDrawable: android.graphics.drawable.GradientDrawable? = null
     private var isParentLayoutListenerAttached = false
     private var lastObservedParentWidth = 0
     private var lastObservedParentHeight = 0
@@ -193,9 +183,9 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         if (!changed) return@OnLayoutChangeListener
         lastObservedParentWidth = newW
         lastObservedParentHeight = newH
-        if (isSideChatVisible && !isDraggingFloatingChat && !isDraggingDivider) {
+        if (isSideChatVisible && !isDraggingDivider) {
             v.post {
-                if (isSideChatVisible && !isDraggingFloatingChat && !isDraggingDivider) {
+                if (isSideChatVisible && !isDraggingDivider) {
                     applySideChatLayout()
                     refreshPlayerWindowInsets()
                 }
@@ -206,9 +196,6 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
     private fun isTransparentSideChatActive(): Boolean =
         isSideChatVisible && prefs.transparentChatOverlayEnabled
 
-    fun isFloatingSideChatActive(): Boolean =
-        isTransparentSideChatActive() && prefs.floatingChatOverlayEnabled
-
     fun isDockedSideChatActive(): Boolean =
         ChatOverlayStyleUtils.isDockedSideChat(isSideChatVisible, prefs.transparentChatOverlayEnabled)
 
@@ -218,24 +205,6 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         val dm = activity.resources.displayMetrics
         return kotlin.math.max(dm.widthPixels, dm.heightPixels)
     }
-
-    private fun effectiveRootHeight(rootHeight: Int = binding.playerScreenContainer.height): Int {
-        if (rootHeight > 0) return rootHeight
-        if (binding.root.height > 0) return binding.root.height
-        val dm = activity.resources.displayMetrics
-        return kotlin.math.min(dm.widthPixels, dm.heightPixels)
-    }
-
-    private fun currentDisplayCutoutInsets(): Insets {
-        if (!activity.isFullscreen || isTheatreMode || !prefs.drawUnderCutout) {
-            return Insets.NONE
-        }
-        val insets = lastWindowInsets ?: ViewCompat.getRootWindowInsets(binding.playerScreenContainer)
-        return insets?.getInsets(WindowInsetsCompat.Type.displayCutout()) ?: Insets.NONE
-    }
-
-    private fun floatingOuterGapPx(): Int =
-        (8f * activity.resources.displayMetrics.density).roundToInt()
 
     private fun computeSideChatWidthPx(rootWidth: Int, percent: Int = prefs.sideChatWidthPercent): Int {
         return SideChatWidthUtils.widthPxForPercent(
@@ -262,42 +231,11 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         rootWidth: Int = effectiveRootWidth(),
         chatWidth: Int = currentSideChatWidthPx(rootWidth)
     ): Int {
-        if (!isTransparentSideChatActive() || isFloatingSideChatActive()) return 0
-        return FloatingChatBounds.computeEdgeMarginPx(
+        if (!isTransparentSideChatActive()) return 0
+        return ChatOverlayStyleUtils.computeEdgeMarginPx(
             parentWidthPx = rootWidth,
             chatWidthPx = chatWidth,
             edgeMarginPercent = prefs.chatOverlayEdgeMarginPercent
-        )
-    }
-
-    private fun computeCurrentFloatingRect(
-        widthPercent: Int = prefs.sideChatWidthPercent,
-        edgeMarginPercent: Int = prefs.chatOverlayEdgeMarginPercent,
-        heightPercent: Int = prefs.floatingChatHeightPercent,
-        xPercent: Float = prefs.floatingChatXPercent,
-        yPercent: Float = prefs.floatingChatYPercent,
-        parentWidth: Int = effectiveRootWidth(),
-        parentHeight: Int = effectiveRootHeight(),
-        imeBottomPx: Int = currentImeBottomPx
-    ): FloatingChatBounds.RectPx {
-        val density = activity.resources.displayMetrics.density
-        val cutout = currentDisplayCutoutInsets()
-        return FloatingChatBounds.computeFloatingRect(
-            parentWidthPx = parentWidth,
-            parentHeightPx = parentHeight,
-            widthPercent = widthPercent,
-            heightPercent = heightPercent,
-            xPercent = xPercent,
-            yPercent = yPercent,
-            edgeMarginPercent = edgeMarginPercent,
-            minOuterGapPx = floatingOuterGapPx(),
-            cutoutLeftPx = cutout.left,
-            cutoutTopPx = cutout.top,
-            cutoutRightPx = cutout.right,
-            cutoutBottomPx = cutout.bottom,
-            imeBottomPx = imeBottomPx,
-            minWidthPx = (96f * density).roundToInt(),
-            minHeightPx = (120f * density).roundToInt()
         )
     }
 
@@ -330,167 +268,8 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         }
     }
 
-    private fun ensureFloatingDragSetup() {
-        if (isFloatingDragSetup) return
-        isFloatingDragSetup = true
-
-        val density = activity.resources.displayMetrics.density
-        floatingDragPillDrawable = android.graphics.drawable.GradientDrawable().apply {
-            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-            cornerRadius = 2f * density
-            setColor(Color.parseColor("#B3FFFFFF"))
-        }
-        binding.floatingChatDragPill.background = floatingDragPillDrawable
-
-        binding.floatingChatResetPositionBtn.setOnClickListener {
-            resetFloatingChatPosition(showToast = true)
-        }
-
-        val touchSlop = android.view.ViewConfiguration.get(activity).scaledTouchSlop
-        val baseDividerTx = 11f * density
-        var downRawX = 0f
-        var downRawY = 0f
-        var startLeft = 0
-        var startTop = 0
-        var rectW = 0
-        var rectH = 0
-        var moved = false
-        var isDoubleTap = false
-
-        binding.floatingChatDragHandle.setOnTouchListener { v, event ->
-            if (!isFloatingSideChatActive()) return@setOnTouchListener false
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    v.parent?.requestDisallowInterceptTouchEvent(true)
-                    activeSideChatAnimator?.cancel()
-                    activeSideChatAnimator = null
-                    clearSideChatWidthPreview()
-                    val lp = binding.sideChatContainer.layoutParams as ConstraintLayout.LayoutParams
-                    downRawX = event.rawX
-                    downRawY = event.rawY
-                    startLeft = lp.marginStart
-                    startTop = lp.topMargin
-                    rectW = binding.sideChatContainer.width.takeIf { it > 0 } ?: lp.width.coerceAtLeast(1)
-                    rectH = binding.sideChatContainer.height.takeIf { it > 0 } ?: lp.height.coerceAtLeast(1)
-                    moved = false
-                    val now = android.os.SystemClock.uptimeMillis()
-                    isDoubleTap = (now - lastFloatingHandleTapMs) < 300L
-                    lastFloatingHandleTapMs = now
-                    isDraggingFloatingChat = true
-                    floatingDragPillDrawable?.setColor(Color.parseColor("#53FC18"))
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    val dx = event.rawX - downRawX
-                    val dy = event.rawY - downRawY
-                    if (!moved && (kotlin.math.abs(dx) >= touchSlop || kotlin.math.abs(dy) >= touchSlop)) {
-                        moved = true
-                    }
-                    if (moved) {
-                        val cutout = currentDisplayCutoutInsets()
-                        val (clampedLeft, clampedTop) = FloatingChatBounds.clampDraggedOrigin(
-                            desiredLeftPx = (startLeft + dx).roundToInt(),
-                            desiredTopPx = (startTop + dy).roundToInt(),
-                            rectWidthPx = rectW,
-                            rectHeightPx = rectH,
-                            parentWidthPx = effectiveRootWidth(),
-                            parentHeightPx = effectiveRootHeight(),
-                            edgeMarginPercent = prefs.chatOverlayEdgeMarginPercent,
-                            minOuterGapPx = floatingOuterGapPx(),
-                            cutoutLeftPx = cutout.left,
-                            cutoutTopPx = cutout.top,
-                            cutoutRightPx = cutout.right,
-                            cutoutBottomPx = cutout.bottom,
-                            imeBottomPx = currentImeBottomPx
-                        )
-                        val tx = (clampedLeft - startLeft).toFloat()
-                        val ty = (clampedTop - startTop).toFloat()
-                        binding.sideChatContainer.translationX = tx
-                        binding.sideChatContainer.translationY = ty
-                        binding.sideChatDividerHandle.translationX = baseDividerTx + tx
-                        binding.sideChatDividerHandle.translationY = ty
-                    }
-                    true
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    isDraggingFloatingChat = false
-                    v.parent?.requestDisallowInterceptTouchEvent(false)
-                    floatingDragPillDrawable?.setColor(Color.parseColor("#B3FFFFFF"))
-                    if (moved) {
-                        val finalLeft = (startLeft + binding.sideChatContainer.translationX).roundToInt()
-                        val finalTop = (startTop + binding.sideChatContainer.translationY).roundToInt()
-                        val cutout = currentDisplayCutoutInsets()
-                        val norm = FloatingChatBounds.originToNormalizedPercent(
-                            leftPx = finalLeft,
-                            topPx = finalTop,
-                            rectWidthPx = rectW,
-                            rectHeightPx = rectH,
-                            parentWidthPx = effectiveRootWidth(),
-                            parentHeightPx = effectiveRootHeight(),
-                            edgeMarginPercent = prefs.chatOverlayEdgeMarginPercent,
-                            minOuterGapPx = floatingOuterGapPx(),
-                            cutoutLeftPx = cutout.left,
-                            cutoutTopPx = cutout.top,
-                            cutoutRightPx = cutout.right,
-                            cutoutBottomPx = cutout.bottom,
-                            imeBottomPx = currentImeBottomPx,
-                            fallbackX = prefs.floatingChatXPercent,
-                            fallbackY = prefs.floatingChatYPercent
-                        )
-                        prefs.floatingChatXPercent = norm.xPercent
-                        prefs.floatingChatYPercent = norm.yPercent
-                        binding.sideChatContainer.translationX = 0f
-                        binding.sideChatContainer.translationY = 0f
-                        binding.sideChatDividerHandle.translationX = baseDividerTx
-                        binding.sideChatDividerHandle.translationY = 0f
-                        applySideChatLayout()
-                        refreshPlayerWindowInsets()
-                    } else if (event.actionMasked == MotionEvent.ACTION_UP && isDoubleTap) {
-                        lastFloatingHandleTapMs = 0L
-                        resetFloatingChatPosition(showToast = true)
-                    }
-                    true
-                }
-                else -> false
-            }
-        }
-    }
-
-    private fun updateFloatingContainerBoundsOnly(rect: FloatingChatBounds.RectPx) {
-        val density = activity.resources.displayMetrics.density
-        val sideParams = binding.sideChatContainer.layoutParams as ConstraintLayout.LayoutParams
-        val changed = sideParams.startToStart != ConstraintLayout.LayoutParams.PARENT_ID ||
-            sideParams.topToTop != ConstraintLayout.LayoutParams.PARENT_ID ||
-            sideParams.endToEnd != ConstraintLayout.LayoutParams.UNSET ||
-            sideParams.bottomToBottom != ConstraintLayout.LayoutParams.UNSET ||
-            sideParams.width != rect.width ||
-            sideParams.height != rect.height ||
-            sideParams.marginStart != rect.left ||
-            sideParams.topMargin != rect.top ||
-            sideParams.marginEnd != 0 ||
-            sideParams.bottomMargin != 0
-        if (changed) {
-            sideParams.startToStart = ConstraintLayout.LayoutParams.PARENT_ID
-            sideParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
-            sideParams.endToEnd = ConstraintLayout.LayoutParams.UNSET
-            sideParams.bottomToBottom = ConstraintLayout.LayoutParams.UNSET
-            sideParams.width = rect.width
-            sideParams.height = rect.height
-            sideParams.marginStart = rect.left
-            sideParams.topMargin = rect.top
-            sideParams.marginEnd = 0
-            sideParams.bottomMargin = 0
-            binding.sideChatContainer.layoutParams = sideParams
-        }
-        lastFloatingRect = rect
-        val minResetBtnWidthPx = (140f * density).roundToInt()
-        binding.floatingChatResetPositionBtn.visibility =
-            if (rect.width >= minResetBtnWidthPx) View.VISIBLE else View.GONE
-    }
-
     private fun applySideChatLayout(
-        widthPercentOverride: Int? = null,
-        xPercentOverride: Float? = null
+        widthPercentOverride: Int? = null
     ) {
         if (!isSideChatVisible) return
 
@@ -503,62 +282,18 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
                 prefs.sideChatWidthPercent
             }
         )
-        val dividerHalfPx = 11f * density
         val isTablet = activity.isTabletOrLargeWindow()
         val videoParams = binding.videoContainer.layoutParams as ConstraintLayout.LayoutParams
 
         ensureChatContainerWeightedInSideChat()
-
-        if (isFloatingSideChatActive()) {
-            ensureFloatingDragSetup()
-            ensureParentLayoutListener()
-            val rect = computeCurrentFloatingRect(
-                widthPercent = activeWidthPercent,
-                xPercent = xPercentOverride ?: prefs.floatingChatXPercent
-            )
-            updateFloatingContainerBoundsOnly(rect)
-            if (!isDraggingFloatingChat) {
-                binding.sideChatContainer.translationX = 0f
-                binding.sideChatContainer.translationY = 0f
-                binding.sideChatDividerHandle.translationX = dividerHalfPx
-                binding.sideChatDividerHandle.translationY = 0f
-            }
-            binding.sideChatContainer.elevation = 180f * density
-            binding.sideChatContainer.outlineProvider = ViewOutlineProvider.BACKGROUND
-            binding.sideChatContainer.clipToOutline = true
-            binding.floatingChatDragHandle.visibility = View.VISIBLE
-            if (isTablet) {
-                binding.infoPanel.visibility = View.GONE
-            }
-
-            videoParams.width = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT
-            videoParams.height = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT
-            videoParams.dimensionRatio = null
-            videoParams.topMargin = 0
-            videoParams.bottomMargin = 0
-            videoParams.startToStart = ConstraintLayout.LayoutParams.PARENT_ID
-            videoParams.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-            videoParams.endToStart = ConstraintLayout.LayoutParams.UNSET
-            videoParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
-            videoParams.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
-            videoParams.verticalBias = 0.5f
-            binding.videoContainer.layoutParams = videoParams
-            return
-        }
-
-        lastFloatingRect = null
-        binding.floatingChatDragHandle.visibility = View.GONE
         binding.sideChatContainer.clipToOutline = false
-        binding.sideChatContainer.outlineProvider = ViewOutlineProvider.BACKGROUND
-        binding.sideChatContainer.translationY = 0f
-        binding.sideChatDividerHandle.translationY = 0f
 
         val chatWidth = SideChatWidthUtils.widthPxForPercent(rootWidth, activeWidthPercent)
         val sideParams = binding.sideChatContainer.layoutParams as ConstraintLayout.LayoutParams
 
         if (prefs.transparentChatOverlayEnabled) {
             ensureParentLayoutListener()
-            val edgeMarginPx = FloatingChatBounds.computeEdgeMarginPx(
+            val edgeMarginPx = ChatOverlayStyleUtils.computeEdgeMarginPx(
                 parentWidthPx = rootWidth,
                 chatWidthPx = chatWidth,
                 edgeMarginPercent = prefs.chatOverlayEdgeMarginPercent
@@ -630,35 +365,16 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
     }
 
     private fun resetSideChatContainerToDefaultState(keepVisibility: Boolean = false) {
-        isDraggingFloatingChat = false
         clearSideChatWidthPreview()
         val density = activity.resources.displayMetrics.density
         val side = binding.sideChatContainer
         side.translationX = 0f
-        side.translationY = 0f
-        side.alpha = 1f
-        side.scaleX = 1f
-        side.scaleY = 1f
-        side.clipToOutline = false
-        side.outlineProvider = ViewOutlineProvider.BACKGROUND
-        binding.floatingChatDragHandle.visibility = View.GONE
-        floatingDragPillDrawable?.setColor(Color.parseColor("#B3FFFFFF"))
-        lastFloatingRect = null
 
         val sideParams = side.layoutParams as ConstraintLayout.LayoutParams
-        sideParams.startToStart = ConstraintLayout.LayoutParams.UNSET
-        sideParams.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-        sideParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
-        sideParams.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
-        sideParams.height = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT
-        sideParams.marginStart = 0
         sideParams.marginEnd = 0
-        sideParams.topMargin = 0
-        sideParams.bottomMargin = 0
         side.layoutParams = sideParams
 
         binding.sideChatDividerHandle.translationX = 11f * density
-        binding.sideChatDividerHandle.translationY = 0f
         if (!keepVisibility) {
             side.visibility = View.GONE
         }
@@ -689,8 +405,6 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         var downX = 0f
         var moved = false
         var isDoubleTap = false
-        var fixedFloatingRightPx = -1
-        var lastFloatingDraggedXPercent = Float.NaN
 
         binding.sideChatDividerHandle.setOnTouchListener { v, event ->
             when (event.actionMasked) {
@@ -699,14 +413,6 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
                     downX = event.rawX
                     moved = false
                     lastDraggedPercent = -1
-                    lastFloatingDraggedXPercent = Float.NaN
-                    fixedFloatingRightPx = if (isFloatingSideChatActive()) {
-                        val lp = binding.sideChatContainer.layoutParams as ConstraintLayout.LayoutParams
-                        val currentW = binding.sideChatContainer.width.takeIf { it > 0 } ?: lp.width.coerceAtLeast(1)
-                        lp.marginStart + currentW
-                    } else {
-                        -1
-                    }
                     val now = android.os.SystemClock.uptimeMillis()
                     isDoubleTap = (now - lastHandleTapMs) < 300L
                     lastHandleTapMs = now
@@ -724,13 +430,10 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
                         val parentView = binding.playerScreenContainer
                         parentView.getLocationOnScreen(parentLoc)
                         val parentW = effectiveRootWidth(parentView.width)
-                        val parentH = effectiveRootHeight(parentView.height)
-                        val rightMarginPx = when {
-                            isFloatingSideChatActive() && fixedFloatingRightPx > 0 ->
-                                (parentW - fixedFloatingRightPx).coerceAtLeast(0)
-                            isTransparentSideChatActive() ->
-                                FloatingChatBounds.computeEdgeMarginPx(parentW, 0, prefs.chatOverlayEdgeMarginPercent)
-                            else -> 0
+                        val rightMarginPx = if (isTransparentSideChatActive()) {
+                            ChatOverlayStyleUtils.computeEdgeMarginPx(parentW, 0, prefs.chatOverlayEdgeMarginPercent)
+                        } else {
+                            0
                         }
                         val percent = SideChatWidthUtils.percentForTouchX(
                             event.rawX,
@@ -739,52 +442,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
                             rightMarginPx
                         )
                         lastDraggedPercent = percent
-                        if (isFloatingSideChatActive() && fixedFloatingRightPx > 0) {
-                            val probeRect = computeCurrentFloatingRect(
-                                widthPercent = percent,
-                                parentWidth = parentW,
-                                parentHeight = parentH
-                            )
-                            val desiredLeft = fixedFloatingRightPx - probeRect.width
-                            val cutout = currentDisplayCutoutInsets()
-                            val (clampedLeft, _) = FloatingChatBounds.clampDraggedOrigin(
-                                desiredLeftPx = desiredLeft,
-                                desiredTopPx = probeRect.top,
-                                rectWidthPx = probeRect.width,
-                                rectHeightPx = probeRect.height,
-                                parentWidthPx = parentW,
-                                parentHeightPx = parentH,
-                                edgeMarginPercent = prefs.chatOverlayEdgeMarginPercent,
-                                minOuterGapPx = floatingOuterGapPx(),
-                                cutoutLeftPx = cutout.left,
-                                cutoutTopPx = cutout.top,
-                                cutoutRightPx = cutout.right,
-                                cutoutBottomPx = cutout.bottom,
-                                imeBottomPx = currentImeBottomPx
-                            )
-                            val norm = FloatingChatBounds.originToNormalizedPercent(
-                                leftPx = clampedLeft,
-                                topPx = probeRect.top,
-                                rectWidthPx = probeRect.width,
-                                rectHeightPx = probeRect.height,
-                                parentWidthPx = parentW,
-                                parentHeightPx = parentH,
-                                edgeMarginPercent = prefs.chatOverlayEdgeMarginPercent,
-                                minOuterGapPx = floatingOuterGapPx(),
-                                cutoutLeftPx = cutout.left,
-                                cutoutTopPx = cutout.top,
-                                cutoutRightPx = cutout.right,
-                                cutoutBottomPx = cutout.bottom,
-                                imeBottomPx = currentImeBottomPx,
-                                fallbackX = prefs.floatingChatXPercent,
-                                fallbackY = prefs.floatingChatYPercent
-                            )
-                            lastFloatingDraggedXPercent = norm.xPercent
-                            applySideChatLayout(widthPercentOverride = percent, xPercentOverride = norm.xPercent)
-                            refreshPlayerWindowInsets()
-                        } else {
-                            applySideChatWidthPercent(percent, persist = false)
-                        }
+                        applySideChatWidthPercent(percent, persist = false)
                         binding.sideChatWidthBadge.text = "$percent%"
                         binding.sideChatWidthBadge.visibility = View.VISIBLE
                     }
@@ -797,9 +455,6 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
                     binding.sideChatWidthBadge.visibility = View.GONE
                     if (moved && lastDraggedPercent > 0) {
                         prefs.sideChatWidthPercent = lastDraggedPercent
-                        if (lastFloatingDraggedXPercent.isFinite()) {
-                            prefs.floatingChatXPercent = lastFloatingDraggedXPercent
-                        }
                     } else if (event.actionMasked == MotionEvent.ACTION_UP && isDoubleTap) {
                         lastHandleTapMs = 0L
                         applySideChatWidthPercent(
@@ -808,8 +463,6 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
                         )
                         Toast.makeText(activity, R.string.side_chat_width_reset_toast, Toast.LENGTH_SHORT).show()
                     }
-                    fixedFloatingRightPx = -1
-                    lastFloatingDraggedXPercent = Float.NaN
                     lastDraggedPercent = -1
                     updateSideChatHandleVisibility()
                     true
@@ -821,7 +474,6 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
 
     private fun hideSideChatDivider() {
         isDraggingDivider = false
-        isDraggingFloatingChat = false
         lastDraggedPercent = -1
         binding.sideChatDividerHandle.visibility = View.GONE
         clearSideChatWidthPreview()
@@ -833,11 +485,11 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             clearSideChatWidthPreview()
             return
         }
-        if (isFloatingSideChatActive() || (isTransparentSideChatActive() && prefs.chatOverlayEdgeMarginPercent > 0)) {
+        if (isTransparentSideChatActive() && prefs.chatOverlayEdgeMarginPercent > 0) {
             previewSideChatLayout(widthPercent = percent)
             return
         }
-        floatingChatPreviewBox?.visibility = View.GONE
+        sideChatEdgePreviewBox?.visibility = View.GONE
         ensureSideChatDividerSetup()
         val clamped = SideChatWidthUtils.clampPercent(percent)
         val parent = binding.playerScreenContainer
@@ -878,8 +530,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
 
     fun previewSideChatLayout(
         widthPercent: Int? = null,
-        edgeMarginPercent: Int? = null,
-        heightPercent: Int? = null
+        edgeMarginPercent: Int? = null
     ) {
         if (!isSideChatVisible || binding.sideChatContainer.visibility != View.VISIBLE) {
             clearSideChatWidthPreview()
@@ -889,87 +540,63 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         val density = activity.resources.displayMetrics.density
         val parent = binding.playerScreenContainer
         val parentW = effectiveRootWidth(parent.width)
-        val parentH = effectiveRootHeight(parent.height)
 
         val targetWidthPct = SideChatWidthUtils.clampPercent(widthPercent ?: prefs.sideChatWidthPercent)
-        val targetEdgePct = FloatingChatBounds.clampEdgeMarginPercent(edgeMarginPercent ?: prefs.chatOverlayEdgeMarginPercent)
-        val targetHeightPct = FloatingChatBounds.clampHeightPercent(heightPercent ?: prefs.floatingChatHeightPercent)
+        val targetEdgePct = ChatOverlayStyleUtils.clampEdgeMarginPercent(edgeMarginPercent ?: prefs.chatOverlayEdgeMarginPercent)
 
-        val isFloatingPreview = isFloatingSideChatActive() || (isTransparentSideChatActive() && heightPercent != null)
-        if (!isFloatingPreview && (!isTransparentSideChatActive() || (edgeMarginPercent == null && targetEdgePct == 0))) {
+        if (!isTransparentSideChatActive() || (edgeMarginPercent == null && targetEdgePct == 0)) {
             previewSideChatWidthPercent(targetWidthPct)
             return
         }
 
         sideChatWidthPreviewLine?.visibility = View.GONE
 
-        val box = floatingChatPreviewBox ?: View(activity).apply {
+        val box = sideChatEdgePreviewBox ?: View(activity).apply {
             val drawable = android.graphics.drawable.GradientDrawable().apply {
                 shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-                cornerRadius = 12f * density
+                cornerRadius = 0f
                 setColor(Color.parseColor("#1A53FC18"))
                 setStroke((2f * density).roundToInt().coerceAtLeast(1), Color.parseColor("#53FC18"))
             }
-            floatingChatPreviewDrawable = drawable
+            sideChatEdgePreviewDrawable = drawable
             background = drawable
             isClickable = false
             isFocusable = false
             elevation = kotlin.math.max(120f, binding.sideChatContainer.elevation + 16f * density)
             visibility = View.GONE
-            layoutParams = ConstraintLayout.LayoutParams(1, 1).apply {
-                startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+            layoutParams = ConstraintLayout.LayoutParams(
+                1,
+                ConstraintLayout.LayoutParams.MATCH_CONSTRAINT
+            ).apply {
+                endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
                 topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
             }
             parent.addView(this)
-        }.also { floatingChatPreviewBox = it }
+        }.also { sideChatEdgePreviewBox = it }
 
         box.elevation = kotlin.math.max(120f, binding.sideChatContainer.elevation + 16f * density)
         val boxParams = box.layoutParams as ConstraintLayout.LayoutParams
 
-        if (isFloatingPreview) {
-            floatingChatPreviewDrawable?.cornerRadius = 12f * density
-            val rect = computeCurrentFloatingRect(
-                widthPercent = targetWidthPct,
-                edgeMarginPercent = targetEdgePct,
-                heightPercent = targetHeightPct,
-                parentWidth = parentW,
-                parentHeight = parentH
-            )
-            boxParams.startToStart = ConstraintLayout.LayoutParams.PARENT_ID
-            boxParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
-            boxParams.endToEnd = ConstraintLayout.LayoutParams.UNSET
-            boxParams.bottomToBottom = ConstraintLayout.LayoutParams.UNSET
-            boxParams.width = rect.width
-            boxParams.height = rect.height
-            boxParams.marginStart = rect.left
-            boxParams.topMargin = rect.top
-            boxParams.marginEnd = 0
-            boxParams.bottomMargin = 0
-        } else {
-            floatingChatPreviewDrawable?.cornerRadius = 0f
-            val targetChatW = SideChatWidthUtils.widthPxForPercent(parentW, targetWidthPct)
-            val targetEdgePx = FloatingChatBounds.computeEdgeMarginPx(parentW, targetChatW, targetEdgePct)
-            boxParams.startToStart = ConstraintLayout.LayoutParams.UNSET
-            boxParams.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-            boxParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
-            boxParams.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
-            boxParams.width = targetChatW
-            boxParams.height = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT
-            boxParams.marginStart = 0
-            boxParams.topMargin = 0
-            boxParams.marginEnd = targetEdgePx
-            boxParams.bottomMargin = 0
-        }
+        sideChatEdgePreviewDrawable?.cornerRadius = 0f
+        val targetChatW = SideChatWidthUtils.widthPxForPercent(parentW, targetWidthPct)
+        val targetEdgePx = ChatOverlayStyleUtils.computeEdgeMarginPx(parentW, targetChatW, targetEdgePct)
+        boxParams.startToStart = ConstraintLayout.LayoutParams.UNSET
+        boxParams.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+        boxParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+        boxParams.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+        boxParams.width = targetChatW
+        boxParams.height = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT
+        boxParams.marginStart = 0
+        boxParams.topMargin = 0
+        boxParams.marginEnd = targetEdgePx
+        boxParams.bottomMargin = 0
 
         box.layoutParams = boxParams
         box.visibility = View.VISIBLE
 
         isPreviewingSideChatWidth = true
-        val badgeText = when {
-            heightPercent != null -> "${targetHeightPct}%"
-            edgeMarginPercent != null -> "${targetEdgePct}%"
-            else -> "${targetWidthPct}%"
-        }
+        val badgeText = if (edgeMarginPercent != null) "${targetEdgePct}%" else "${targetWidthPct}%"
         binding.sideChatWidthBadge.text = badgeText
         binding.sideChatWidthBadge.visibility = View.VISIBLE
     }
@@ -977,7 +604,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
     fun clearSideChatWidthPreview() {
         isPreviewingSideChatWidth = false
         sideChatWidthPreviewLine?.visibility = View.GONE
-        floatingChatPreviewBox?.visibility = View.GONE
+        sideChatEdgePreviewBox?.visibility = View.GONE
         if (!isDraggingDivider) {
             binding.sideChatWidthBadge.visibility = View.GONE
         }
@@ -993,28 +620,9 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         refreshPlayerWindowInsets()
     }
 
-    fun resetFloatingChatPosition(showToast: Boolean = false) {
-        prefs.floatingChatXPercent = AppPreferences.FLOATING_CHAT_X_DEFAULT
-        prefs.floatingChatYPercent = AppPreferences.FLOATING_CHAT_Y_DEFAULT
-        val density = activity.resources.displayMetrics.density
-        binding.sideChatContainer.translationX = 0f
-        binding.sideChatContainer.translationY = 0f
-        binding.sideChatDividerHandle.translationX = 11f * density
-        binding.sideChatDividerHandle.translationY = 0f
-        if (isFloatingSideChatActive()) {
-            applySideChatLayout()
-            refreshPlayerWindowInsets()
-            updateSideChatHandleVisibility()
-        }
-        if (showToast) {
-            Toast.makeText(activity, R.string.floating_chat_position_reset_toast, Toast.LENGTH_SHORT).show()
-        }
-    }
-
     fun applyChatDefaultsReset() {
         activeSideChatAnimator?.cancel()
         activeSideChatAnimator = null
-        isDraggingFloatingChat = false
         isDraggingDivider = false
         lastDraggedPercent = -1
         clearSideChatWidthPreview()
@@ -2706,19 +2314,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
 
     fun onPlayerWindowInsetsChanged(playerScreenView: View, windowInsets: WindowInsetsCompat) {
         lastWindowInsets = windowInsets
-        currentImeBottomPx = windowInsets.getInsets(WindowInsetsCompat.Type.ime()).bottom
         ensureBaseCutoutPaddingsCaptured()
-
-        val isFloating = isFloatingSideChatActive()
-        if (isFloating && !isDraggingFloatingChat) {
-            updateFloatingContainerBoundsOnly(
-                computeCurrentFloatingRect(
-                    parentWidth = effectiveRootWidth(playerScreenView.width),
-                    parentHeight = effectiveRootHeight(playerScreenView.height),
-                    imeBottomPx = currentImeBottomPx
-                )
-            )
-        }
 
         val topBarBase = baseVideoTopBarPadding!!
         val overlayBase = baseVideoOverlayPadding!!
@@ -2727,9 +2323,8 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         val rootW = effectiveRootWidth(playerScreenView.width)
         val chatW = currentSideChatWidthPx(rootW)
         val edgeMarginPx = effectiveDockedEdgeMarginPx(rootW, chatW)
-        val sideChatOverlayRightInset = FloatingChatBounds.computeRightControlsOverlapInsetPx(
+        val sideChatOverlayRightInset = ChatOverlayStyleUtils.computeRightControlsOverlapInsetPx(
             isTransparentSideChatActive = isTransparentSideChatActive(),
-            isFloatingChatActive = isFloating,
             overlayWidthPx = chatW,
             edgeMarginPx = edgeMarginPx,
             rootWidthPx = rootW
@@ -2746,13 +2341,12 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             if (prefs.drawUnderCutout) {
                 val cutout = windowInsets.getInsets(WindowInsetsCompat.Type.displayCutout())
                 val overlayLeft = cutout.left
-                val baseCutoutRight = if (isSideChatVisible && !isFloating) 0 else cutout.right
+                val baseCutoutRight = if (isSideChatVisible) 0 else cutout.right
                 val overlayRight = maxOf(baseCutoutRight, sideChatOverlayRightInset)
                 val sideChatRight = if (isSideChatVisible) {
-                    FloatingChatBounds.computeRemainingRightCutoutPaddingPx(
+                    ChatOverlayStyleUtils.computeRemainingRightCutoutPaddingPx(
                         cutoutRightPx = cutout.right,
-                        edgeMarginPx = edgeMarginPx,
-                        isFloatingActive = isFloating
+                        edgeMarginPx = edgeMarginPx
                     )
                 } else {
                     0
@@ -2797,9 +2391,8 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             val rootW = effectiveRootWidth()
             val chatW = currentSideChatWidthPx(rootW)
             val edgeMarginPx = effectiveDockedEdgeMarginPx(rootW, chatW)
-            val sideChatOverlayRightInset = FloatingChatBounds.computeRightControlsOverlapInsetPx(
+            val sideChatOverlayRightInset = ChatOverlayStyleUtils.computeRightControlsOverlapInsetPx(
                 isTransparentSideChatActive = isTransparentSideChatActive(),
-                isFloatingChatActive = isFloatingSideChatActive(),
                 overlayWidthPx = chatW,
                 edgeMarginPx = edgeMarginPx,
                 rootWidthPx = rootW
@@ -2952,17 +2545,13 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         originalChatParent?.removeView(chat)
         
         // Add to side container
-        binding.sideChatContainer.alpha = 1f
-        binding.sideChatContainer.scaleX = 1f
-        binding.sideChatContainer.scaleY = 1f
         binding.sideChatContainer.translationX = 0f
-        binding.sideChatContainer.translationY = 0f
         binding.sideChatContainer.visibility = View.VISIBLE
         if (chat.parent != binding.sideChatContainer) {
             binding.sideChatContainer.addView(chat)
         }
         
-        // Always use 0dp + weight 1f so floatingChatDragHandle / actionBar never clip chatInputRoot
+        // Always use 0dp + weight 1f so actionBar never clips chatInputRoot
         val chatParams = android.widget.LinearLayout.LayoutParams(
             android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
             0,
@@ -2980,11 +2569,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
                 originalActionBarParams = actionBar.layoutParams
                 
                 originalActionBarParent?.removeView(actionBar)
-                val actionBarIndex = if (binding.floatingChatDragHandle.parent == binding.sideChatContainer) 1 else 0
-                binding.sideChatContainer.addView(
-                    actionBar,
-                    actionBarIndex.coerceAtMost(binding.sideChatContainer.childCount)
-                )
+                binding.sideChatContainer.addView(actionBar, 0)
                 
                 // Adjust actionBar params for the new LinearLayout parent
                 val aParams = android.widget.LinearLayout.LayoutParams(
@@ -3040,53 +2625,6 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
                 binding.chatContainer.paddingRight,
                 binding.chatContainer.paddingBottom
             )
-
-            if (isFloatingSideChatActive()) {
-                binding.sideChatContainer.translationX = 0f
-                binding.sideChatContainer.translationY = 0f
-                binding.sideChatDividerHandle.translationX = dividerHalfPx
-                binding.sideChatDividerHandle.translationY = 0f
-                if (skipAnimation) {
-                    binding.sideChatContainer.alpha = 1f
-                    binding.sideChatContainer.scaleX = 1f
-                    binding.sideChatContainer.scaleY = 1f
-                    updateSideChatHandleVisibility()
-                    return
-                }
-
-                binding.sideChatDividerHandle.visibility = View.GONE
-                binding.sideChatContainer.alpha = 0f
-                binding.sideChatContainer.scaleX = 0.94f
-                binding.sideChatContainer.scaleY = 0.94f
-
-                val animator = android.animation.ValueAnimator.ofFloat(0f, 1f)
-                animator.duration = 200
-                animator.interpolator = android.view.animation.DecelerateInterpolator()
-                animator.addUpdateListener { animation ->
-                    val fraction = animation.animatedFraction
-                    binding.sideChatContainer.alpha = fraction
-                    val scale = 0.94f + (0.06f * fraction)
-                    binding.sideChatContainer.scaleX = scale
-                    binding.sideChatContainer.scaleY = scale
-                }
-                animator.addListener(object : android.animation.AnimatorListenerAdapter() {
-                    private var cancelled = false
-                    override fun onAnimationCancel(animation: android.animation.Animator) {
-                        cancelled = true
-                    }
-                    override fun onAnimationEnd(animation: android.animation.Animator) {
-                        if (activeSideChatAnimator === animator) activeSideChatAnimator = null
-                        if (cancelled) return
-                        binding.sideChatContainer.alpha = 1f
-                        binding.sideChatContainer.scaleX = 1f
-                        binding.sideChatContainer.scaleY = 1f
-                        updateSideChatHandleVisibility()
-                    }
-                })
-                activeSideChatAnimator = animator
-                animator.start()
-                return
-            }
 
             val slideDistance = (chatWidth + effectiveDockedEdgeMarginPx(rootWidth, chatWidth)).toFloat()
             if (skipAnimation) {
@@ -3254,7 +2792,6 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         val chat = binding.chatContainer
         val isTablet = activity.isTabletOrLargeWindow()
         val wasTransparentOverlay = isTransparentSideChatActive()
-        val wasFloatingOverlay = isFloatingSideChatActive()
         
         // Calculate dimensions
         val rootWidth = effectiveRootWidth()
@@ -3267,18 +2804,11 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         
         // Create synchronized animator
         val animator = android.animation.ValueAnimator.ofFloat(0f, 1f)
-        animator.duration = if (wasFloatingOverlay) 180 else 250
+        animator.duration = 250
         animator.interpolator = android.view.animation.AccelerateInterpolator()
         
         animator.addUpdateListener { animation ->
             val fraction = animation.animatedFraction
-            if (wasFloatingOverlay) {
-                binding.sideChatContainer.alpha = 1f - fraction
-                val scale = 1f - (0.06f * fraction)
-                binding.sideChatContainer.scaleX = scale
-                binding.sideChatContainer.scaleY = scale
-                return@addUpdateListener
-            }
             
             // 1. Update Video Width only in docked split-screen mode
             if (!wasTransparentOverlay) {
@@ -3569,12 +3099,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
                     originalActionBarParams = actionBar.layoutParams
                 }
                 (actionBar.parent as? android.view.ViewGroup)?.removeView(actionBar)
-                // Keep floatingChatDragHandle at index 0 when present
-                val actionBarIndex = if (binding.floatingChatDragHandle.parent == binding.sideChatContainer) 1 else 0
-                binding.sideChatContainer.addView(
-                    actionBar,
-                    actionBarIndex.coerceAtMost(binding.sideChatContainer.childCount)
-                )
+                binding.sideChatContainer.addView(actionBar, 0)
                 isActionBarReparentedToSide = true
             }
             
@@ -3609,7 +3134,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
             // Hide ActionBar
             actionBar.visibility = View.GONE
             
-            // Keep weight 1f + height 0 so floatingChatDragHandle never clips chatInputRoot off the bottom
+            // Keep weight 1f + height 0 so chatContainer fills sideChatContainer cleanly
             val chatParams = chat.layoutParams as android.widget.LinearLayout.LayoutParams
             chatParams.width = android.widget.LinearLayout.LayoutParams.MATCH_PARENT
             chatParams.height = 0
@@ -3622,37 +3147,25 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
 
     /**
      * Dynamically switches between Transparent Chat Overlay mode and Docked Split-Screen mode
-     * when `prefs.transparentChatOverlayEnabled` is toggled at runtime.
+     * and re-applies edge offsets, appearance, and control insets when transparent overlay or
+     * edge-margin settings change at runtime.
      */
     fun onTransparentChatOverlaySettingChanged() {
-        onFloatingChatSettingChanged()
-    }
-
-    /**
-     * Re-applies side-chat layout, floating window bounds, edge offsets, appearance, and IME insets
-     * when transparent/floating/edge-margin/height settings change at runtime.
-     */
-    fun onFloatingChatSettingChanged() {
         clearSideChatWidthPreview()
         if (isSideChatVisible) {
             activeSideChatAnimator?.cancel()
             activeSideChatAnimator = null
 
             val density = activity.resources.displayMetrics.density
-            binding.sideChatContainer.alpha = 1f
-            binding.sideChatContainer.scaleX = 1f
-            binding.sideChatContainer.scaleY = 1f
             binding.sideChatContainer.translationX = 0f
-            binding.sideChatContainer.translationY = 0f
             binding.sideChatDividerHandle.translationX = 11f * density
-            binding.sideChatDividerHandle.translationY = 0f
 
             applySideChatLayout()
 
             sideChatWidthPreviewLine?.let { line ->
                 line.elevation = kotlin.math.max(120f, binding.sideChatContainer.elevation + 14f * density)
             }
-            floatingChatPreviewBox?.let { box ->
+            sideChatEdgePreviewBox?.let { box ->
                 box.elevation = kotlin.math.max(120f, binding.sideChatContainer.elevation + 16f * density)
             }
 
@@ -3668,7 +3181,7 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
     }
 
     /**
-     * Applies background opacity, border styling, and text shadows across Landscape Transparent
+     * Applies background opacity and text shadows across Landscape Transparent
      * Side Chat, Portrait Theatre Mode, or restores Solid/Docked defaults.
      *
      * @param overrideOpacityPercent Optional live preview opacity (0..100) while dragging SeekBar.
@@ -3678,29 +3191,11 @@ class FullscreenToggleManager(private val activity: MobilePlayerActivity) {
         val opacity = ChatOverlayStyleUtils.clampOpacityPercent(rawOpacity)
 
         if (isTransparentSideChatActive()) {
-            // 1. Landscape Transparent Side Chat Overlay (Docked column or Floating window)
-            if (isFloatingSideChatActive()) {
-                val density = activity.resources.displayMetrics.density
-                binding.sideChatContainer.background = android.graphics.drawable.GradientDrawable().apply {
-                    shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-                    cornerRadius = 12f * density
-                    setColor(ChatOverlayStyleUtils.argbWithOpacity(0x000000, opacity))
-                    setStroke(
-                        (1f * density).roundToInt().coerceAtLeast(1),
-                        ChatOverlayStyleUtils.floatingBorderArgb(opacity)
-                    )
-                }
-                binding.sideChatContainer.outlineProvider = ViewOutlineProvider.BACKGROUND
-                binding.sideChatContainer.clipToOutline = true
-                binding.floatingChatDragHandle.setBackgroundColor(
-                    ChatOverlayStyleUtils.floatingHandleBgArgb(opacity)
-                )
-            } else {
-                binding.sideChatContainer.clipToOutline = false
-                binding.sideChatContainer.setBackgroundColor(
-                    ChatOverlayStyleUtils.argbWithOpacity(0x000000, opacity)
-                )
-            }
+            // 1. Landscape Transparent Side Chat Overlay
+            binding.sideChatContainer.clipToOutline = false
+            binding.sideChatContainer.setBackgroundColor(
+                ChatOverlayStyleUtils.argbWithOpacity(0x000000, opacity)
+            )
             binding.chatContainer.setBackgroundColor(Color.TRANSPARENT)
             binding.chatListContainer.setBackgroundColor(Color.TRANSPARENT)
             binding.chatRecyclerView.setBackgroundColor(Color.TRANSPARENT)

@@ -8,7 +8,7 @@ import org.junit.Test
 class ChatDefaultsResetTest {
 
     @Test
-    fun defaults_containsAllChatAppearanceOverlayFloatingFeatureHighlightKeysWithExpectedValues() {
+    fun defaults_containsAllChatAppearanceOverlayFeatureHighlightKeysWithExpectedValues() {
         val d = ChatSettingsDefaults.defaults
 
         // Sizes & layout
@@ -21,19 +21,12 @@ class ChatDefaultsResetTest {
         assertEquals(AppPreferences.SIDE_CHAT_WIDTH_DEFAULT, d["side_chat_width_percent"])
         assertEquals(35, d["side_chat_width_percent"])
 
-        // Transparent overlay & floating window
+        // Transparent overlay & edge offset
         assertEquals(false, d["transparent_chat_overlay_enabled"])
         assertEquals(AppPreferences.CHAT_OVERLAY_OPACITY_DEFAULT, d["chat_overlay_opacity_percent"])
         assertEquals(50, d["chat_overlay_opacity_percent"])
-        assertEquals(false, d["floating_chat_overlay_enabled"])
         assertEquals(AppPreferences.CHAT_OVERLAY_EDGE_MARGIN_DEFAULT, d["chat_overlay_edge_margin_percent"])
         assertEquals(0, d["chat_overlay_edge_margin_percent"])
-        assertEquals(AppPreferences.FLOATING_CHAT_HEIGHT_DEFAULT, d["floating_chat_height_percent"])
-        assertEquals(75, d["floating_chat_height_percent"])
-        assertEquals(AppPreferences.FLOATING_CHAT_X_DEFAULT, d["floating_chat_x_percent"])
-        assertEquals(1.0f, d["floating_chat_x_percent"])
-        assertEquals(AppPreferences.FLOATING_CHAT_Y_DEFAULT, d["floating_chat_y_percent"])
-        assertEquals(0.5f, d["floating_chat_y_percent"])
 
         // Features & gestures
         assertEquals(false, d["chat_show_timestamps"])
@@ -96,6 +89,7 @@ class ChatDefaultsResetTest {
             "auto_pip_enabled",
             "background_audio_enabled",
             // App / UI / history / battery
+            "ui_mode",
             "language",
             "app_font",
             "animations_enabled",
@@ -114,6 +108,7 @@ class ChatDefaultsResetTest {
 
         val overlap = ChatSettingsDefaults.keys.intersect(protectedKeys)
         assertTrue("Protected non-chat keys must never be reset: $overlap", overlap.isEmpty())
+        assertFalse("ui_mode must never be reset by chat defaults", "ui_mode" in ChatSettingsDefaults.keys)
     }
 
     @Test
@@ -127,11 +122,7 @@ class ChatDefaultsResetTest {
             "side_chat_width_percent" to 55,
             "transparent_chat_overlay_enabled" to true,
             "chat_overlay_opacity_percent" to 15,
-            "floating_chat_overlay_enabled" to true,
             "chat_overlay_edge_margin_percent" to 25,
-            "floating_chat_height_percent" to 45,
-            "floating_chat_x_percent" to 0.15f,
-            "floating_chat_y_percent" to 0.85f,
             "chat_message_animation" to "flip",
             "chat_refresh_rate" to 200L,
             "highlight_own_messages" to false,
@@ -139,6 +130,7 @@ class ChatDefaultsResetTest {
             // Protected entries
             "auth_token" to "secret-token",
             "proxy_host" to "127.0.0.1",
+            "ui_mode" to AppPreferences.UI_MODE_TV,
             "language" to "ru",
             "draw_under_cutout" to false,
             "fullscreen_resize_mode" to "ZOOM",
@@ -156,6 +148,7 @@ class ChatDefaultsResetTest {
         // Protected entries untouched
         assertEquals("secret-token", store["auth_token"])
         assertEquals("127.0.0.1", store["proxy_host"])
+        assertEquals(AppPreferences.UI_MODE_TV, store["ui_mode"])
         assertEquals("ru", store["language"])
         assertEquals(false, store["draw_under_cutout"])
         assertEquals("ZOOM", store["fullscreen_resize_mode"])
@@ -164,25 +157,9 @@ class ChatDefaultsResetTest {
     }
 
     @Test
-    fun clampNormalizedFloat_handlesFiniteOutOfRangeAndNonFiniteValues() {
-        assertEquals(0f, ChatSettingsDefaults.clampNormalizedFloat(-0.5f, 1.0f), 0.0001f)
-        assertEquals(1f, ChatSettingsDefaults.clampNormalizedFloat(1.75f, 0.5f), 0.0001f)
-        assertEquals(0.42f, ChatSettingsDefaults.clampNormalizedFloat(0.42f, 0.5f), 0.0001f)
-        assertEquals(1.0f, ChatSettingsDefaults.clampNormalizedFloat(Float.NaN, 1.0f), 0.0001f)
-        assertEquals(0.5f, ChatSettingsDefaults.clampNormalizedFloat(Float.POSITIVE_INFINITY, 0.5f), 0.0001f)
-        assertEquals(0.5f, ChatSettingsDefaults.clampNormalizedFloat(Float.NEGATIVE_INFINITY, 0.5f), 0.0001f)
-    }
-
-    @Test
-    fun floatingChatCompanionConstants_haveExpectedBoundsAndDefaults() {
+    fun edgeMarginCompanionConstants_haveExpectedBoundsAndDefaults() {
         assertEquals(0, AppPreferences.CHAT_OVERLAY_EDGE_MARGIN_MIN)
         assertEquals(30, AppPreferences.CHAT_OVERLAY_EDGE_MARGIN_MAX)
         assertEquals(0, AppPreferences.CHAT_OVERLAY_EDGE_MARGIN_DEFAULT)
-        assertEquals(35, AppPreferences.FLOATING_CHAT_HEIGHT_MIN)
-        assertEquals(100, AppPreferences.FLOATING_CHAT_HEIGHT_MAX)
-        assertEquals(75, AppPreferences.FLOATING_CHAT_HEIGHT_DEFAULT)
-        assertEquals(1.0f, AppPreferences.FLOATING_CHAT_X_DEFAULT, 0.0001f)
-        assertEquals(0.5f, AppPreferences.FLOATING_CHAT_Y_DEFAULT, 0.0001f)
-        assertFalse(ChatSettingsDefaults.FLOATING_CHAT_OVERLAY_ENABLED)
     }
 }

@@ -18,8 +18,16 @@ object ChatOverlayStyleUtils {
     const val TEXT_SHADOW_OPACITY_THRESHOLD = 85
     const val THEATRE_IME_MIN_OPACITY_PERCENT = 60
 
+    const val MIN_EDGE_MARGIN_PERCENT = 0
+    const val MAX_EDGE_MARGIN_PERCENT = 30
+    const val DEFAULT_EDGE_MARGIN_PERCENT = 0
+    const val MAX_CONTROLS_OVERLAP_RATIO = 0.55f
+
     fun clampOpacityPercent(percent: Int): Int =
         percent.coerceIn(MIN_OPACITY_PERCENT, MAX_OPACITY_PERCENT)
+
+    fun clampEdgeMarginPercent(percent: Int): Int =
+        percent.coerceIn(MIN_EDGE_MARGIN_PERCENT, MAX_EDGE_MARGIN_PERCENT)
 
     fun overlayAlphaInt(opacityPercent: Int): Int =
         (clampOpacityPercent(opacityPercent) * 255f / 100f).roundToInt().coerceIn(0, 255)
@@ -30,10 +38,35 @@ object ChatOverlayStyleUtils {
     fun shouldUseTextShadow(isTransparentOverlayActive: Boolean, opacityPercent: Int): Boolean =
         isTransparentOverlayActive && clampOpacityPercent(opacityPercent) < TEXT_SHADOW_OPACITY_THRESHOLD
 
+    fun computeEdgeMarginPx(
+        parentWidthPx: Int,
+        chatWidthPx: Int,
+        edgeMarginPercent: Int
+    ): Int {
+        if (parentWidthPx <= 0) return 0
+        val clampedPercent = clampEdgeMarginPercent(edgeMarginPercent)
+        val raw = (parentWidthPx * clampedPercent / 100f).roundToInt().coerceAtLeast(0)
+        val maxMargin = (parentWidthPx - chatWidthPx.coerceAtLeast(0)).coerceAtLeast(0)
+        return raw.coerceIn(0, maxMargin)
+    }
+
+    fun computeRemainingRightCutoutPaddingPx(
+        cutoutRightPx: Int,
+        edgeMarginPx: Int
+    ): Int = (cutoutRightPx.coerceAtLeast(0) - edgeMarginPx.coerceAtLeast(0)).coerceAtLeast(0)
+
     fun computeRightControlsOverlapInsetPx(
         isTransparentSideChatActive: Boolean,
-        overlayWidthPx: Int
-    ): Int = if (isTransparentSideChatActive) overlayWidthPx.coerceAtLeast(0) else 0
+        overlayWidthPx: Int,
+        edgeMarginPx: Int = 0,
+        rootWidthPx: Int = 0
+    ): Int {
+        if (!isTransparentSideChatActive) return 0
+        val raw = overlayWidthPx.coerceAtLeast(0) + edgeMarginPx.coerceAtLeast(0)
+        if (rootWidthPx <= 0) return raw
+        val maxCap = (rootWidthPx * MAX_CONTROLS_OVERLAP_RATIO).roundToInt().coerceAtLeast(0)
+        return raw.coerceAtMost(maxCap)
+    }
 
     fun effectiveTheatreKeyboardOpacity(opacityPercent: Int, isImeOpen: Boolean): Int {
         val clamped = clampOpacityPercent(opacityPercent)
@@ -52,17 +85,4 @@ object ChatOverlayStyleUtils {
         val fadeOut = 1f - (clamped / 100f)
         return (fadeIn * fadeOut * 0.7f).coerceIn(0f, 1f)
     }
-
-    fun floatingBorderArgb(opacityPercent: Int): Int {
-        val clamped = clampOpacityPercent(opacityPercent)
-        val minAlpha = 0x38
-        val maxAlpha = 0x4D
-        val alpha = (minAlpha + ((maxAlpha - minAlpha) * clamped / 100f))
-            .roundToInt()
-            .coerceIn(minAlpha, maxAlpha)
-        return (alpha shl 24) or 0x00FFFFFF
-    }
-
-    fun floatingHandleBgArgb(opacityPercent: Int): Int =
-        argbWithOpacity(0x181818, maxOf(clampOpacityPercent(opacityPercent), 35))
 }
