@@ -30,9 +30,15 @@ object SideChatWidthUtils {
         return raw.coerceIn(minChatPx, maxChatPx)
     }
 
-    fun percentForTouchX(rawX: Float, parentLeftX: Int, parentWidthPx: Int): Int {
+    fun percentForTouchX(
+        rawX: Float,
+        parentLeftX: Int,
+        parentWidthPx: Int,
+        rightMarginPx: Int = 0
+    ): Int {
         if (parentWidthPx <= 0) return DEFAULT_PERCENT
-        val chatPx = (parentLeftX + parentWidthPx) - rawX
+        val safeRightMargin = rightMarginPx.coerceAtLeast(0)
+        val chatPx = (parentLeftX + parentWidthPx - safeRightMargin) - rawX
         val rawPercent = ((chatPx / parentWidthPx) * 100f).roundToInt()
         return clampPercent(rawPercent)
     }

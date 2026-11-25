@@ -202,6 +202,52 @@ class SettingsPanelManager(
                 "${overlayOpacity}%") {
                 showChatOverlayOpacityDialog()
             }
+
+            // Floating Chat Overlay Toggle
+            addToggleSetting(container, R.drawable.ic_chat,
+                activity.getString(R.string.setting_floating_chat),
+                activity.getString(R.string.setting_floating_chat_desc),
+                prefs.floatingChatOverlayEnabled) { isEnabled ->
+                val enabledTransparentAutomatically = isEnabled && !prefs.transparentChatOverlayEnabled
+                if (enabledTransparentAutomatically) {
+                    prefs.transparentChatOverlayEnabled = true
+                }
+                prefs.floatingChatOverlayEnabled = isEnabled
+                activity.fullscreenToggleManager.onFloatingChatSettingChanged()
+                if (enabledTransparentAutomatically) {
+                    detailDialog?.dismiss()
+                    showPlayerSettings()
+                }
+            }
+
+            // Chat Edge Offset
+            val edgeMargin = prefs.chatOverlayEdgeMarginPercent.coerceIn(
+                AppPreferences.CHAT_OVERLAY_EDGE_MARGIN_MIN,
+                AppPreferences.CHAT_OVERLAY_EDGE_MARGIN_MAX
+            )
+            addSettingItem(container, R.drawable.ic_fullscreen,
+                activity.getString(R.string.setting_chat_overlay_edge_margin),
+                "${edgeMargin}%") {
+                showChatOverlayEdgeMarginDialog()
+            }
+
+            // Floating Chat Height
+            val floatingHeight = prefs.floatingChatHeightPercent.coerceIn(
+                AppPreferences.FLOATING_CHAT_HEIGHT_MIN,
+                AppPreferences.FLOATING_CHAT_HEIGHT_MAX
+            )
+            addSettingItem(container, R.drawable.ic_fullscreen,
+                activity.getString(R.string.setting_floating_chat_height),
+                "${floatingHeight}%") {
+                showFloatingChatHeightDialog()
+            }
+
+            // Reset Chat to Defaults
+            addSettingItem(container, R.drawable.ic_restore,
+                activity.getString(R.string.chat_reset_defaults),
+                activity.getString(R.string.chat_reset_defaults_desc)) {
+                showResetChatDefaultsDialog()
+            }
         }
     }
     
@@ -1076,6 +1122,64 @@ class SettingsPanelManager(
             .setSingleChoiceItems(labels, currentIndex) { dialog, which ->
                 prefs.chatOverlayOpacityPercent = presets[which]
                 activity.fullscreenToggleManager.applyChatOverlayAppearance()
+                dialog.dismiss()
+                detailDialog?.dismiss()
+                showPlayerSettings()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showChatOverlayEdgeMarginDialog() {
+        val presets = intArrayOf(0, 5, 10, 15, 20, 25, 30)
+        val labels = presets.map { "$it%" }.toTypedArray()
+        val currentMargin = prefs.chatOverlayEdgeMarginPercent.coerceIn(
+            AppPreferences.CHAT_OVERLAY_EDGE_MARGIN_MIN,
+            AppPreferences.CHAT_OVERLAY_EDGE_MARGIN_MAX
+        )
+        val currentIndex = presets.indexOf(currentMargin)
+
+        AlertDialog.Builder(activity)
+            .setTitle(R.string.setting_chat_overlay_edge_margin)
+            .setSingleChoiceItems(labels, currentIndex) { dialog, which ->
+                prefs.chatOverlayEdgeMarginPercent = presets[which]
+                activity.fullscreenToggleManager.onFloatingChatSettingChanged()
+                dialog.dismiss()
+                detailDialog?.dismiss()
+                showPlayerSettings()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showFloatingChatHeightDialog() {
+        val presets = intArrayOf(40, 50, 60, 75, 85, 100)
+        val labels = presets.map { "$it%" }.toTypedArray()
+        val currentHeight = prefs.floatingChatHeightPercent.coerceIn(
+            AppPreferences.FLOATING_CHAT_HEIGHT_MIN,
+            AppPreferences.FLOATING_CHAT_HEIGHT_MAX
+        )
+        val currentIndex = presets.indexOf(currentHeight)
+
+        AlertDialog.Builder(activity)
+            .setTitle(R.string.setting_floating_chat_height)
+            .setSingleChoiceItems(labels, currentIndex) { dialog, which ->
+                prefs.floatingChatHeightPercent = presets[which]
+                activity.fullscreenToggleManager.onFloatingChatSettingChanged()
+                dialog.dismiss()
+                detailDialog?.dismiss()
+                showPlayerSettings()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showResetChatDefaultsDialog() {
+        AlertDialog.Builder(activity)
+            .setTitle(R.string.chat_reset_defaults_dialog_title)
+            .setMessage(R.string.chat_reset_defaults_dialog_message)
+            .setPositiveButton(R.string.chat_reset_defaults_confirm) { dialog, _ ->
+                activity.chatSettingsSheetManager.resetChatSettingsAndApplyLive()
                 dialog.dismiss()
                 detailDialog?.dismiss()
                 showPlayerSettings()

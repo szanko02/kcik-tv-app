@@ -38,6 +38,14 @@ class AppPreferences(private val context: Context) {
         const val CHAT_OVERLAY_OPACITY_MIN = 0
         const val CHAT_OVERLAY_OPACITY_MAX = 100
         const val CHAT_OVERLAY_OPACITY_DEFAULT = 50
+        const val CHAT_OVERLAY_EDGE_MARGIN_MIN = 0
+        const val CHAT_OVERLAY_EDGE_MARGIN_MAX = 30
+        const val CHAT_OVERLAY_EDGE_MARGIN_DEFAULT = 0
+        const val FLOATING_CHAT_HEIGHT_MIN = 35
+        const val FLOATING_CHAT_HEIGHT_MAX = 100
+        const val FLOATING_CHAT_HEIGHT_DEFAULT = 75
+        const val FLOATING_CHAT_X_DEFAULT = 1.0f
+        const val FLOATING_CHAT_Y_DEFAULT = 0.5f
         const val CHAT_SCALE_MIN = 50
         const val CHAT_SCALE_MAX = 200
         const val CHAT_SCALE_DEFAULT = 100
@@ -944,6 +952,60 @@ class AppPreferences(private val context: Context) {
             value.coerceIn(CHAT_OVERLAY_OPACITY_MIN, CHAT_OVERLAY_OPACITY_MAX)
         ).apply()
 
+    var floatingChatOverlayEnabled: Boolean
+        get() = prefs.getBoolean("floating_chat_overlay_enabled", false)
+        set(value) = prefs.edit().putBoolean("floating_chat_overlay_enabled", value).apply()
+
+    var chatOverlayEdgeMarginPercent: Int
+        get() = prefs.getInt("chat_overlay_edge_margin_percent", CHAT_OVERLAY_EDGE_MARGIN_DEFAULT)
+            .coerceIn(CHAT_OVERLAY_EDGE_MARGIN_MIN, CHAT_OVERLAY_EDGE_MARGIN_MAX)
+        set(value) = prefs.edit().putInt(
+            "chat_overlay_edge_margin_percent",
+            value.coerceIn(CHAT_OVERLAY_EDGE_MARGIN_MIN, CHAT_OVERLAY_EDGE_MARGIN_MAX)
+        ).apply()
+
+    var floatingChatHeightPercent: Int
+        get() = prefs.getInt("floating_chat_height_percent", FLOATING_CHAT_HEIGHT_DEFAULT)
+            .coerceIn(FLOATING_CHAT_HEIGHT_MIN, FLOATING_CHAT_HEIGHT_MAX)
+        set(value) = prefs.edit().putInt(
+            "floating_chat_height_percent",
+            value.coerceIn(FLOATING_CHAT_HEIGHT_MIN, FLOATING_CHAT_HEIGHT_MAX)
+        ).apply()
+
+    var floatingChatXPercent: Float
+        get() = ChatSettingsDefaults.clampNormalizedFloat(
+            prefs.getFloat("floating_chat_x_percent", FLOATING_CHAT_X_DEFAULT),
+            FLOATING_CHAT_X_DEFAULT
+        )
+        set(value) = prefs.edit().putFloat(
+            "floating_chat_x_percent",
+            ChatSettingsDefaults.clampNormalizedFloat(value, FLOATING_CHAT_X_DEFAULT)
+        ).apply()
+
+    var floatingChatYPercent: Float
+        get() = ChatSettingsDefaults.clampNormalizedFloat(
+            prefs.getFloat("floating_chat_y_percent", FLOATING_CHAT_Y_DEFAULT),
+            FLOATING_CHAT_Y_DEFAULT
+        )
+        set(value) = prefs.edit().putFloat(
+            "floating_chat_y_percent",
+            ChatSettingsDefaults.clampNormalizedFloat(value, FLOATING_CHAT_Y_DEFAULT)
+        ).apply()
+
+    fun resetChatSettingsToDefaults() {
+        val editor = prefs.edit()
+        ChatSettingsDefaults.defaults.forEach { (key, value) ->
+            when (value) {
+                is Boolean -> editor.putBoolean(key, value)
+                is Int -> editor.putInt(key, value)
+                is Float -> editor.putFloat(key, value)
+                is Long -> editor.putLong(key, value)
+                is String -> editor.putString(key, value)
+            }
+        }
+        editor.apply()
+    }
+
     var chatMessageScale: Int
         get() = prefs.getInt("chat_message_scale", CHAT_SCALE_DEFAULT).coerceIn(CHAT_SCALE_MIN, CHAT_SCALE_MAX)
         set(value) = prefs.edit().putInt("chat_message_scale", value.coerceIn(CHAT_SCALE_MIN, CHAT_SCALE_MAX)).apply()
@@ -972,4 +1034,102 @@ class AppPreferences(private val context: Context) {
             "fullscreen_resize_mode",
             VideoCutoutScalingPolicy.fromPref(value).prefValue
         ).apply()
+}
+
+/**
+ * Pure-Kotlin registry of chat appearance, layout, overlay, floating, feature, animation,
+ * highlight, and refresh preference keys and their default values.
+ *
+ * Kept free of Android runtime dependencies so JVM unit tests can verify default values
+ * and guard against accidental resets of non-chat keys (auth, proxy, player, language, etc.).
+ */
+object ChatSettingsDefaults {
+    const val CHAT_TEXT_SIZE = 14f
+    const val CHAT_EMOTE_SIZE = 1.8f
+    const val CHAT_MESSAGE_SCALE = AppPreferences.CHAT_SCALE_DEFAULT
+    const val CHAT_MESSAGE_SPACING_DP = AppPreferences.CHAT_SPACING_DEFAULT
+    const val SIDE_CHAT_WIDTH_PERCENT = AppPreferences.SIDE_CHAT_WIDTH_DEFAULT
+    const val TRANSPARENT_CHAT_OVERLAY_ENABLED = false
+    const val CHAT_OVERLAY_OPACITY_PERCENT = AppPreferences.CHAT_OVERLAY_OPACITY_DEFAULT
+    const val FLOATING_CHAT_OVERLAY_ENABLED = false
+    const val CHAT_OVERLAY_EDGE_MARGIN_PERCENT = AppPreferences.CHAT_OVERLAY_EDGE_MARGIN_DEFAULT
+    const val FLOATING_CHAT_HEIGHT_PERCENT = AppPreferences.FLOATING_CHAT_HEIGHT_DEFAULT
+    const val FLOATING_CHAT_X_PERCENT = AppPreferences.FLOATING_CHAT_X_DEFAULT
+    const val FLOATING_CHAT_Y_PERCENT = AppPreferences.FLOATING_CHAT_Y_DEFAULT
+
+    const val CHAT_SHOW_TIMESTAMPS = false
+    const val CHAT_SHOW_SECONDS = false
+    const val SHOW_PINNED_GIFTS = true
+    const val EMOTE_COMBO_ENABLED = false
+    const val FLOATING_EMOTES_ENABLED = false
+    const val CHAT_PINCH_TO_RESIZE_ENABLED = true
+    const val SIDE_CHAT_RESIZE_HANDLE_ENABLED = true
+
+    const val CHAT_MESSAGE_ANIMATION = "none"
+    const val HIGHLIGHT_OWN_MESSAGES = true
+    const val HIGHLIGHT_MENTIONS = true
+    const val HIGHLIGHT_MODS = true
+    const val HIGHLIGHT_VIPS = true
+    const val HIGHLIGHT_OG = true
+    const val CHAT_USE_NAME_COLOR_FOR_HIGHLIGHT = false
+    const val HIGHLIGHT_FILL_BACKGROUND = false
+    const val VIBRATE_ON_MENTIONS = true
+    const val SOUND_ON_MENTIONS = false
+    const val NOTIFY_ON_MENTIONS = false
+    const val NICK_DETECTION_ENABLED = false
+    const val CHAT_RANDOMIZE_NAME_COLOR_ON_SEND = false
+    const val CHAT_REFRESH_RATE = 1500L
+
+    val defaults: Map<String, Any> = linkedMapOf(
+        // Sizes & Layout (Chat Appearance)
+        "chat_text_size" to CHAT_TEXT_SIZE,
+        "chat_emote_size" to CHAT_EMOTE_SIZE,
+        "chat_message_scale" to CHAT_MESSAGE_SCALE,
+        "chat_message_spacing_dp" to CHAT_MESSAGE_SPACING_DP,
+        "side_chat_width_percent" to SIDE_CHAT_WIDTH_PERCENT,
+        "transparent_chat_overlay_enabled" to TRANSPARENT_CHAT_OVERLAY_ENABLED,
+        "chat_overlay_opacity_percent" to CHAT_OVERLAY_OPACITY_PERCENT,
+        "floating_chat_overlay_enabled" to FLOATING_CHAT_OVERLAY_ENABLED,
+        "chat_overlay_edge_margin_percent" to CHAT_OVERLAY_EDGE_MARGIN_PERCENT,
+        "floating_chat_height_percent" to FLOATING_CHAT_HEIGHT_PERCENT,
+        "floating_chat_x_percent" to FLOATING_CHAT_X_PERCENT,
+        "floating_chat_y_percent" to FLOATING_CHAT_Y_PERCENT,
+        // Features & Gestures
+        "chat_show_timestamps" to CHAT_SHOW_TIMESTAMPS,
+        "chat_show_seconds" to CHAT_SHOW_SECONDS,
+        "show_pinned_gifts" to SHOW_PINNED_GIFTS,
+        "emote_combo_enabled" to EMOTE_COMBO_ENABLED,
+        "floating_emotes_enabled" to FLOATING_EMOTES_ENABLED,
+        "chat_pinch_to_resize_enabled" to CHAT_PINCH_TO_RESIZE_ENABLED,
+        "side_chat_resize_handle_enabled" to SIDE_CHAT_RESIZE_HANDLE_ENABLED,
+        // Animations, Highlights & Refresh
+        "chat_message_animation" to CHAT_MESSAGE_ANIMATION,
+        "highlight_own_messages" to HIGHLIGHT_OWN_MESSAGES,
+        "highlight_mentions" to HIGHLIGHT_MENTIONS,
+        "highlight_mods" to HIGHLIGHT_MODS,
+        "highlight_vips" to HIGHLIGHT_VIPS,
+        "highlight_og" to HIGHLIGHT_OG,
+        "chat_use_name_color_for_highlight" to CHAT_USE_NAME_COLOR_FOR_HIGHLIGHT,
+        "highlight_fill_background" to HIGHLIGHT_FILL_BACKGROUND,
+        "vibrate_on_mentions" to VIBRATE_ON_MENTIONS,
+        "sound_on_mentions" to SOUND_ON_MENTIONS,
+        "notify_on_mentions" to NOTIFY_ON_MENTIONS,
+        "nick_detection_enabled" to NICK_DETECTION_ENABLED,
+        "chat_randomize_name_color_on_send" to CHAT_RANDOMIZE_NAME_COLOR_ON_SEND,
+        "chat_refresh_rate" to CHAT_REFRESH_RATE
+    )
+
+    val keys: Set<String>
+        get() = defaults.keys
+
+    fun clampNormalizedFloat(value: Float, fallback: Float): Float {
+        if (!value.isFinite()) return fallback
+        return value.coerceIn(0f, 1f)
+    }
+
+    fun applyToMap(store: MutableMap<String, Any?>) {
+        defaults.forEach { (key, value) ->
+            store[key] = value
+        }
+    }
 }

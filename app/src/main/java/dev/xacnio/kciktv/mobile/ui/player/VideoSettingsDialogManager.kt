@@ -2,24 +2,32 @@
  * File: VideoSettingsDialogManager.kt
  *
  * Description: Manages the Video Settings panel, providing UI for selecting video quality,
- * changing playback speed, and accessing audio settings.
+ * opening Chat Settings, changing playback speed, and accessing audio settings.
+ * Mounted directly on playerScreenContainer so it remains visible even when chat is hidden.
  *
  * Author: Xacnio
  *
  */
 package dev.xacnio.kciktv.mobile.ui.player
 
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.view.View
+import android.view.ViewGroup
+import android.view.animation.DecelerateInterpolator
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.amazonaws.ivs.player.Quality
-import dev.xacnio.kciktv.mobile.MobilePlayerActivity
 import dev.xacnio.kciktv.R
+import dev.xacnio.kciktv.mobile.MobilePlayerActivity
 import dev.xacnio.kciktv.shared.data.prefs.AppPreferences
 
 class VideoSettingsDialogManager(
@@ -45,45 +53,222 @@ class VideoSettingsDialogManager(
 
     private var currentPanelView: View? = null
     private var scrimView: View? = null
+    private var isDismissing: Boolean = false
+    private var currentPage: Int = PAGE_ROOT
+    private var currentDesiredHeightPx: Int = 0
+    private var navigateAction: ((Int) -> Unit)? = null
+    private var heightAnimator: ValueAnimator? = null
+    private var hostContainer: ViewGroup? = null
+    private var containerLayoutListener: View.OnLayoutChangeListener? = null
 
     private companion object {
         const val PAGE_ROOT = 0
         const val PAGE_QUALITY = 1
         const val PAGE_SPEED = 2
+        const val ANIM_OPEN_DURATION_MS = 180L
+        const val ANIM_DISMISS_DURATION_MS = 150L
+        const val ANIM_HEIGHT_DURATION_MS = 200L
+        const val SCRIM_ALPHA = 140
+        const val FLOATING_CARD_CORNER_DP = 20
+        const val PANEL_BACKGROUND_COLOR = 0xFF1A1A1A.toInt()
     }
 
-    fun isPanelShowing(): Boolean = currentPanelView != null
+    fun isPanelShowing(): Boolean = currentPanelView != null && !isDismissing
+
+    /**
+     * Handles back navigation while the Video Settings panel is open:
+     * pops Quality/Speed sub-pages back to Root, or dismisses the panel from Root.
+     * Returns true if the back press was consumed.
+     */
+    fun handleBackPress(): Boolean {
+        if (!isPanelShowing()) return false
+        return if (currentPage == PAGE_QUALITY || currentPage == PAGE_SPEED) {
+            navigateAction?.invoke(PAGE_ROOT)
+            true
+        } else {
+            dismissPanel()
+            true
+        }
+    }
 
     fun dismissPanel() {
         val view = currentPanelView ?: return
-        scrimView?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }
+        if (isDismissing) return
+        isDismissing = true
+
+        detachLayoutListener()
+        heightAnimator?.cancel()
+        heightAnimator = null
+
+        val scrim = scrimView
+        scrim?.apply {
+            isClickable = false
+            isFocusable = false
+            animate().cancel()
+            animate()
+                .alpha(0f)
+                .setDuration(ANIM_DISMISS_DURATION_MS)
+                .start()
+        }
+
+        val slideOutDistance = (
+            view.height.takeIf { it > 0 }
+                ?: view.layoutParams?.height?.takeIf { it > 0 }
+                ?: dpToPx(240)
+            ).toFloat()
+
+        view.animate().cancel()
+        view.animate()
+            .alpha(0f)
+            .translationY(slideOutDistance)
+            .setDuration(ANIM_DISMISS_DURATION_MS)
+            .setInterpolator(DecelerateInterpolator())
+            .withEndAction {
+                (scrim?.parent as? ViewGroup)?.removeView(scrim)
+                (view.parent as? ViewGroup)?.removeView(view)
+                if (currentPanelView === view) {
+                    currentPanelView = null
+                    scrimView = null
+                    isDismissing = false
+                    currentPage = PAGE_ROOT
+                    navigateAction = null
+                    hostContainer = null
+                }
+            }
+            .start()
+    }
+
+    internal fun dismissPanelImmediate() {
+        cleanupImmediate()
+    }
+
+    private fun cleanupImmediate() {
+        detachLayoutListener()
+        heightAnimator?.cancel()
+        heightAnimator = null
+        scrimView?.let {
+            it.animate().cancel()
+            (it.parent as? ViewGroup)?.removeView(it)
+        }
+        currentPanelView?.let {
+            it.animate().cancel()
+            (it.parent as? ViewGroup)?.removeView(it)
+        }
+        currentPanelView = null
         scrimView = null
-        view.animate().alpha(0f).setDuration(150).withEndAction {
-            (view.parent as? android.view.ViewGroup)?.removeView(view)
-            currentPanelView = null
-        }.start()
+        isDismissing = false
+        currentPage = PAGE_ROOT
+        navigateAction = null
+        hostContainer = null
     }
 
-    private fun dpToPx(dp: Int): Int = (dp * activity.resources.displayMetrics.density).toInt()
-
-    private fun computeRootHeight(visibleItemCount: Int): Int {
-        val overhead = 73 // header(52) + sep(1) + handle(20)
-        return dpToPx(overhead + visibleItemCount * 56)
+    private fun detachLayoutListener() {
+        val listener = containerLayoutListener
+        if (listener != null) {
+            hostContainer?.removeOnLayoutChangeListener(listener)
+            containerLayoutListener = null
+        }
     }
 
-    private fun computeSubPageHeight(itemCount: Int): Int {
-        val overhead = 73 // header(52) + sep(1) + handle(20)
-        return dpToPx(overhead + itemCount * 52).coerceAtMost(dpToPx(420))
+    private fun dpToPx(dp: Int): Int =
+        VideoSettingsPanelSizer.dpToPx(dp, activity.resources.displayMetrics.density)
+
+    private fun computeRootHeight(visibleItemCount: Int): Int =
+        VideoSettingsPanelSizer.computeRootDesiredHeightPx(
+            visibleItemCount,
+            activity.resources.displayMetrics.density
+        )
+
+    private fun computeSubPageHeight(itemCount: Int): Int =
+        VideoSettingsPanelSizer.computeSubPageDesiredHeightPx(
+            itemCount,
+            activity.resources.displayMetrics.density
+        )
+
+    private fun readSafeInsets(container: View): Pair<Int, Int> {
+        val insets = ViewCompat.getRootWindowInsets(container)
+            ?.getInsets(WindowInsetsCompat.Type.systemBars())
+        return Pair(insets?.top ?: 0, insets?.bottom ?: 0)
+    }
+
+    private fun computeMetrics(
+        container: View,
+        desiredContentHeightPx: Int
+    ): VideoSettingsPanelSizer.PanelLayoutMetrics {
+        val dm = activity.resources.displayMetrics
+        val containerWidth = container.width.takeIf { it > 0 } ?: dm.widthPixels
+        val containerHeight = container.height.takeIf { it > 0 } ?: dm.heightPixels
+        val (safeTop, safeBottom) = readSafeInsets(container)
+        return VideoSettingsPanelSizer.computeLayout(
+            containerWidthPx = containerWidth,
+            containerHeightPx = containerHeight,
+            density = dm.density,
+            desiredContentHeightPx = desiredContentHeightPx,
+            safeTopInsetPx = safeTop,
+            safeBottomInsetPx = safeBottom
+        )
+    }
+
+    private fun applyPanelBackground(view: View, isFloatingCard: Boolean) {
+        if (isFloatingCard) {
+            view.background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(PANEL_BACKGROUND_COLOR)
+                cornerRadius = dpToPx(FLOATING_CARD_CORNER_DP).toFloat()
+            }
+        } else {
+            view.setBackgroundResource(R.drawable.bg_bottom_sheet)
+        }
+    }
+
+    private fun applyResponsiveLayout(
+        view: View,
+        container: View,
+        desiredContentHeightPx: Int,
+        animateHeight: Boolean
+    ): VideoSettingsPanelSizer.PanelLayoutMetrics {
+        val metrics = computeMetrics(container, desiredContentHeightPx)
+        applyPanelBackground(view, metrics.isFloatingCard)
+        view.setPadding(0, 0, 0, metrics.bottomPaddingPx)
+
+        val existingLp = view.layoutParams as? ConstraintLayout.LayoutParams
+        val previousHeight = existingLp?.height ?: 0
+        val lp = existingLp ?: ConstraintLayout.LayoutParams(metrics.widthPx, metrics.heightPx)
+
+        lp.width = metrics.widthPx
+        lp.topToTop = ConstraintLayout.LayoutParams.UNSET
+        lp.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+        lp.startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+        lp.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+        lp.marginStart = metrics.horizontalMarginPx
+        lp.marginEnd = metrics.horizontalMarginPx
+        lp.bottomMargin = metrics.bottomMarginPx
+
+        if (animateHeight && previousHeight > 0 && previousHeight != metrics.heightPx) {
+            view.layoutParams = lp
+            animatePanelToHeight(metrics.heightPx)
+        } else {
+            heightAnimator?.cancel()
+            heightAnimator = null
+            lp.height = metrics.heightPx
+            view.layoutParams = lp
+        }
+        return metrics
     }
 
     private fun animatePanelToHeight(targetH: Int) {
         val view = currentPanelView ?: return
         val startH = view.layoutParams.height
         if (startH == targetH) return
-        android.animation.ValueAnimator.ofInt(startH, targetH).apply {
-            duration = 200
-            interpolator = android.view.animation.DecelerateInterpolator()
+        heightAnimator?.cancel()
+        heightAnimator = ValueAnimator.ofInt(startH, targetH).apply {
+            duration = ANIM_HEIGHT_DURATION_MS
+            interpolator = DecelerateInterpolator()
             addUpdateListener { anim ->
+                if (currentPanelView !== view || isDismissing) {
+                    anim.cancel()
+                    return@addUpdateListener
+                }
                 val lp = view.layoutParams
                 lp.height = anim.animatedValue as Int
                 view.layoutParams = lp
@@ -94,17 +279,34 @@ class VideoSettingsDialogManager(
 
     @SuppressLint("InflateParams")
     fun showVideoSettingsDialog() {
-        if (currentPanelView != null) return
+        // Toggle-dismiss cleanly if already visible; if mid-dismiss, finalize old view before re-opening.
+        if (currentPanelView != null) {
+            if (!isDismissing) {
+                dismissPanel()
+                return
+            } else {
+                cleanupImmediate()
+            }
+        }
 
+        // Dismiss Chat Settings if currently open and hide player controls behind the sheet.
+        if (activity.chatSettingsSheetManager.isPanelShowing()) {
+            activity.chatSettingsSheetManager.dismissPanel()
+        }
+        activity.overlayControlManager.hideOverlay()
+
+        val container = activity.binding.playerScreenContainer
         val view = activity.layoutInflater.inflate(R.layout.bottom_sheet_video_settings, null)
         currentPanelView = view
+        hostContainer = container
+        isDismissing = false
 
         val backButton = view.findViewById<ImageButton>(R.id.videoPanelBackButton)
         val backSpacer = view.findViewById<View>(R.id.videoPanelBackSpacer)
         val titleText = view.findViewById<TextView>(R.id.videoPanelTitleText)
         val btnDismiss = view.findViewById<View>(R.id.btnDismissVideoSettings)
 
-        val mainView = view.findViewById<View>(R.id.videoSettingsMainView)
+        val mainScrollView = view.findViewById<View>(R.id.videoSettingsMainScroll)
         val qualityView = view.findViewById<View>(R.id.qualitySettingsView)
         val speedView = view.findViewById<View>(R.id.speedSettingsView)
 
@@ -112,7 +314,22 @@ class VideoSettingsDialogManager(
         val isVodOrClip = playMode != VodManager.PlaybackMode.LIVE
         val hasAudio = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P
 
-        var currentPage = PAGE_ROOT
+        // Build quality items upfront so sub-page height matches actual row count.
+        val qualities = activity.ivsPlayer?.qualities?.sortedByDescending { it.height } ?: emptyList()
+        val realQualities = qualities.filter { it.height > 0 }
+        // Not every channel's manifest has a genuine no-video "audio_only" rendition — when it
+        // doesn't, synthesize the option (see PlayerManager.resolveAudioOnlyQuality). isAudioOnly
+        // is a separate tag rather than inferred from height, since a synthesized entry shares
+        // its Quality with a real row above.
+        val audioOnlyTarget = activity.playerManager.resolveAudioOnlyQuality()
+        val qualityItems = mutableListOf<Triple<Quality?, String, Boolean>>()
+        qualityItems.add(Triple(null, activity.getString(R.string.auto_quality), false))
+        realQualities.forEach { q -> qualityItems.add(Triple(q, "${q.height}p${q.framerate.toInt()}", false)) }
+        audioOnlyTarget?.let { qualityItems.add(Triple(it, activity.getString(R.string.quality_audio_only), true)) }
+
+        var rootItemCount = 4 // Quality, Chat Settings, Refresh, Stats always visible
+        if (isVodOrClip) rootItemCount++
+        if (hasAudio) rootItemCount++
 
         fun updateHeader(titleRes: Int, showBack: Boolean) {
             titleText.text = activity.getString(titleRes)
@@ -120,36 +337,36 @@ class VideoSettingsDialogManager(
             backSpacer.visibility = if (showBack) View.GONE else View.VISIBLE
         }
 
-        fun navigate(page: Int) {
+        fun navigate(page: Int, animateHeight: Boolean = true) {
             currentPage = page
             when (page) {
                 PAGE_ROOT -> {
-                    var count = 3 // Quality, Refresh, Stats always visible
-                    if (isVodOrClip) count++
-                    if (hasAudio) count++
-                    animatePanelToHeight(computeRootHeight(count))
-                    mainView.visibility = View.VISIBLE
+                    currentDesiredHeightPx = computeRootHeight(rootItemCount)
+                    applyResponsiveLayout(view, container, currentDesiredHeightPx, animateHeight)
+                    mainScrollView.visibility = View.VISIBLE
                     qualityView.visibility = View.GONE
                     speedView.visibility = View.GONE
                     updateHeader(R.string.settings, false)
                 }
                 PAGE_QUALITY -> {
-                    val qualities = activity.ivsPlayer?.qualities?.sortedByDescending { it.height } ?: emptyList()
-                    animatePanelToHeight(computeSubPageHeight(qualities.size + 1))
-                    mainView.visibility = View.GONE
+                    currentDesiredHeightPx = computeSubPageHeight(qualityItems.size)
+                    applyResponsiveLayout(view, container, currentDesiredHeightPx, animateHeight)
+                    mainScrollView.visibility = View.GONE
                     qualityView.visibility = View.VISIBLE
                     speedView.visibility = View.GONE
                     updateHeader(R.string.quality_selection, true)
                 }
                 PAGE_SPEED -> {
-                    animatePanelToHeight(computeSubPageHeight(6))
-                    mainView.visibility = View.GONE
+                    currentDesiredHeightPx = computeSubPageHeight(6)
+                    applyResponsiveLayout(view, container, currentDesiredHeightPx, animateHeight)
+                    mainScrollView.visibility = View.GONE
                     qualityView.visibility = View.GONE
                     speedView.visibility = View.VISIBLE
                     updateHeader(R.string.playback_speed_title, true)
                 }
             }
         }
+        navigateAction = { page -> navigate(page, animateHeight = true) }
 
         backButton.setOnClickListener {
             if (currentPage == PAGE_QUALITY || currentPage == PAGE_SPEED) navigate(PAGE_ROOT)
@@ -181,6 +398,11 @@ class VideoSettingsDialogManager(
         updateQualityValue()
 
         view.findViewById<View>(R.id.videoSettingQuality).setOnClickListener { navigate(PAGE_QUALITY) }
+
+        view.findViewById<View>(R.id.videoSettingChatSettings).setOnClickListener {
+            dismissPanelImmediate()
+            activity.chatSettingsSheetManager.showChatSettingsSheet()
+        }
 
         view.findViewById<View>(R.id.videoSettingRefresh).setOnClickListener {
             dismissPanel()
@@ -216,20 +438,8 @@ class VideoSettingsDialogManager(
         // Quality RecyclerView
         val qualityRecycler = view.findViewById<RecyclerView>(R.id.qualityRecyclerView)
         qualityRecycler.layoutManager = LinearLayoutManager(activity)
-        val qualities = activity.ivsPlayer?.qualities?.sortedByDescending { it.height } ?: emptyList()
-        val realQualities = qualities.filter { it.height > 0 }
-        // Not every channel's manifest has a genuine no-video "audio_only" rendition — when it
-        // doesn't, synthesize the option (see PlayerManager.resolveAudioOnlyQuality). isAudioOnly
-        // is a separate tag rather than inferred from height, since a synthesized entry shares
-        // its Quality with a real row above.
-        val audioOnlyTarget = activity.playerManager.resolveAudioOnlyQuality()
-        val qualityItems = mutableListOf<Triple<Quality?, String, Boolean>>()
-        qualityItems.add(Triple(null, activity.getString(R.string.auto_quality), false))
-        realQualities.forEach { q -> qualityItems.add(Triple(q, "${q.height}p${q.framerate.toInt()}", false)) }
-        audioOnlyTarget?.let { qualityItems.add(Triple(it, activity.getString(R.string.quality_audio_only), true)) }
-
         qualityRecycler.adapter = object : RecyclerView.Adapter<QualityViewHolder>() {
-            override fun onCreateViewHolder(parent: android.view.ViewGroup, viewType: Int) =
+            override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) =
                 QualityViewHolder(activity.layoutInflater.inflate(R.layout.item_quality_option, parent, false))
 
             override fun onBindViewHolder(holder: QualityViewHolder, position: Int) {
@@ -327,7 +537,7 @@ class VideoSettingsDialogManager(
         speedRecycler.layoutManager = LinearLayoutManager(activity)
         val speeds = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
         speedRecycler.adapter = object : RecyclerView.Adapter<QualityViewHolder>() {
-            override fun onCreateViewHolder(parent: android.view.ViewGroup, viewType: Int) =
+            override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) =
                 QualityViewHolder(activity.layoutInflater.inflate(R.layout.item_quality_option, parent, false))
 
             override fun onBindViewHolder(holder: QualityViewHolder, position: Int) {
@@ -349,10 +559,12 @@ class VideoSettingsDialogManager(
             override fun getItemCount() = speeds.size
         }
 
-        // Inject into chatContainer so it appears at the top of the chat area (same approach as chat settings panel)
-        val container = activity.binding.chatContainer
+        // High Z-order strictly above sideChatContainer (180dp), sideChatWidthBadge (195dp),
+        // and Theatre Mode chatContainer (1000f).
+        val scrimZ = maxOf(1150f, dpToPx(230).toFloat())
+        val panelZ = maxOf(1200f, dpToPx(240).toFloat())
 
-        // Full-container click-catcher behind the panel: a tap outside the panel dismisses it.
+        // Full-container dimmed scrim behind the panel: tapping outside dismisses the sheet.
         val scrim = View(activity).apply {
             layoutParams = ConstraintLayout.LayoutParams(0, 0).apply {
                 topToTop = ConstraintLayout.LayoutParams.PARENT_ID
@@ -360,31 +572,63 @@ class VideoSettingsDialogManager(
                 startToStart = ConstraintLayout.LayoutParams.PARENT_ID
                 endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
             }
+            setBackgroundColor(Color.argb(SCRIM_ALPHA, 0, 0, 0))
             isClickable = true
             isFocusable = true
-            elevation = dpToPx(15).toFloat()
+            alpha = 0f
+            ViewCompat.setElevation(this, scrimZ)
+            translationZ = scrimZ
             setOnClickListener { dismissPanel() }
         }
         container.addView(scrim)
         scrimView = scrim
 
-        var rootItemCount = 3
-        if (isVodOrClip) rootItemCount++
-        if (hasAudio) rootItemCount++
-        val initialHeight = computeRootHeight(rootItemCount)
-        val lp = ConstraintLayout.LayoutParams(ConstraintLayout.LayoutParams.MATCH_PARENT, initialHeight)
-        lp.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
-        lp.startToStart = ConstraintLayout.LayoutParams.PARENT_ID
-        lp.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-        view.layoutParams = lp
         // Consume stray taps on the panel itself so they don't fall through to the scrim.
         view.isClickable = true
+        view.isFocusable = true
+        ViewCompat.setElevation(view, panelZ)
+        view.translationZ = panelZ
+
+        currentDesiredHeightPx = computeRootHeight(rootItemCount)
+        val initialMetrics = applyResponsiveLayout(
+            view = view,
+            container = container,
+            desiredContentHeightPx = currentDesiredHeightPx,
+            animateHeight = false
+        )
         container.addView(view)
-        view.elevation = dpToPx(16).toFloat()
+
+        // Re-size and re-clamp dynamically if orientation, window size, or insets change while open.
+        val layoutListener = View.OnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+            val sizeChanged = (right - left) != (oldRight - oldLeft) || (bottom - top) != (oldBottom - oldTop)
+            if (sizeChanged && currentPanelView === view && !isDismissing) {
+                applyResponsiveLayout(
+                    view = view,
+                    container = container,
+                    desiredContentHeightPx = currentDesiredHeightPx,
+                    animateHeight = false
+                )
+            }
+        }
+        containerLayoutListener = layoutListener
+        container.addOnLayoutChangeListener(layoutListener)
+
+        navigate(PAGE_ROOT, animateHeight = false)
+
+        // Animate scrim fade-in and panel slide-up + fade-in.
+        scrim.animate()
+            .alpha(1f)
+            .setDuration(ANIM_OPEN_DURATION_MS)
+            .setInterpolator(DecelerateInterpolator())
+            .start()
 
         view.alpha = 0f
-        view.animate().alpha(1f).setDuration(180).start()
-
-        navigate(PAGE_ROOT)
+        view.translationY = initialMetrics.heightPx.coerceAtLeast(dpToPx(120)).toFloat()
+        view.animate()
+            .alpha(1f)
+            .translationY(0f)
+            .setDuration(ANIM_OPEN_DURATION_MS)
+            .setInterpolator(DecelerateInterpolator())
+            .start()
     }
 }

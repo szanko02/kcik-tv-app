@@ -52,4 +52,17 @@ object ChatOverlayStyleUtils {
         val fadeOut = 1f - (clamped / 100f)
         return (fadeIn * fadeOut * 0.7f).coerceIn(0f, 1f)
     }
+
+    fun floatingBorderArgb(opacityPercent: Int): Int {
+        val clamped = clampOpacityPercent(opacityPercent)
+        val minAlpha = 0x38
+        val maxAlpha = 0x4D
+        val alpha = (minAlpha + ((maxAlpha - minAlpha) * clamped / 100f))
+            .roundToInt()
+            .coerceIn(minAlpha, maxAlpha)
+        return (alpha shl 24) or 0x00FFFFFF
+    }
+
+    fun floatingHandleBgArgb(opacityPercent: Int): Int =
+        argbWithOpacity(0x181818, maxOf(clampOpacityPercent(opacityPercent), 35))
 }

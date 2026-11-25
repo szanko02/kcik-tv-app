@@ -1469,4 +1469,20 @@
     <string name="setting_transparent_chat_overlay">Прозрачный чат поверх видео</string>
     <string name="setting_transparent_chat_overlay_desc">Показывать полупрозрачный чат поверх полноэкранного видео в альбомной ориентации</string>
     <string name="setting_chat_overlay_opacity">Непрозрачность фона чата</string>
+    <string name="setting_floating_chat">Плавающий чат поверх видео</string>
+    <string name="setting_floating_chat_desc">Открепить прозрачный чат в перемещаемое окно поверх полноэкранного видео</string>
+    <string name="setting_chat_overlay_edge_margin">Отступ чата от края</string>
+    <string name="setting_floating_chat_height">Высота плавающего чата</string>
+    <string name="floating_chat_drag_hint">Перетащите за заголовок</string>
+    <string name="floating_chat_position_reset_toast">Позиция плавающего чата сброшена</string>
+    <string name="video_settings_chat_settings">Настройки чата</string>
+    <string name="video_settings_chat_settings_desc">Внешний вид, прозрачность, плавающий режим и сброс</string>
+
+    <!-- Reset Chat to Defaults -->
+    <string name="chat_reset_defaults">Сбросить чат по умолчанию</string>
+    <string name="chat_reset_defaults_desc">Вернуть стандартные настройки вида, разметки и оверлея чата</string>
+    <string name="chat_reset_defaults_dialog_title">Сбросить настройки чата?</string>
+    <string name="chat_reset_defaults_dialog_message">Все настройки внешнего вида, размера, прозрачности и плавающего окна чата будут сброшены к значениям по умолчанию. Аккаунт, список игнорируемых и настройки видео не изменятся.</string>
+    <string name="chat_reset_defaults_confirm">Сбросить</string>
+    <string name="chat_reset_defaults_toast">Настройки чата сброшены по умолчанию</string>
 </resources>

@@ -1469,4 +1469,20 @@
     <string name="setting_transparent_chat_overlay">Transparent Chat Overlay</string>
     <string name="setting_transparent_chat_overlay_desc">Overlay semi-transparent chat over fullscreen video in landscape</string>
     <string name="setting_chat_overlay_opacity">Overlay Background Opacity</string>
+    <string name="setting_floating_chat">Floating Chat Overlay</string>
+    <string name="setting_floating_chat_desc">Detach transparent chat into a draggable floating window over fullscreen video</string>
+    <string name="setting_chat_overlay_edge_margin">Chat Edge Offset</string>
+    <string name="setting_floating_chat_height">Floating Chat Height</string>
+    <string name="floating_chat_drag_hint">Drag header to move</string>
+    <string name="floating_chat_position_reset_toast">Floating chat position reset</string>
+    <string name="video_settings_chat_settings">Chat Settings</string>
+    <string name="video_settings_chat_settings_desc">Appearance, transparency, floating mode, and reset</string>
+
+    <!-- Reset Chat to Defaults -->
+    <string name="chat_reset_defaults">Reset Chat to Defaults</string>
+    <string name="chat_reset_defaults_desc">Restore chat appearance, layout, and overlay settings</string>
+    <string name="chat_reset_defaults_dialog_title">Reset chat settings?</string>
+    <string name="chat_reset_defaults_dialog_message">This will restore all chat appearance, size, overlay, and floating window settings to their defaults. Your account, muted users, and video settings will not be affected.</string>
+    <string name="chat_reset_defaults_confirm">Reset</string>
+    <string name="chat_reset_defaults_toast">Chat settings reset to defaults</string>
 </resources>

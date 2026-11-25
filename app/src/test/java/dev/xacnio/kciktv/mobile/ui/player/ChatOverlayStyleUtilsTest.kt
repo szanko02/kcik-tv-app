@@ -80,4 +80,30 @@ class ChatOverlayStyleUtilsTest {
         val midAlpha = ChatOverlayStyleUtils.theatreGradientAlpha(50)
         assertTrue(midAlpha > 0f && midAlpha <= 1f)
     }
+
+    @Test
+    fun floatingBorderArgb_staysSubtleTranslucentWhiteAcrossOpacityRange() {
+        val atZero = ChatOverlayStyleUtils.floatingBorderArgb(0)
+        val atMid = ChatOverlayStyleUtils.floatingBorderArgb(50)
+        val atMax = ChatOverlayStyleUtils.floatingBorderArgb(100)
+
+        assertEquals(0x38FFFFFF, atZero)
+        assertEquals(0x4DFFFFFF, atMax)
+        assertEquals(0x00FFFFFF, atMid and 0x00FFFFFF)
+        val midAlpha = (atMid ushr 24) and 0xFF
+        assertTrue(midAlpha in 0x38..0x4D)
+        assertEquals(atZero, ChatOverlayStyleUtils.floatingBorderArgb(-20))
+        assertEquals(atMax, ChatOverlayStyleUtils.floatingBorderArgb(150))
+    }
+
+    @Test
+    fun floatingHandleBgArgb_enforcesMinimumFloorAndScalesWithOpacity() {
+        val expectedFloor = ChatOverlayStyleUtils.argbWithOpacity(0x181818, 35)
+        assertEquals(expectedFloor, ChatOverlayStyleUtils.floatingHandleBgArgb(0))
+        assertEquals(expectedFloor, ChatOverlayStyleUtils.floatingHandleBgArgb(20))
+        assertEquals(expectedFloor, ChatOverlayStyleUtils.floatingHandleBgArgb(35))
+        assertEquals(ChatOverlayStyleUtils.argbWithOpacity(0x181818, 70), ChatOverlayStyleUtils.floatingHandleBgArgb(70))
+        assertEquals(0xFF181818.toInt(), ChatOverlayStyleUtils.floatingHandleBgArgb(100))
+        assertEquals(0xFF181818.toInt(), ChatOverlayStyleUtils.floatingHandleBgArgb(140))
+    }
 }

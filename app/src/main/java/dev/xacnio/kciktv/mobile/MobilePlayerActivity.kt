@@ -185,6 +185,7 @@ import dev.xacnio.kciktv.mobile.ui.player.WebViewManager
 import dev.xacnio.kciktv.mobile.ui.session.ChannelSessionManager
 import dev.xacnio.kciktv.mobile.ui.state.LoadingStateManager
 import dev.xacnio.kciktv.mobile.ui.chat.ChatEventHandler
+import dev.xacnio.kciktv.mobile.ui.nav.BottomNavVisibilityPolicy
 import dev.xacnio.kciktv.mobile.ui.player.OverlayControlManager
 import dev.xacnio.kciktv.R
 import dev.xacnio.kciktv.BuildConfig
@@ -387,17 +388,17 @@ class MobilePlayerActivity : FragmentActivity() {
 
     fun setCurrentScreen(screen: AppScreen) {
         // Always enforce navigation visibility based on screen type
-        val navVisibility = when (screen) {
-            AppScreen.HOME,
-            AppScreen.BROWSE,
-            AppScreen.FOLLOWING -> View.VISIBLE
-            else -> View.GONE
-        }
-        binding.bottomNavContainer.visibility = navVisibility
-        binding.bottomNavGradient.visibility = navVisibility
-        if (navVisibility == View.VISIBLE) {
-            bottomNavLastScrollY = 0
+        val shouldShowNav = BottomNavVisibilityPolicy.shouldShowBottomNav(screen.name)
+        if (shouldShowNav) {
+            bottomNavLastScrollY = BottomNavVisibilityPolicy.initialScrollY(
+                screenName = screen.name,
+                followingScrollY = binding.followingScreenContainer.followingScrollView.scrollY,
+                homeScrollY = binding.homeScreenContainer.homeScrollView.scrollY
+            )
             showBottomNav(animated = false)
+        } else {
+            binding.bottomNavContainer.visibility = View.GONE
+            binding.bottomNavGradient.visibility = View.GONE
         }
             
         if (currentScreen != screen) {
@@ -424,12 +425,16 @@ class MobilePlayerActivity : FragmentActivity() {
         }
     }
 
-    // translationY only — gradient is left untouched, stays pinned to the bottom edge.
-    private fun showBottomNav(animated: Boolean = true) {
-        if (binding.bottomNavContainer.visibility != View.VISIBLE) return
+    internal fun showBottomNav(animated: Boolean = true) {
         bottomNavIsVisible = true
         val container = binding.bottomNavContainer
+        val gradient = binding.bottomNavGradient
         container.animate().cancel()
+        gradient.animate().cancel()
+        container.visibility = View.VISIBLE
+        gradient.visibility = View.VISIBLE
+        container.alpha = 1f
+        gradient.alpha = 1f
         if (animated) {
             container.animate().translationY(0f).setDuration(180L)
                 .setInterpolator(android.view.animation.DecelerateInterpolator()).start()
@@ -457,13 +462,17 @@ class MobilePlayerActivity : FragmentActivity() {
     internal fun handleBottomNavScroll(currentScrollY: Int) {
         if (binding.bottomNavContainer.visibility != View.VISIBLE) return
 
-        val deltaY = currentScrollY - bottomNavLastScrollY
+        val shouldShow = BottomNavVisibilityPolicy.resolveScrollDeltaVisibility(
+            currentlyVisible = bottomNavIsVisible,
+            currentScrollY = currentScrollY,
+            lastScrollY = bottomNavLastScrollY
+        )
         bottomNavLastScrollY = currentScrollY
 
-        when {
-            deltaY > 8 && currentScrollY > 12 && bottomNavIsVisible -> hideBottomNav()
-            deltaY < -8 && !bottomNavIsVisible -> showBottomNav()
-            currentScrollY <= 0 && !bottomNavIsVisible -> showBottomNav()
+        if (shouldShow && !bottomNavIsVisible) {
+            showBottomNav()
+        } else if (!shouldShow && bottomNavIsVisible) {
+            hideBottomNav()
         }
     }
 
@@ -1131,8 +1140,7 @@ class MobilePlayerActivity : FragmentActivity() {
                 }
 
                 // 1c. Video Settings Panel
-                if (videoSettingsDialogManager.isPanelShowing()) {
-                    videoSettingsDialogManager.dismissPanel()
+                if (videoSettingsDialogManager.handleBackPress()) {
                     return
                 }
 
@@ -2848,10 +2856,15 @@ class MobilePlayerActivity : FragmentActivity() {
         val isInPip = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) isInPictureInPictureMode else false
         if (!isInPip && !miniPlayerManager.isMiniPlayerMode) {
             // Always restore global bottom navigation bar (they may have been hidden in PiP)
-            // Only show if not in player screen
-            val shouldShowNav = binding.playerScreenContainer.visibility != View.VISIBLE
-            binding.bottomNavContainer.visibility = if (shouldShowNav) View.VISIBLE else View.GONE
-            binding.bottomNavGradient.visibility = if (shouldShowNav) View.VISIBLE else View.GONE
+            // Only show if not in player screen and on a bottom-nav tab
+            val shouldShowNav = binding.playerScreenContainer.visibility != View.VISIBLE &&
+                BottomNavVisibilityPolicy.shouldShowBottomNav(currentScreen.name)
+            if (shouldShowNav) {
+                showBottomNav(animated = false)
+            } else {
+                binding.bottomNavContainer.visibility = View.GONE
+                binding.bottomNavGradient.visibility = View.GONE
+            }
             
             // Restore player-specific UI if watching a stream
             if (currentChannel != null) {
@@ -3235,9 +3248,8 @@ class MobilePlayerActivity : FragmentActivity() {
                         chatSettingsSheetManager.dismissPanel()
                         return@handleOnBackPressed
                     }
-                    videoSettingsDialogManager.isPanelShowing() -> {
-                        Log.d(TAG, "BACK: Branch -> videoSettingsPanel -> dismiss")
-                        videoSettingsDialogManager.dismissPanel()
+                    videoSettingsDialogManager.handleBackPress() -> {
+                        Log.d(TAG, "BACK: Branch -> videoSettingsPanel -> handled")
                         return@handleOnBackPressed
                     }
                     fullscreenToggleManager.isSideChatVisible -> {
@@ -3826,7 +3838,10 @@ class MobilePlayerActivity : FragmentActivity() {
             val imeInsets = windowInsets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime())
             // Only apply padding when keyboard is visible using IME insets 
             // In standard mode, playerScreenContainer handles nav bar padding via systemBars()
-            val bottomPadding = if (imeInsets.bottom > 0) imeInsets.bottom else 0
+            // Floating side chat is already lifted/clamped above IME by FullscreenToggleManager
+            val isFloatingSideChat = ::fullscreenToggleManager.isInitialized &&
+                fullscreenToggleManager.isFloatingSideChatActive()
+            val bottomPadding = if (!isFloatingSideChat && imeInsets.bottom > 0) imeInsets.bottom else 0
             
             // Apply padding
             view.setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, bottomPadding)

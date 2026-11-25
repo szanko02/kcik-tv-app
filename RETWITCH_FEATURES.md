@@ -18,12 +18,12 @@
 
 | Статус | Количество |
 | --- | :---: |
-| `[Сделано]` | 10 |
+| `[Сделано]` | 12 |
 | `[Уже есть в KCIKTV]` | 37 |
 | `[Kick OK]` | 69 |
 | `[Сложно / адаптация под Kick]` | 15 |
 | `[Только Twitch]` | 19 |
-| **Всего каталогизировано пунктов** | **150** |
+| **Всего каталогизировано пунктов** | **152** |
 
 *(Примечание: все 195 тумблеров из `Toggles.java` и все не-тумблерные настройки и подсистемы из `SettingsHook.java`, `RecordSettings.java`, `AboutPage.java`, `QuickSetup.java` и `SettingsScreen.java` сгруппированы в 150 логических пунктов; в скобках приведены точные имена констант из ReTwitch.)*
 
@@ -94,6 +94,7 @@
 ### Реализуемо для Kick
 - [x] `[Сделано]` **Чат поверх видео полупрозрачной колонкой в ландшафтном режиме** (`CHAT_OVER_VIDEO` для горизонтального экрана) — реализовано в `FullscreenToggleManager.kt`, `ChatOverlayStyleUtils.kt`, `ChatAdapter.kt`, `ChatSettingsSheetManager.kt` и `SettingsPanelManager.kt`.
 - [x] `[Сделано]` **Регулятор прозрачности фона чата поверх видео (0–100%)** (`TheatreSettings.chatBgOpacity`) — живой ползунок непрозрачности в настройках чата и выбор в настройках плеера для ландшафтного оверлея и портретного Theatre Mode (`FullscreenToggleManager.kt`, `ChatOverlayStyleUtils.kt`, `ChatSettingsSheetManager.kt`).
+- [x] `[Сделано]` **Плавающий прозрачный чат поверх видео и отступ от края экрана** — перетаскиваемое окно чата в ландшафте с настраиваемой высотой (`35%–100%`), отступом от края (`0%–30%`), сохранением позиции и быстрым сбросом (`FloatingChatBounds.kt`, `FullscreenToggleManager.kt`, `ChatSettingsSheetManager.kt`, `SettingsPanelManager.kt`).
 - [ ] `[Kick OK]` **Автоматическое расширение бокового чата при открытых опросах/прогнозах** (`WIDE_CHAT_PANELS`).
 - [ ] `[Kick OK]` **Кнопки переключения к предыдущему/следующему стриму в плеере (`⏮ ⏭`)** (`STREAM_ARROWS`, `StreamArrowsMode`: листать недавние или отслеживаемые каналы).
 
@@ -105,6 +106,7 @@
 - [x] `[Сделано]` **Масштаб сообщений чата (50–200%)** (`ChatSettings.fontScale` / `chatMessageScale`) — масштабирует шрифт, эмоуты и бейджи пропорционально (плюс нативный `chatTextSize` 10–30sp в KCIKTV; точный числовой ввод `%` при желании можно добавить отдельно).
 - [x] `[Сделано]` **Изменение размера текста чата щипком двумя пальцами** (`CHAT_PINCH_TEXT`) — реализовано в `ChatPinchResizeHelper.kt`.
 - [x] `[Сделано]` **Отступы между сообщениями чата (0–16 dp)** (`chatMessageSpacingDp`) — реализовано в `ChatAdapter.kt` и `ChatSettingsSheetManager.kt`.
+- [x] `[Сделано]` **Сброс настроек чата по умолчанию** — кнопка с подтверждением в настройках чата и плеера восстанавливает внешний вид, размеры, оверлей, плавающее окно, подсветку и анимации чата без затрагивания аккаунта и настроек видео (`AppPreferences.kt`, `ChatSettingsSheetManager.kt`, `SettingsPanelManager.kt`).
 
 ### Уже есть в KCIKTV (с отличиями)
 - [ ] `[Уже есть в KCIKTV]` **Формат времени сообщений** (`TimestampFormat`: выкл, без секунд, с секундами) — в KCIKTV есть `chatShowTimestamps` и `chatShowSeconds`.

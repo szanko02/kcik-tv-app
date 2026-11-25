@@ -871,6 +871,130 @@
                                 android:max="100"
                                 android:paddingHorizontal="0dp" />
                         </LinearLayout>
+
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:background="#2C2C2E" />
+
+                        <!-- Floating Chat Overlay -->
+                        <LinearLayout
+                            android:id="@+id/layoutFloatingChat"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="52dp"
+                            android:paddingVertical="8dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_weight="1"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:layout_marginEnd="12dp">
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/setting_floating_chat"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp" />
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:text="@string/setting_floating_chat_desc"
+                                    android:textColor="#5A5A5E"
+                                    android:textSize="12sp" />
+                            </LinearLayout>
+                            <androidx.appcompat.widget.SwitchCompat
+                                android:id="@+id/switchFloatingChat"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content" />
+                        </LinearLayout>
+
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:background="#2C2C2E" />
+
+                        <!-- Chat Edge Offset (0% to 30%) -->
+                        <LinearLayout
+                            android:id="@+id/layoutChatOverlayEdgeMargin"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:paddingVertical="4dp">
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical">
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_weight="1"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/setting_chat_overlay_edge_margin"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp" />
+                                <TextView
+                                    android:id="@+id/textValueChatOverlayEdgeMargin"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    tools:text="0%"
+                                    android:textColor="#53FC18"
+                                    android:textSize="12sp"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+                            <SeekBar
+                                android:id="@+id/seekBarChatOverlayEdgeMargin"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:max="30"
+                                android:paddingHorizontal="0dp" />
+                        </LinearLayout>
+
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:background="#2C2C2E" />
+
+                        <!-- Floating Chat Height (35% to 100%) -->
+                        <LinearLayout
+                            android:id="@+id/layoutFloatingChatHeight"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:paddingVertical="4dp">
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical">
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_weight="1"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/setting_floating_chat_height"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp" />
+                                <TextView
+                                    android:id="@+id/textValueFloatingChatHeight"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    tools:text="75%"
+                                    android:textColor="#53FC18"
+                                    android:textSize="12sp"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+                            <SeekBar
+                                android:id="@+id/seekBarFloatingChatHeight"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:max="65"
+                                android:paddingHorizontal="0dp" />
+                        </LinearLayout>
                     </LinearLayout>
 
                     <!-- SECTION HEADER: Features -->
@@ -1258,6 +1382,50 @@
                                 app:tint="#5A5A5E" />
                         </LinearLayout>
 
+                    </LinearLayout>
+
+                    <!-- Reset Chat to Defaults -->
+                    <LinearLayout
+                        android:id="@+id/btnResetChatDefaults"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="52dp"
+                        android:layout_marginTop="20dp"
+                        android:layout_marginBottom="8dp"
+                        android:paddingHorizontal="16dp"
+                        android:paddingVertical="10dp"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:background="@drawable/bg_settings_card"
+                        android:foreground="?attr/selectableItemBackground"
+                        android:clickable="true"
+                        android:focusable="true">
+                        <ImageView
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:src="@drawable/ic_restore"
+                            app:tint="#FF5252" />
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:layout_marginStart="12dp">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="@string/chat_reset_defaults"
+                                android:textColor="#FF5252"
+                                android:textSize="14sp"
+                                android:textStyle="bold" />
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="@string/chat_reset_defaults_desc"
+                                android:textColor="#8E8E93"
+                                android:textSize="12sp" />
+                        </LinearLayout>
                     </LinearLayout>
 
                 </LinearLayout>

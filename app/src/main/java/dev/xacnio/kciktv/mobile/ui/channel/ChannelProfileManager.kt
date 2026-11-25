@@ -220,13 +220,11 @@ class ChannelProfileManager(
         when (previousContainerId) {
             R.id.followingScreenContainer -> {
                 binding.followingScreenContainer.root.visibility = View.VISIBLE
-                binding.followingScreenContainer.root.bringToFront()
                 binding.mobileHeader.visibility = View.VISIBLE
                 activity.setCurrentScreen(MobilePlayerActivity.AppScreen.FOLLOWING)
             }
             R.id.browseScreenContainer -> {
                 binding.browseScreenContainer.root.visibility = View.VISIBLE
-                binding.browseScreenContainer.root.bringToFront()
                 binding.mobileHeader.visibility = View.VISIBLE
                 activity.setCurrentScreen(MobilePlayerActivity.AppScreen.BROWSE)
             }

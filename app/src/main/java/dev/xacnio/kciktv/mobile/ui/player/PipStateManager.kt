@@ -17,6 +17,7 @@ import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.lifecycle.Lifecycle
 import com.amazonaws.ivs.player.Player
 import dev.xacnio.kciktv.mobile.MobilePlayerActivity
+import dev.xacnio.kciktv.mobile.ui.nav.BottomNavVisibilityPolicy
 
 /**
  * Manages Picture-in-Picture mode state and UI transitions.
@@ -226,14 +227,14 @@ class PipStateManager(private val activity: MobilePlayerActivity) {
         val restoringFullPlayer = !wasMiniPlayerModeBeforePip && activity.currentChannel != null
 
         // Restore bottom navigation visibility based on the screen context
-        val navVisibility = if (restoringFullPlayer) View.GONE else when (screenBeforePip) {
-            MobilePlayerActivity.AppScreen.HOME,
-            MobilePlayerActivity.AppScreen.BROWSE,
-            MobilePlayerActivity.AppScreen.FOLLOWING -> View.VISIBLE
-            else -> View.GONE
+        val shouldShowNav = !restoringFullPlayer &&
+            BottomNavVisibilityPolicy.shouldShowBottomNav(screenBeforePip.name)
+        if (shouldShowNav) {
+            activity.showBottomNav(animated = false)
+        } else {
+            binding.bottomNavContainer.visibility = View.GONE
+            binding.bottomNavGradient.visibility = View.GONE
         }
-        binding.bottomNavContainer.visibility = navVisibility
-        binding.bottomNavGradient.visibility = navVisibility
 
         // Restore prediction panel if it was visible
         if (wasPredictionVisibleBeforePip) {

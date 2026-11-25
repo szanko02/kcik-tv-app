@@ -71,4 +71,19 @@ class SideChatWidthUtilsTest {
         assertEquals(SideChatWidthUtils.DEFAULT_PERCENT, SideChatWidthUtils.percentForTouchX(500f, 0, 0))
         assertEquals(SideChatWidthUtils.DEFAULT_PERCENT, SideChatWidthUtils.percentForTouchX(500f, 0, -200))
     }
+
+    @Test
+    fun percentForTouchX_accountsForRightMarginPxInEdgeOffsetAndFloatingModes() {
+        // Parent width 1000, rightMarginPx = 100 -> right anchor is at x = 900.
+        // Touch at x = 550 -> chat width = 350 -> 35%
+        assertEquals(35, SideChatWidthUtils.percentForTouchX(550f, 0, 1000, rightMarginPx = 100))
+        // Touch at x = 900 (right anchor) -> 0% clamped to MIN_PERCENT (15%)
+        assertEquals(SideChatWidthUtils.MIN_PERCENT, SideChatWidthUtils.percentForTouchX(900f, 0, 1000, rightMarginPx = 100))
+        // Touch at x = 200 -> chat width = 700 -> MAX_PERCENT (70%)
+        assertEquals(SideChatWidthUtils.MAX_PERCENT, SideChatWidthUtils.percentForTouchX(200f, 0, 1000, rightMarginPx = 100))
+        // Parent offset by 150, rightMarginPx = 200 -> right anchor at 950; touch at 450 -> 50%
+        assertEquals(50, SideChatWidthUtils.percentForTouchX(450f, 150, 1000, rightMarginPx = 200))
+        // Negative rightMarginPx is coerced to 0
+        assertEquals(35, SideChatWidthUtils.percentForTouchX(650f, 0, 1000, rightMarginPx = -80))
+    }
 }

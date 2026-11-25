@@ -2736,6 +2736,37 @@
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintBottom_toBottomOf="parent">
+
+            <!-- Floating Chat Top Drag Handle (visible only in floating transparent mode) -->
+            <FrameLayout
+                android:id="@+id/floatingChatDragHandle"
+                android:layout_width="match_parent"
+                android:layout_height="28dp"
+                android:visibility="gone"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="@string/floating_chat_drag_hint">
+
+                <View
+                    android:id="@+id/floatingChatDragPill"
+                    android:layout_width="36dp"
+                    android:layout_height="4dp"
+                    android:layout_gravity="center" />
+
+                <ImageButton
+                    android:id="@+id/floatingChatResetPositionBtn"
+                    android:layout_width="28dp"
+                    android:layout_height="28dp"
+                    android:layout_gravity="end|center_vertical"
+                    android:padding="6dp"
+                    android:alpha="0.7"
+                    android:background="@drawable/bg_item_ripple"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_refresh"
+                    android:contentDescription="@string/floating_chat_position_reset_toast"
+                    app:tint="#FFFFFF" />
+            </FrameLayout>
+
             <!-- actionBar and chatContainer will be reparented here in landscape on tablets -->
         </LinearLayout>
 
@@ -2842,6 +2873,7 @@
         android:layout_width="0dp"
         android:layout_height="100dp"
         android:background="@drawable/bg_bottom_nav_gradient"
+        android:elevation="6dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
@@ -2854,6 +2886,8 @@
         android:layout_marginHorizontal="16dp"
         android:layout_marginBottom="12dp"
         android:background="@drawable/bg_bottom_nav_panel"
+        android:elevation="8dp"
+        android:outlineProvider="none"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
