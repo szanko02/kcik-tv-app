@@ -77,10 +77,11 @@ class AccountSwitcherSheetManager(private val activity: MobilePlayerActivity) {
             val acc = accounts[position]
             val isActive = acc.userId == activeId
 
-            holder.username.text = acc.username
+            val safeName = acc.username.takeIf { it.isNotBlank() } ?: "Guest"
+            holder.username.text = safeName
 
             val picUrl = if (acc.profilePic.isNullOrEmpty()) {
-                val hash = acc.username.hashCode()
+                val hash = safeName.hashCode()
                 val index = (if (hash < 0) -hash else hash) % 6 + 1
                 "https://kick.com/img/default-profile-pictures/default-avatar-$index.webp"
             } else acc.profilePic

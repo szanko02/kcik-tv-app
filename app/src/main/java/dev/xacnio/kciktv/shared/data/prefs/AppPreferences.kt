@@ -346,34 +346,39 @@ class AppPreferences(private val context: Context) {
 
     fun getAccounts(): List<StoredAccount> {
         val raw = getAccountsRaw()
-        val list: List<StoredAccount> = if (raw != null) {
-            try {
-                val type = object : TypeToken<List<StoredAccount>>() {}.type
-                gson.fromJson(raw, type) ?: emptyList()
-            } catch (e: Exception) { emptyList() }
-        } else emptyList()
+        val parsed = PrefsJsonSanitizer.parseStoredAccounts(raw, gson)
+        if (parsed.droppedAny && parsed.items.isNotEmpty()) {
+            putAccountsRaw(gson.toJson(parsed.items))
+        }
 
         // Auto-migrate single-account users: if list is empty but active auth exists, seed it.
-        if (list.isEmpty()) {
-            val token = getStringSafe("auth_token", null) ?: return emptyList()
-            val acc = StoredAccount(
-                userId = prefs.getLong("logged_in_user_id", 0L),
-                username = getStringSafe("logged_in_username", null) ?: return emptyList(),
-                profilePic = getStringSafe("logged_in_profile_pic", null),
-                slug = getStringSafe("logged_in_slug", null),
-                chatColor = getStringSafe("logged_in_chat_color", null),
-                authToken = token,
-                cookies = getStringSafe("saved_cookies", null),
-                xsrfToken = getStringSafe("xsrf_token", null),
-                userJson = getStringSafe("user_json", null),
-                blerpCookies = getStringSafe("saved_blerp_cookies", null)
-            )
-            val migrated = listOf(acc)
-            putAccountsRaw(gson.toJson(migrated))
-            prefs.edit().putLong("active_account_id", acc.userId).apply()
-            return migrated
+        if (parsed.items.isEmpty()) {
+            val token = getStringSafe("auth_token", null)
+            val user = getStringSafe("logged_in_username", null)
+            if (token != null && user != null) {
+                val acc = StoredAccount(
+                    userId = prefs.getLong("logged_in_user_id", 0L),
+                    username = user,
+                    profilePic = getStringSafe("logged_in_profile_pic", null),
+                    slug = getStringSafe("logged_in_slug", null),
+                    chatColor = getStringSafe("logged_in_chat_color", null),
+                    authToken = token,
+                    cookies = getStringSafe("saved_cookies", null),
+                    xsrfToken = getStringSafe("xsrf_token", null),
+                    userJson = getStringSafe("user_json", null),
+                    blerpCookies = getStringSafe("saved_blerp_cookies", null)
+                )
+                val migrated = listOf(acc)
+                putAccountsRaw(gson.toJson(migrated))
+                prefs.edit().putLong("active_account_id", acc.userId).apply()
+                return migrated
+            }
+            if (parsed.droppedAny) {
+                putAccountsRaw(null)
+            }
+            return emptyList()
         }
-        return list
+        return parsed.items
     }
 
     fun commitActiveAccountToList() {
@@ -390,15 +395,11 @@ class AppPreferences(private val context: Context) {
             userJson = getStringSafe("user_json", null),
             blerpCookies = getStringSafe("saved_blerp_cookies", null)
         )
-        val current = try {
-            val raw = getAccountsRaw()
-            if (raw != null) {
-                val type = object : TypeToken<List<StoredAccount>>() {}.type
-                (gson.fromJson<List<StoredAccount>>(raw, type) ?: emptyList()).toMutableList()
-            } else mutableListOf()
-        } catch (e: Exception) { mutableListOf() }
+        val current = PrefsJsonSanitizer.parseStoredAccounts(getAccountsRaw(), gson).items.toMutableList()
 
-        val idx = current.indexOfFirst { it.userId == acc.userId }
+        val idx = current.indexOfFirst {
+            if (acc.userId > 0L) it.userId == acc.userId else it.username == acc.username
+        }
         if (idx >= 0) current[idx] = acc else current.add(0, acc)
         putAccountsRaw(gson.toJson(current))
         prefs.edit().putLong("active_account_id", acc.userId).apply()
@@ -774,12 +775,11 @@ class AppPreferences(private val context: Context) {
 
     fun getSearchHistoryItems(): List<HistoryEntry> {
         val raw = searchHistoryRaw ?: return emptyList()
-        return try {
-            val type = object : TypeToken<List<HistoryEntry>>() {}.type
-            gson.fromJson(raw, type)
-        } catch (e: Exception) {
-            emptyList()
+        val parsed = PrefsJsonSanitizer.parseSearchHistory(raw, gson)
+        if (parsed.droppedAny) {
+            searchHistoryRaw = if (parsed.items.isEmpty()) null else gson.toJson(parsed.items)
         }
+        return parsed.items
     }
 
     fun addSearchHistoryEntry(entry: HistoryEntry) {
@@ -839,12 +839,11 @@ class AppPreferences(private val context: Context) {
 
     fun getVodWatchHistory(): List<VodWatchState> {
         val raw = vodWatchHistoryRaw ?: return emptyList()
-        return try {
-            val type = object : TypeToken<List<VodWatchState>>() {}.type
-            gson.fromJson(raw, type)
-        } catch (e: Exception) {
-            emptyList()
+        val parsed = PrefsJsonSanitizer.parseVodWatchHistory(raw, gson)
+        if (parsed.droppedAny) {
+            vodWatchHistoryRaw = if (parsed.items.isEmpty()) null else gson.toJson(parsed.items)
         }
+        return parsed.items
     }
 
     fun saveVodProgress(state: VodWatchState) {

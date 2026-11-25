@@ -638,6 +638,21 @@ class FollowingManager(private val activity: MobilePlayerActivity) {
 
                 override fun getItemCount(): Int = continueWatchingList.size
 
+                private fun removeItemFromUi(holder: ViewHolder, videoId: String) {
+                    if (videoId.isNotBlank()) {
+                        prefs.removeVodProgress(videoId)
+                    }
+                    val currentPos = holder.adapterPosition
+                    if (currentPos != RecyclerView.NO_POSITION && currentPos < continueWatchingList.size) {
+                        continueWatchingList.removeAt(currentPos)
+                        notifyItemRemoved(currentPos)
+
+                        if (continueWatchingList.isEmpty()) {
+                            activity.binding.followingScreenContainer.followingContinueWatchingSection.visibility = View.GONE
+                        }
+                    }
+                }
+
                 override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
                     if (holder !is ViewHolder) return
                     val state = continueWatchingList[position]
@@ -673,6 +688,12 @@ class FollowingManager(private val activity: MobilePlayerActivity) {
                     }
                     
                     holder.itemView.setOnClickListener {
+                        val videoId = state.videoId
+                        if (videoId.isBlank() || (state.sourceUrl.isNullOrBlank() && state.channelSlug.isNullOrBlank())) {
+                            removeItemFromUi(holder, videoId)
+                            return@setOnClickListener
+                        }
+
                         // Play Video
                         // We need to create a ChannelVideo object and ChannelItem
                         // State has most info.
@@ -692,9 +713,9 @@ class FollowingManager(private val activity: MobilePlayerActivity) {
                         )
                         
                         val video = dev.xacnio.kciktv.shared.data.model.ChannelVideo(
-                            topId = state.videoId.toLongOrNull(),
+                            topId = videoId.toLongOrNull(),
                             topLiveStreamId = null,
-                            uuid = state.videoId,
+                            uuid = videoId,
                             createdAt = null,
                             updatedAt = null,
                             topSessionTitle = state.videoTitle,
@@ -739,20 +760,7 @@ class FollowingManager(private val activity: MobilePlayerActivity) {
                     }
 
                     holder.removeButton.setOnClickListener {
-                        val videoId = state.videoId
-                        if (videoId.isNotEmpty()) {
-                            prefs.removeVodProgress(videoId)
-
-                            val currentPos = holder.adapterPosition
-                            if (currentPos != RecyclerView.NO_POSITION && currentPos < continueWatchingList.size) {
-                                continueWatchingList.removeAt(currentPos)
-                                notifyItemRemoved(currentPos)
-
-                                if (continueWatchingList.isEmpty()) {
-                                    activity.binding.followingScreenContainer.followingContinueWatchingSection.visibility = View.GONE
-                                }
-                            }
-                        }
+                        removeItemFromUi(holder, state.videoId)
                     }
                 }
             }
