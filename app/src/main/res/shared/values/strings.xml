@@ -1444,6 +1444,11 @@
     <string name="chat_message_scale">Message Scale</string>
     <string name="chat_message_spacing">Message Spacing</string>
     <string name="chat_horizontal_padding">Chat Side Padding</string>
+    <string name="chat_quick_emote_bar">Quick Emote Bar</string>
+    <string name="chat_quick_emote_bar_subtitle">Show recent emotes strip above chat input</string>
+    <string name="chat_quick_emote_bar_size">Quick Emote Bar Size</string>
+    <string name="chat_refresh_rate_instant">Instant</string>
+    <string name="chat_refresh_rate_subtitle">How often new chat messages appear (lower is faster)</string>
     <string name="chat_pinch_to_resize">Pinch to Resize Chat</string>
     <string name="chat_pinch_to_resize_subtitle">Use two fingers in chat to change message scale</string>
     <string name="chat_pinch_scale_toast">Chat scale: %d%%</string>

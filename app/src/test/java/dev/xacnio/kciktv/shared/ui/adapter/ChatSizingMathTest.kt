@@ -126,4 +126,51 @@ class ChatSizingMathTest {
         assertEquals(8f, ChatSizingMath.messageItemHorizontalPaddingDp(24), 0.001f)
         assertEquals(4f, ChatSizingMath.messageTextHorizontalPaddingDp(24), 0.001f)
     }
+
+    @Test
+    fun clampQuickEmoteBarScale_clampsWithin50And150() {
+        assertEquals(50, ChatSizingMath.MIN_QUICK_EMOTE_BAR_SCALE)
+        assertEquals(150, ChatSizingMath.MAX_QUICK_EMOTE_BAR_SCALE)
+        assertEquals(5, ChatSizingMath.QUICK_EMOTE_BAR_SCALE_STEP)
+        assertEquals(100, ChatSizingMath.DEFAULT_QUICK_EMOTE_BAR_SCALE)
+
+        assertEquals(50, ChatSizingMath.clampQuickEmoteBarScale(0))
+        assertEquals(50, ChatSizingMath.clampQuickEmoteBarScale(50))
+        assertEquals(115, ChatSizingMath.clampQuickEmoteBarScale(115))
+        assertEquals(150, ChatSizingMath.clampQuickEmoteBarScale(150))
+        assertEquals(150, ChatSizingMath.clampQuickEmoteBarScale(200))
+    }
+
+    @Test
+    fun quickEmoteBarMetrics_scaleAndRespectMinFloors() {
+        // Default 100%
+        assertEquals(1.0f, ChatSizingMath.quickEmoteBarScaleFactor(100), 0.001f)
+        assertEquals(32f, ChatSizingMath.quickEmoteBarEmoteHeightDp(100), 0.001f)
+        assertEquals(40f, ChatSizingMath.quickEmoteBarItemSizeDp(100), 0.001f)
+        assertEquals(2f, ChatSizingMath.quickEmoteBarItemMarginDp(100), 0.001f)
+        assertEquals(44f, ChatSizingMath.quickEmoteBarContainerHeightDp(100), 0.001f)
+        assertEquals(28f, ChatSizingMath.quickEmoteBarPlaceholderSizeDp(100), 0.001f)
+        assertEquals(14f, ChatSizingMath.quickEmoteBarProgressSizeDp(100), 0.001f)
+        assertEquals(6f, ChatSizingMath.quickEmoteBarShimmerMarginDp(100), 0.001f)
+
+        // Min 50% (and out-of-range low 10%)
+        assertEquals(0.5f, ChatSizingMath.quickEmoteBarScaleFactor(10), 0.001f)
+        assertEquals(16f, ChatSizingMath.quickEmoteBarEmoteHeightDp(50), 0.001f)
+        assertEquals(20f, ChatSizingMath.quickEmoteBarItemSizeDp(50), 0.001f)
+        assertEquals(1f, ChatSizingMath.quickEmoteBarItemMarginDp(50), 0.001f)
+        assertEquals(22f, ChatSizingMath.quickEmoteBarContainerHeightDp(50), 0.001f)
+        assertEquals(14f, ChatSizingMath.quickEmoteBarPlaceholderSizeDp(50), 0.001f)
+        assertEquals(8f, ChatSizingMath.quickEmoteBarProgressSizeDp(50), 0.001f) // 7f floored to 8f
+        assertEquals(3f, ChatSizingMath.quickEmoteBarShimmerMarginDp(50), 0.001f)
+
+        // Max 150% (and out-of-range high 250%)
+        assertEquals(1.5f, ChatSizingMath.quickEmoteBarScaleFactor(250), 0.001f)
+        assertEquals(48f, ChatSizingMath.quickEmoteBarEmoteHeightDp(150), 0.001f)
+        assertEquals(60f, ChatSizingMath.quickEmoteBarItemSizeDp(150), 0.001f)
+        assertEquals(3f, ChatSizingMath.quickEmoteBarItemMarginDp(150), 0.001f)
+        assertEquals(66f, ChatSizingMath.quickEmoteBarContainerHeightDp(150), 0.001f)
+        assertEquals(42f, ChatSizingMath.quickEmoteBarPlaceholderSizeDp(150), 0.001f)
+        assertEquals(21f, ChatSizingMath.quickEmoteBarProgressSizeDp(150), 0.001f)
+        assertEquals(9f, ChatSizingMath.quickEmoteBarShimmerMarginDp(150), 0.001f)
+    }
 }

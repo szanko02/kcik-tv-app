@@ -28,6 +28,11 @@ object ChatSizingMath {
     const val MAX_HORIZONTAL_PADDING_DP = 24
     const val DEFAULT_HORIZONTAL_PADDING_DP = 24
 
+    const val MIN_QUICK_EMOTE_BAR_SCALE = 50
+    const val MAX_QUICK_EMOTE_BAR_SCALE = 150
+    const val QUICK_EMOTE_BAR_SCALE_STEP = 5
+    const val DEFAULT_QUICK_EMOTE_BAR_SCALE = 100
+
     fun clampScale(percent: Int): Int = percent.coerceIn(MIN_SCALE, MAX_SCALE)
 
     fun scaleFactor(scalePercent: Int): Float = clampScale(scalePercent) / 100f
@@ -73,4 +78,31 @@ object ChatSizingMath {
     fun messageItemHorizontalPaddingDp(totalDp: Int): Float = scaledHorizontalPaddingDp(totalDp, 8f)
 
     fun messageTextHorizontalPaddingDp(totalDp: Int): Float = scaledHorizontalPaddingDp(totalDp, 4f)
+
+    fun clampQuickEmoteBarScale(percent: Int): Int =
+        percent.coerceIn(MIN_QUICK_EMOTE_BAR_SCALE, MAX_QUICK_EMOTE_BAR_SCALE)
+
+    fun quickEmoteBarScaleFactor(scalePercent: Int): Float =
+        clampQuickEmoteBarScale(scalePercent) / 100f
+
+    fun quickEmoteBarEmoteHeightDp(scalePercent: Int): Float =
+        32f * quickEmoteBarScaleFactor(scalePercent)
+
+    fun quickEmoteBarItemSizeDp(scalePercent: Int): Float =
+        40f * quickEmoteBarScaleFactor(scalePercent)
+
+    fun quickEmoteBarItemMarginDp(scalePercent: Int): Float =
+        (2f * quickEmoteBarScaleFactor(scalePercent)).coerceAtLeast(1f)
+
+    fun quickEmoteBarContainerHeightDp(scalePercent: Int): Float =
+        quickEmoteBarItemSizeDp(scalePercent) + 2f * quickEmoteBarItemMarginDp(scalePercent)
+
+    fun quickEmoteBarPlaceholderSizeDp(scalePercent: Int): Float =
+        28f * quickEmoteBarScaleFactor(scalePercent)
+
+    fun quickEmoteBarProgressSizeDp(scalePercent: Int): Float =
+        (14f * quickEmoteBarScaleFactor(scalePercent)).coerceAtLeast(8f)
+
+    fun quickEmoteBarShimmerMarginDp(scalePercent: Int): Float =
+        (6f * quickEmoteBarScaleFactor(scalePercent)).coerceAtLeast(3f)
 }

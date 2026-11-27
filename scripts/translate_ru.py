@@ -408,6 +408,11 @@ GLOSSARY_BY_KEY: dict[str, str] = {
     "tv_update_check_failed_format": "Ошибка проверки обновлений: %1$s",
     "tv_login_exchange_failed": "Не удалось выполнить вход на ТВ. Попробуйте ещё раз.",
     "chat_horizontal_padding": "Боковые отступы чата",
+    "chat_quick_emote_bar": "Быстрая панель смайлов",
+    "chat_quick_emote_bar_subtitle": "Показывать полосу смайлов над полем ввода",
+    "chat_quick_emote_bar_size": "Размер быстрой панели смайлов",
+    "chat_refresh_rate_instant": "Мгновенно",
+    "chat_refresh_rate_subtitle": "Как часто обновляются сообщения в чате (меньше — быстрее)",
 }
 
 # Idiomatic Russian overrides for <string-array> items keyed by (array_name, 0-based index).

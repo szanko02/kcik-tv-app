@@ -57,7 +57,8 @@ object Constants {
      * Chat related constants
      */
     object Chat {
-        const val MESSAGE_LIMIT = 4000 // Max messages in chat
+        // 500 messages at bottom (1000 when scrolled up) keeps Myers DiffUtil <1ms while older history loads on demand
+        const val MESSAGE_LIMIT = 500 // Max messages in chat
         const val HISTORY_FETCH_LIMIT = 200 // Messages to fetch for history
     }
     

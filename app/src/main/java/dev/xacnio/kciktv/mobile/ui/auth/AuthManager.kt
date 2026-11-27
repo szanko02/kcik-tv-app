@@ -327,12 +327,13 @@ class AuthManager(
                 if (binding.emotePanelContainer.visibility == View.VISIBLE) {
                     binding.emotePanelContainer.visibility = View.GONE
                 }
+                activity.quickEmoteBarManager.updateQuickEmoteBar(showShimmer = false)
             } else {
                 activity.chatInputStateManager.stopTimeoutCountdown()
                 binding.chatBannedOverlay.visibility = View.GONE
                 binding.chatLoginOverlay.visibility = View.GONE
                 binding.chatInputContainer.visibility = View.VISIBLE
-                binding.quickEmoteRecyclerView.visibility = View.VISIBLE
+                activity.quickEmoteBarManager.updateQuickEmoteBar(showShimmer = false)
                 binding.loyaltyPointsButton.visibility = View.VISIBLE
 
                 activity.chatInputStateManager.updateInputState()
@@ -345,7 +346,7 @@ class AuthManager(
             activity.chatInputStateManager.stopAllCountdowns()
             binding.chatLoginOverlay.visibility = View.VISIBLE
             binding.chatBannedOverlay.visibility = View.GONE
-            binding.quickEmoteRecyclerView.visibility = View.GONE
+            activity.quickEmoteBarManager.updateQuickEmoteBar(showShimmer = false)
             // Keep container visible so settings button is shown
             binding.chatInputContainer.visibility = View.VISIBLE
             activity.chatInputResponsiveController.reapply()

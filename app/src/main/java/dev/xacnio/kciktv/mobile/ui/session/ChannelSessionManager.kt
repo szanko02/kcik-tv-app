@@ -144,13 +144,7 @@ class ChannelSessionManager(private val activity: MobilePlayerActivity) {
         // Clear stale emote categories immediately so the quick bar shows shimmer
         // (not the previous channel's emotes) while the new session loads
         activity.emotePanelManager.resetForNewChannel()
-        if (prefs.isLoggedIn) {
-            binding.quickEmoteBarContainer.visibility = View.VISIBLE
-            binding.quickEmoteShimmer.root.visibility = View.VISIBLE
-            binding.quickEmoteRecyclerView.visibility = View.GONE
-        } else {
-            binding.quickEmoteBarContainer.visibility = View.GONE
-        }
+        activity.quickEmoteBarManager.showLoadingState()
 
         binding.pinnedMessageContainer.visibility = View.GONE
         binding.pollContainer.visibility = View.GONE
@@ -264,14 +258,8 @@ class ChannelSessionManager(private val activity: MobilePlayerActivity) {
                     
                     // Update numeric channel ID for emote locking logic
                     activity.runOnUiThread {
-                        // Show Quick Emote Shimmer (only for logged in users)
-                        if (prefs.isLoggedIn) {
-                            binding.quickEmoteBarContainer.visibility = View.VISIBLE
-                            binding.quickEmoteShimmer.root.visibility = View.VISIBLE
-                            binding.quickEmoteRecyclerView.visibility = View.GONE
-                        } else {
-                            binding.quickEmoteBarContainer.visibility = View.GONE
-                        }
+                        // Show Quick Emote Shimmer (only for logged in users when enabled)
+                        activity.quickEmoteBarManager.showLoadingState()
                         
                         val channelIdLong = chatInfo.channelId
 

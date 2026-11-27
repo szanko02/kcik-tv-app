@@ -12,6 +12,7 @@ package dev.xacnio.kciktv.mobile.ui.chat
 
 import android.os.Handler
 import android.view.View
+import android.view.ViewGroup
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import dev.xacnio.kciktv.mobile.MobilePlayerActivity
@@ -19,8 +20,10 @@ import dev.xacnio.kciktv.shared.data.model.Emote
 import dev.xacnio.kciktv.shared.data.model.EmoteCategory
 import dev.xacnio.kciktv.shared.data.prefs.AppPreferences
 import dev.xacnio.kciktv.databinding.ActivityMobilePlayerBinding
+import dev.xacnio.kciktv.shared.ui.adapter.ChatSizingMath
 import dev.xacnio.kciktv.shared.ui.adapter.QuickEmoteAdapter
 import dev.xacnio.kciktv.shared.util.VibrationUtils
+import kotlin.math.roundToInt
 
 /**
  * Manages the quick emote bar functionality.
@@ -83,6 +86,104 @@ class QuickEmoteBarManager(
             ?.isVisible(WindowInsetsCompat.Type.ime()) == true
     
     /**
+     * Whether the quick emote bar is currently enabled and permitted for the user.
+     */
+    fun isBarEnabled(): Boolean =
+        prefs.isLoggedIn && prefs.quickEmoteBarEnabled && !activity.isBannedFromCurrentChannel
+
+    private fun hideBar() {
+        revealRunnable?.let { mainHandler.removeCallbacks(it) }
+        revealRunnable = null
+        if (isInitialized) {
+            quickEmoteAdapter.onFirstImageReady = null
+        }
+        binding.quickEmoteBarContainer.visibility = View.GONE
+        binding.quickEmoteShimmer.root.visibility = View.GONE
+        binding.quickEmoteRecyclerView.visibility = View.GONE
+    }
+
+    /**
+     * Apply scale percent to the quick emote bar container, shimmer placeholders, and adapter.
+     */
+    fun applyBarSize(scalePercent: Int = prefs.quickEmoteBarScale) {
+        val clamped = ChatSizingMath.clampQuickEmoteBarScale(scalePercent)
+        val density = binding.quickEmoteBarContainer.resources.displayMetrics.density
+        val containerHeightPx =
+            (ChatSizingMath.quickEmoteBarContainerHeightDp(clamped) * density).roundToInt().coerceAtLeast(1)
+        val containerLp = binding.quickEmoteBarContainer.layoutParams
+        if (containerLp != null && containerLp.height != containerHeightPx) {
+            containerLp.height = containerHeightPx
+            binding.quickEmoteBarContainer.layoutParams = containerLp
+            binding.quickEmoteBarContainer.requestLayout()
+        }
+
+        val emoteHeightPx =
+            (ChatSizingMath.quickEmoteBarEmoteHeightDp(clamped) * density).roundToInt().coerceAtLeast(1)
+        val shimmerMarginPx =
+            (ChatSizingMath.quickEmoteBarShimmerMarginDp(clamped) * density).roundToInt().coerceAtLeast(1)
+        val shimmerRow = (binding.quickEmoteShimmer.root as? ViewGroup)?.getChildAt(0) as? ViewGroup
+        if (shimmerRow != null) {
+            for (i in 0 until shimmerRow.childCount) {
+                val child = shimmerRow.getChildAt(i)
+                val lp = child.layoutParams as? ViewGroup.MarginLayoutParams
+                if (lp != null) {
+                    if (lp.width != emoteHeightPx || lp.height != emoteHeightPx ||
+                        lp.marginStart != shimmerMarginPx || lp.marginEnd != shimmerMarginPx
+                    ) {
+                        lp.width = emoteHeightPx
+                        lp.height = emoteHeightPx
+                        lp.marginStart = shimmerMarginPx
+                        lp.marginEnd = shimmerMarginPx
+                        child.layoutParams = lp
+                    }
+                } else if (child.layoutParams != null) {
+                    val baseLp = child.layoutParams
+                    if (baseLp.width != emoteHeightPx || baseLp.height != emoteHeightPx) {
+                        baseLp.width = emoteHeightPx
+                        baseLp.height = emoteHeightPx
+                        child.layoutParams = baseLp
+                    }
+                }
+            }
+        }
+
+        if (isInitialized) {
+            quickEmoteAdapter.setScalePercent(clamped)
+        }
+    }
+
+    /**
+     * Show loading shimmer state if the bar is enabled; otherwise hide the bar.
+     */
+    fun showLoadingState() {
+        if (!isBarEnabled()) {
+            hideBar()
+            return
+        }
+        applyBarSize(prefs.quickEmoteBarScale)
+        revealRunnable?.let { mainHandler.removeCallbacks(it) }
+        revealRunnable = null
+        if (isInitialized) {
+            quickEmoteAdapter.onFirstImageReady = null
+        }
+        binding.quickEmoteBarContainer.visibility = View.VISIBLE
+        binding.quickEmoteShimmer.root.visibility = View.VISIBLE
+        binding.quickEmoteRecyclerView.visibility = View.GONE
+    }
+
+    /**
+     * Toggle the quick emote bar visibility and refresh contents when enabled.
+     */
+    fun setBarEnabled(enabled: Boolean) {
+        if (!enabled || !prefs.isLoggedIn) {
+            hideBar()
+            return
+        }
+        applyBarSize(prefs.quickEmoteBarScale)
+        updateQuickEmoteBar(showShimmer = emoteCategories.isEmpty())
+    }
+
+    /**
      * Setup the quick emote bar with adapter and click handling
      */
     fun setupQuickEmoteBar() {
@@ -104,6 +205,7 @@ class QuickEmoteBarManager(
         
         binding.quickEmoteRecyclerView.adapter = quickEmoteAdapter
         isInitialized = true
+        applyBarSize(prefs.quickEmoteBarScale)
 
         // Trigger an immediate visibility pass: if emotes are already loaded this shows
         // the bar; if not (first open) it shows the shimmer instead of a black gap.
@@ -114,11 +216,13 @@ class QuickEmoteBarManager(
      * Update the quick emote bar with available emotes
      */
     fun updateQuickEmoteBar(showShimmer: Boolean = true) {
-        // Hide for logged out users - they can't send emotes anyway
-        if (!prefs.isLoggedIn) {
-            binding.quickEmoteBarContainer.visibility = View.GONE
+        // Hide for logged out users or when disabled in settings
+        if (!isBarEnabled()) {
+            hideBar()
             return
         }
+
+        applyBarSize(prefs.quickEmoteBarScale)
 
         // Make sure container is visible for logged in users
         binding.quickEmoteBarContainer.visibility = View.VISIBLE
@@ -217,7 +321,11 @@ class QuickEmoteBarManager(
                 }
             }
         } else {
+            revealRunnable?.let { mainHandler.removeCallbacks(it) }
+            revealRunnable = null
             quickEmoteAdapter.onFirstImageReady = null
+            binding.quickEmoteShimmer.root.visibility = View.GONE
+            binding.quickEmoteRecyclerView.visibility = View.VISIBLE
         }
         quickEmoteAdapter.setEmotes(finalEmotes)
         
@@ -254,11 +362,13 @@ class QuickEmoteBarManager(
             prefs.setChannelRecentEmoteIds(channelId, newRecent)
         }
         
-        // Refresh bar to move this emote to the front
+        // Refresh bar to move this emote to the front (only when bar is active)
         // Delay update to allow click animation to finish
-        mainHandler.postDelayed({
-            updateQuickEmoteBar(showShimmer = false)
-        }, 250)
+        if (isBarEnabled()) {
+            mainHandler.postDelayed({
+                updateQuickEmoteBar(showShimmer = false)
+            }, 250)
+        }
 
         // Both the bar and the emote panel funnel their clicks here, so refresh the panel's
         // recents tab from this one place.

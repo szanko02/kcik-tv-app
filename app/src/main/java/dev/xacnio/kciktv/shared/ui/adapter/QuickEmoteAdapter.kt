@@ -34,6 +34,7 @@ import com.bumptech.glide.request.target.Target
 import dev.xacnio.kciktv.R
 import dev.xacnio.kciktv.shared.data.model.Emote
 import dev.xacnio.kciktv.shared.ui.utils.EmoteManager
+import kotlin.math.roundToInt
 
 class QuickEmoteAdapter(
     private val onEmoteClick: (Emote) -> Unit
@@ -42,6 +43,7 @@ class QuickEmoteAdapter(
     private val emotes = mutableListOf<Emote>()
     private var isSubscribedToCurrentChannel: Boolean = false
     private var currentChannelId: Long? = null
+    private var scalePercent: Int = ChatSizingMath.DEFAULT_QUICK_EMOTE_BAR_SCALE
 
     /**
      * Fires on the main thread when the reveal threshold of the current emote batch
@@ -62,6 +64,14 @@ class QuickEmoteAdapter(
 
     fun setCurrentChannelId(channelId: Long?) {
         currentChannelId = channelId
+    }
+
+    fun setScalePercent(percent: Int) {
+        val clamped = ChatSizingMath.clampQuickEmoteBarScale(percent)
+        if (scalePercent != clamped) {
+            scalePercent = clamped
+            notifyDataSetChanged()
+        }
     }
 
     fun setEmotes(newEmotes: List<Emote>) {
@@ -105,9 +115,59 @@ class QuickEmoteAdapter(
     inner class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val emoteImage: ImageView = itemView.findViewById(R.id.emoteImage)
         private val emotePlaceholder: View = itemView.findViewById(R.id.emotePlaceholder)
+        private val emoteProgressBar: View = itemView.findViewById(R.id.emoteProgressBar)
 
         private var generation = 0
         fun invalidate() { generation++ }
+
+        private fun applyScale(scalePercent: Int): Int {
+            val density = itemView.resources.displayMetrics.density
+            val itemSizePx = (ChatSizingMath.quickEmoteBarItemSizeDp(scalePercent) * density).roundToInt().coerceAtLeast(1)
+            val marginPx = (ChatSizingMath.quickEmoteBarItemMarginDp(scalePercent) * density).roundToInt().coerceAtLeast(1)
+            val emoteHeightPx = (ChatSizingMath.quickEmoteBarEmoteHeightDp(scalePercent) * density).roundToInt().coerceAtLeast(1)
+            val placeholderSizePx = (ChatSizingMath.quickEmoteBarPlaceholderSizeDp(scalePercent) * density).roundToInt().coerceAtLeast(1)
+            val progressSizePx = (ChatSizingMath.quickEmoteBarProgressSizeDp(scalePercent) * density).roundToInt().coerceAtLeast(1)
+
+            itemView.minimumWidth = itemSizePx
+            (itemView.layoutParams as? ViewGroup.MarginLayoutParams)?.let { lp ->
+                if (lp.height != itemSizePx ||
+                    lp.leftMargin != marginPx ||
+                    lp.topMargin != marginPx ||
+                    lp.rightMargin != marginPx ||
+                    lp.bottomMargin != marginPx
+                ) {
+                    lp.height = itemSizePx
+                    lp.setMargins(marginPx, marginPx, marginPx, marginPx)
+                    itemView.layoutParams = lp
+                }
+            }
+
+            emoteImage.layoutParams?.let { lp ->
+                if (lp.width != ViewGroup.LayoutParams.WRAP_CONTENT || lp.height != emoteHeightPx) {
+                    lp.width = ViewGroup.LayoutParams.WRAP_CONTENT
+                    lp.height = emoteHeightPx
+                    emoteImage.layoutParams = lp
+                }
+            }
+
+            emotePlaceholder.layoutParams?.let { lp ->
+                if (lp.width != placeholderSizePx || lp.height != placeholderSizePx) {
+                    lp.width = placeholderSizePx
+                    lp.height = placeholderSizePx
+                    emotePlaceholder.layoutParams = lp
+                }
+            }
+
+            emoteProgressBar.layoutParams?.let { lp ->
+                if (lp.width != progressSizePx || lp.height != progressSizePx) {
+                    lp.width = progressSizePx
+                    lp.height = progressSizePx
+                    emoteProgressBar.layoutParams = lp
+                }
+            }
+
+            return emoteHeightPx
+        }
 
         fun showPlaceholder() {
             emotePlaceholder.visibility = View.VISIBLE
@@ -134,7 +194,7 @@ class QuickEmoteAdapter(
             val myGen = generation
             showPlaceholder()
 
-            val size = (24 * itemView.context.resources.displayMetrics.density).toInt()
+            val emoteHeightPx = applyScale(scalePercent)
             val canUse = canUseEmote(emote)
             emoteImage.alpha = if (canUse) 1.0f else 0.4f
 
@@ -142,7 +202,7 @@ class QuickEmoteAdapter(
                 EmoteManager.loadSynchronizedEmote(
                     itemView.context,
                     emote.id.toString(),
-                    size,
+                    emoteHeightPx,
                     emoteImage
                 ) { sharedDrawable ->
                     if (myGen == generation) {

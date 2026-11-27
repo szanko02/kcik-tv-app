@@ -16,6 +16,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.View
 import android.view.inputmethod.EditorInfo
@@ -48,6 +49,8 @@ import dev.xacnio.kciktv.shared.data.model.ChatMessage
 import dev.xacnio.kciktv.shared.data.model.PinnedMessage
 import dev.xacnio.kciktv.shared.ui.dialog.GiftShopBottomSheet
 import dev.xacnio.kciktv.mobile.ui.chat.ChatEventHandler
+import dev.xacnio.kciktv.shared.ui.chat.ChatFlushPolicy
+import dev.xacnio.kciktv.shared.util.ThermalMonitor
 
 class ChatUiManager(
     private val activity: MobilePlayerActivity,
@@ -75,6 +78,9 @@ class ChatUiManager(
     
     private val incomingMessageBuffer = java.util.Collections.synchronizedList(mutableListOf<ChatMessage>())
     var isChatUiPaused = false
+    private var isFlushingActive = false
+    private var isFlushScheduled = false
+    private var lastFlushUptimeMs = 0L
 
     private val baseChatListPadding by lazy {
         intArrayOf(
@@ -1188,6 +1194,7 @@ class ChatUiManager(
         val current = chatAdapter.currentList
         if (current.isNotEmpty()) {
             clearedMessages = current.toList()
+            lastItemCount = 0
             chatAdapter.clearMessages()
         }
     }
@@ -1205,6 +1212,12 @@ class ChatUiManager(
         isHistoryLoading = false
         hasMoreHistory = true
         lastRequestedCursor = null
+        lastItemCount = 0
+        newMessageCount = 0
+        bufferCount = 0
+        lastFlushUptimeMs = 0L
+        isFlushScheduled = false
+        mainHandler.removeCallbacks(flushMessagesRunnable)
         // Reset Chat List
         chatAdapter.clearMessages()
         clearedMessages = emptyList()
@@ -1445,6 +1458,10 @@ class ChatUiManager(
     }
 
     fun handleIncomingMessage(message: ChatMessage) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { handleIncomingMessage(message) }
+            return
+        }
         // Before the paused/dropped paths below, so counts stay right while chat is hidden
         activeChattersStore.record(message)
 
@@ -1478,41 +1495,67 @@ class ChatUiManager(
 
         incomingMessageBuffer.add(message)
         updateBufferCount(incomingMessageBuffer.size)
+        scheduleFlushIfNeeded()
     }
 
     fun startFlushing() {
+        isFlushingActive = true
         mainHandler.removeCallbacks(flushMessagesRunnable)
-        mainHandler.post(flushMessagesRunnable)
+        isFlushScheduled = false
+        if (incomingMessageBuffer.isNotEmpty()) {
+            isFlushScheduled = true
+            mainHandler.post(flushMessagesRunnable)
+        }
     }
 
     fun stopFlushing() {
+        isFlushingActive = false
+        isFlushScheduled = false
         mainHandler.removeCallbacks(flushMessagesRunnable)
     }
 
-    private val flushMessagesRunnable = object : Runnable {
-        override fun run() {
-            val isPip = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N)
-                activity.isInPictureInPictureMode else false
+    private fun scheduleFlushIfNeeded() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { scheduleFlushIfNeeded() }
+            return
+        }
+        if (!isFlushingActive || isFlushScheduled) return
+        val isPip = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N)
+            activity.isInPictureInPictureMode else false
+        if (activity.miniPlayerManager.isMiniPlayerMode || isPip || isChatUiPaused) return
 
-            // No chat surface is visible (mini player, PIP, or background-audio pause).
-            // handleIncomingMessage already drops incoming messages in these states, so
-            // there is nothing to flush and re-posting the runnable is pure timer work.
-            // startFlushing() is called again on resume (onStart) to bring it back.
-            if (activity.miniPlayerManager.isMiniPlayerMode || isPip || isChatUiPaused) {
-                return
-            }
+        val effectiveInterval = ChatFlushPolicy.effectiveIntervalMs(
+            prefs.chatRefreshRate,
+            prefs.lowBatteryModeEnabled,
+            prefs.batterySaverSlowTimers,
+            ThermalMonitor.level
+        )
+        val delay = ChatFlushPolicy.computeNextFlushDelayMs(
+            effectiveInterval,
+            SystemClock.uptimeMillis(),
+            lastFlushUptimeMs
+        )
+        isFlushScheduled = true
+        mainHandler.postDelayed(flushMessagesRunnable, delay)
+    }
 
-            flushPendingMessages()
-            updateBufferCount(incomingMessageBuffer.size)
+    private val flushMessagesRunnable = Runnable {
+        isFlushScheduled = false
+        val isPip = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N)
+            activity.isInPictureInPictureMode else false
 
-            val baseInterval = prefs.chatRefreshRate
-            // Under severe thermal pressure (THERMAL_STATUS_SEVERE+) bump the flush
-            // floor so we batch more messages per UI rebind. Quality of the rendered
-            // chat is unchanged — only the cadence.
-            val thermalFloor = if (dev.xacnio.kciktv.shared.util.ThermalMonitor.level >= 2) 700L else 0L
-            val interval = if (prefs.lowBatteryModeEnabled && prefs.batterySaverSlowTimers) 1500L
-                else maxOf(baseInterval, thermalFloor)
-            mainHandler.postDelayed(this, interval)
+        // No chat surface is visible (mini player, PIP, or background-audio pause).
+        // handleIncomingMessage already buffers/drops incoming messages in these states, so
+        // there is nothing to flush until resume (startFlushing() on onStart).
+        if (!isFlushingActive || activity.miniPlayerManager.isMiniPlayerMode || isPip || isChatUiPaused) {
+            return@Runnable
+        }
+
+        flushPendingMessages()
+        updateBufferCount(incomingMessageBuffer.size)
+
+        if (incomingMessageBuffer.isNotEmpty()) {
+            scheduleFlushIfNeeded()
         }
     }
 
@@ -1565,6 +1608,7 @@ class ChatUiManager(
         }
 
         if (messages.isEmpty()) return
+        lastFlushUptimeMs = SystemClock.uptimeMillis()
 
         val toAdd = ArrayList<ChatMessage>()
         val currentUser = prefs.username

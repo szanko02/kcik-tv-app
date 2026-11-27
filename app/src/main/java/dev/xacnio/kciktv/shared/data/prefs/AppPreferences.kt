@@ -18,6 +18,8 @@ import dev.xacnio.kciktv.shared.util.SupportedLanguages
 import dev.xacnio.kciktv.shared.data.prefs.AppPreferences
 import dev.xacnio.kciktv.R
 import dev.xacnio.kciktv.mobile.ui.player.VideoCutoutScalingPolicy
+import dev.xacnio.kciktv.shared.ui.adapter.ChatSizingMath
+import dev.xacnio.kciktv.shared.ui.chat.ChatFlushPolicy
 import dev.xacnio.kciktv.shared.ui.tv.TvModeRoutingPolicy
 
 class AppPreferences(private val context: Context) {
@@ -52,6 +54,11 @@ class AppPreferences(private val context: Context) {
         const val CHAT_HORIZONTAL_PADDING_MIN = 0
         const val CHAT_HORIZONTAL_PADDING_MAX = 24
         const val CHAT_HORIZONTAL_PADDING_DEFAULT = 24
+        const val QUICK_EMOTE_BAR_ENABLED_DEFAULT = true
+        const val QUICK_EMOTE_BAR_SCALE_MIN = ChatSizingMath.MIN_QUICK_EMOTE_BAR_SCALE
+        const val QUICK_EMOTE_BAR_SCALE_MAX = ChatSizingMath.MAX_QUICK_EMOTE_BAR_SCALE
+        const val QUICK_EMOTE_BAR_SCALE_DEFAULT = ChatSizingMath.DEFAULT_QUICK_EMOTE_BAR_SCALE
+        const val CHAT_REFRESH_RATE_DEFAULT = ChatFlushPolicy.DEFAULT_REFRESH_RATE_MS
         const val RESIZE_MODE_FIT = "FIT"
         const val RESIZE_MODE_ZOOM = "ZOOM"
         const val RESIZE_MODE_FILL = "FILL"
@@ -716,9 +723,43 @@ class AppPreferences(private val context: Context) {
         set(value) = prefs.edit().putBoolean("analytics_enabled", value).apply()
 
     var chatRefreshRate: Long
-        // Default 1500 ms. User-customised values are preserved; this only affects fresh installs.
-        get() = prefs.getLong("chat_refresh_rate", 1500L)
-        set(value) = prefs.edit().putLong("chat_refresh_rate", value).apply()
+        get() {
+            val migratedKey = "chat_refresh_rate_migrated_v259"
+            val alreadyMigrated = prefs.getBoolean(migratedKey, false)
+            if (!alreadyMigrated) {
+                val stored = if (prefs.contains("chat_refresh_rate")) {
+                    prefs.getLong("chat_refresh_rate", CHAT_REFRESH_RATE_DEFAULT)
+                } else {
+                    null
+                }
+                val migratedValue = ChatFlushPolicy.migrateLegacyDefaultRefreshRateMs(stored, false)
+                val editor = prefs.edit().putBoolean(migratedKey, true)
+                if (migratedValue != null) {
+                    editor.putLong("chat_refresh_rate", migratedValue)
+                }
+                editor.apply()
+                if (migratedValue != null) return migratedValue
+            }
+            return ChatFlushPolicy.normalizeRefreshRateMs(
+                prefs.getLong("chat_refresh_rate", CHAT_REFRESH_RATE_DEFAULT)
+            )
+        }
+        set(value) = prefs.edit()
+            .putBoolean("chat_refresh_rate_migrated_v259", true)
+            .putLong("chat_refresh_rate", ChatFlushPolicy.normalizeRefreshRateMs(value))
+            .apply()
+
+    var quickEmoteBarEnabled: Boolean
+        get() = prefs.getBoolean("quick_emote_bar_enabled", QUICK_EMOTE_BAR_ENABLED_DEFAULT)
+        set(value) = prefs.edit().putBoolean("quick_emote_bar_enabled", value).apply()
+
+    var quickEmoteBarScale: Int
+        get() = prefs.getInt("quick_emote_bar_scale", QUICK_EMOTE_BAR_SCALE_DEFAULT)
+            .coerceIn(QUICK_EMOTE_BAR_SCALE_MIN, QUICK_EMOTE_BAR_SCALE_MAX)
+        set(value) = prefs.edit().putInt(
+            "quick_emote_bar_scale",
+            value.coerceIn(QUICK_EMOTE_BAR_SCALE_MIN, QUICK_EMOTE_BAR_SCALE_MAX)
+        ).apply()
 
     var recentCategoriesRaw: String?
         get() = prefs.getString("recent_categories", null)
@@ -1058,6 +1099,8 @@ object ChatSettingsDefaults {
     const val SHOW_PINNED_GIFTS = true
     const val EMOTE_COMBO_ENABLED = false
     const val FLOATING_EMOTES_ENABLED = false
+    const val QUICK_EMOTE_BAR_ENABLED = AppPreferences.QUICK_EMOTE_BAR_ENABLED_DEFAULT
+    const val QUICK_EMOTE_BAR_SCALE = AppPreferences.QUICK_EMOTE_BAR_SCALE_DEFAULT
     const val CHAT_PINCH_TO_RESIZE_ENABLED = true
     const val SIDE_CHAT_RESIZE_HANDLE_ENABLED = true
 
@@ -1074,7 +1117,7 @@ object ChatSettingsDefaults {
     const val NOTIFY_ON_MENTIONS = false
     const val NICK_DETECTION_ENABLED = false
     const val CHAT_RANDOMIZE_NAME_COLOR_ON_SEND = false
-    const val CHAT_REFRESH_RATE = 1500L
+    const val CHAT_REFRESH_RATE = AppPreferences.CHAT_REFRESH_RATE_DEFAULT
 
     val defaults: Map<String, Any> = linkedMapOf(
         // Sizes & Layout (Chat Appearance)
@@ -1093,6 +1136,8 @@ object ChatSettingsDefaults {
         "show_pinned_gifts" to SHOW_PINNED_GIFTS,
         "emote_combo_enabled" to EMOTE_COMBO_ENABLED,
         "floating_emotes_enabled" to FLOATING_EMOTES_ENABLED,
+        "quick_emote_bar_enabled" to QUICK_EMOTE_BAR_ENABLED,
+        "quick_emote_bar_scale" to QUICK_EMOTE_BAR_SCALE,
         "chat_pinch_to_resize_enabled" to CHAT_PINCH_TO_RESIZE_ENABLED,
         "side_chat_resize_handle_enabled" to SIDE_CHAT_RESIZE_HANDLE_ENABLED,
         // Animations, Highlights & Refresh

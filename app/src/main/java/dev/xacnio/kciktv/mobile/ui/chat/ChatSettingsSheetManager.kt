@@ -10,6 +10,7 @@
  */
 package dev.xacnio.kciktv.mobile.ui.chat
 
+import dev.xacnio.kciktv.shared.ui.chat.ChatFlushPolicy
 import dev.xacnio.kciktv.shared.ui.chat.ChatRulesManager
 import dev.xacnio.kciktv.shared.data.model.ChannelItem
 
@@ -77,6 +78,8 @@ class ChatSettingsSheetManager(
     private var isMountedOnPlayerScreen: Boolean = false
     private var isSyncingControls: Boolean = false
     private var syncCurrentPanelControls: (() -> Unit)? = null
+    private var renderBatteryRefreshChipsAction: (() -> Unit)? = null
+    private var renderAppearanceRefreshChipsAction: (() -> Unit)? = null
     private var currentPage: Int = PAGE_ROOT
     private var navigateBackAction: (() -> Boolean)? = null
 
@@ -109,6 +112,8 @@ class ChatSettingsSheetManager(
         currentPage = PAGE_ROOT
         navigateBackAction = null
         syncCurrentPanelControls = null
+        renderBatteryRefreshChipsAction = null
+        renderAppearanceRefreshChipsAction = null
         isMountedOnPlayerScreen = false
         if (hasProfileChanges) saveProfileIdentity()
         scrimView?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }
@@ -157,6 +162,8 @@ class ChatSettingsSheetManager(
         activity.overlayManager.updatePinnedGiftsUI()
         activity.emoteComboManager.clear()
         activity.floatingEmoteManager.clear()
+        activity.quickEmoteBarManager.applyBarSize(prefs.quickEmoteBarScale)
+        activity.quickEmoteBarManager.setBarEnabled(prefs.quickEmoteBarEnabled)
 
         // Sync open ChatSettings controls if currently visible
         syncCurrentPanelControls?.invoke()
@@ -382,6 +389,10 @@ class ChatSettingsSheetManager(
         val textValueMessageSpacing = view.findViewById<TextView>(R.id.textValueMessageSpacing)
         val seekBarChatHorizontalPadding = view.findViewById<SeekBar>(R.id.seekBarChatHorizontalPadding)
         val textValueChatHorizontalPadding = view.findViewById<TextView>(R.id.textValueChatHorizontalPadding)
+        val switchQuickEmoteBar = view.findViewById<SwitchCompat>(R.id.switchQuickEmoteBar)
+        val layoutQuickEmoteBarSize = view.findViewById<View>(R.id.layoutQuickEmoteBarSize)
+        val seekBarQuickEmoteBarSize = view.findViewById<SeekBar>(R.id.seekBarQuickEmoteBarSize)
+        val textValueQuickEmoteBarSize = view.findViewById<TextView>(R.id.textValueQuickEmoteBarSize)
         val seekBarSideChatWidth = view.findViewById<SeekBar>(R.id.seekBarSideChatWidth)
         val textValueSideChatWidth = view.findViewById<TextView>(R.id.textValueSideChatWidth)
         val switchTransparentChatOverlay = view.findViewById<SwitchCompat>(R.id.switchTransparentChatOverlay)
@@ -395,11 +406,13 @@ class ChatSettingsSheetManager(
         val switchFloatingEmotes = view.findViewById<SwitchCompat>(R.id.switchFloatingEmotes)
         val switchChatPinchResize = view.findViewById<SwitchCompat>(R.id.switchChatPinchResize)
         val switchSideChatHandle = view.findViewById<SwitchCompat>(R.id.switchSideChatHandle)
+        val chatAppearanceRefreshOptions = view.findViewById<LinearLayout>(R.id.chatAppearanceRefreshOptions)
         val btnResetChatDefaults = view.findViewById<View>(R.id.btnResetChatDefaults)
 
         listOf(
             switchTimestamps,
             switchSeconds,
+            switchQuickEmoteBar,
             switchTransparentChatOverlay,
             switchPinnedGifts,
             switchEmoteCombo,
@@ -418,6 +431,7 @@ class ChatSettingsSheetManager(
             seekBarMessageScale,
             seekBarMessageSpacing,
             seekBarChatHorizontalPadding,
+            seekBarQuickEmoteBarSize,
             seekBarSideChatWidth,
             seekBarChatOverlayOpacity,
             seekBarChatOverlayEdgeMargin
@@ -533,6 +547,51 @@ class ChatSettingsSheetManager(
                 chatUiManager.applyChatHorizontalPadding(currentHorizontalPadding)
             }
         })
+
+        // Quick Emote Bar Toggle & Size Slider (50% to 150%, step 5%)
+        fun updateQuickEmoteBarControlsEnabledState() {
+            val barOn = switchQuickEmoteBar.isChecked
+            seekBarQuickEmoteBarSize.isEnabled = barOn
+            layoutQuickEmoteBarSize.alpha = if (barOn) 1.0f else 0.45f
+        }
+
+        switchQuickEmoteBar.isChecked = prefs.quickEmoteBarEnabled
+        switchQuickEmoteBar.setOnCheckedChangeListener { _, isChecked ->
+            if (isSyncingControls) return@setOnCheckedChangeListener
+            prefs.quickEmoteBarEnabled = isChecked
+            updateQuickEmoteBarControlsEnabledState()
+            activity.quickEmoteBarManager.setBarEnabled(isChecked)
+        }
+
+        val quickEmoteScaleSteps =
+            (ChatSizingMath.MAX_QUICK_EMOTE_BAR_SCALE - ChatSizingMath.MIN_QUICK_EMOTE_BAR_SCALE) /
+                ChatSizingMath.QUICK_EMOTE_BAR_SCALE_STEP
+        var currentQuickEmoteBarScale = ChatSizingMath.clampQuickEmoteBarScale(prefs.quickEmoteBarScale)
+        seekBarQuickEmoteBarSize.max = quickEmoteScaleSteps
+        seekBarQuickEmoteBarSize.progress =
+            ((currentQuickEmoteBarScale - ChatSizingMath.MIN_QUICK_EMOTE_BAR_SCALE) /
+                ChatSizingMath.QUICK_EMOTE_BAR_SCALE_STEP).coerceIn(0, quickEmoteScaleSteps)
+        textValueQuickEmoteBarSize.text = "${currentQuickEmoteBarScale}%"
+
+        seekBarQuickEmoteBarSize.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (isSyncingControls) return
+                val scale = ChatSizingMath.clampQuickEmoteBarScale(
+                    ChatSizingMath.MIN_QUICK_EMOTE_BAR_SCALE +
+                        progress * ChatSizingMath.QUICK_EMOTE_BAR_SCALE_STEP
+                )
+                textValueQuickEmoteBarSize.text = "${scale}%"
+                currentQuickEmoteBarScale = scale
+                if (fromUser) activity.quickEmoteBarManager.applyBarSize(scale)
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                if (isSyncingControls) return
+                prefs.quickEmoteBarScale = currentQuickEmoteBarScale
+                activity.quickEmoteBarManager.applyBarSize(currentQuickEmoteBarScale)
+            }
+        })
+        updateQuickEmoteBarControlsEnabledState()
 
         // Side Chat Width Slider (15% to 70%)
         isTrackingSideChatWidth = false
@@ -741,6 +800,10 @@ class ChatSettingsSheetManager(
             activity.fullscreenToggleManager.updateSideChatHandleVisibility()
         }
 
+        // Chat Refresh Rate chips inside Chat Appearance -> Features
+        renderAppearanceRefreshChipsAction = { renderRefreshRateChips(chatAppearanceRefreshOptions) }
+        renderRefreshRateChips(chatAppearanceRefreshOptions)
+
         // Low Battery Mode (master) is wired in setupBatterySettings() on the Battery page.
 
         // Highlight Settings
@@ -854,6 +917,14 @@ class ChatSettingsSheetManager(
                 seekBarChatHorizontalPadding.progress = currentHorizontalPadding.coerceIn(0, AppPreferences.CHAT_HORIZONTAL_PADDING_MAX)
                 textValueChatHorizontalPadding.text = "${currentHorizontalPadding}dp"
 
+                switchQuickEmoteBar.isChecked = prefs.quickEmoteBarEnabled
+                currentQuickEmoteBarScale = ChatSizingMath.clampQuickEmoteBarScale(prefs.quickEmoteBarScale)
+                seekBarQuickEmoteBarSize.progress =
+                    ((currentQuickEmoteBarScale - ChatSizingMath.MIN_QUICK_EMOTE_BAR_SCALE) /
+                        ChatSizingMath.QUICK_EMOTE_BAR_SCALE_STEP).coerceIn(0, quickEmoteScaleSteps)
+                textValueQuickEmoteBarSize.text = "${currentQuickEmoteBarScale}%"
+                updateQuickEmoteBarControlsEnabledState()
+
                 currentSideChatWidth = prefs.sideChatWidthPercent.coerceIn(
                     AppPreferences.SIDE_CHAT_WIDTH_MIN,
                     AppPreferences.SIDE_CHAT_WIDTH_MAX
@@ -907,6 +978,9 @@ class ChatSettingsSheetManager(
 
                 view.findViewById<SwitchCompat?>(R.id.switchRandomNameColor)?.isChecked =
                     prefs.chatRandomizeNameColorOnSend
+
+                renderAppearanceRefreshChipsAction?.invoke()
+                renderBatteryRefreshChipsAction?.invoke()
             } finally {
                 isSyncingControls = false
             }
@@ -1580,24 +1654,6 @@ class ChatSettingsSheetManager(
         val defaultYellow = Color.parseColor("#FFD700")
         val chipNormal = Color.parseColor("#AAAAAA")
 
-        // Build a chip background:
-        //   fillColor only  → solid GradientDrawable (selected state)
-        //   strokeColor only → transparent bg with colored border (default state)
-        //   neither         → bg_ripple_rounded (normal state)
-        fun makeChipBg(fillColor: Int? = null, strokeColor: Int? = null): android.graphics.drawable.Drawable {
-            return if (fillColor != null || strokeColor != null) {
-                android.graphics.drawable.GradientDrawable().apply {
-                    shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-                    cornerRadius = (20 * density)
-                    if (fillColor != null) setColor(fillColor)
-                    else setColor(android.graphics.Color.TRANSPARENT)
-                    if (strokeColor != null) setStroke((2 * density).toInt(), strokeColor)
-                }
-            } else {
-                activity.getDrawable(R.drawable.bg_ripple_rounded)!!
-            }
-        }
-
         // FPS default is 30.
         val fpsDef = 30
         // FPS — independent of the master; applies whenever emotes animate.
@@ -1605,7 +1661,7 @@ class ChatSettingsSheetManager(
         fun renderFpsChips() {
             fpsOptions.removeAllViews()
             val cur = prefs.chatEmoteFps
-            fpsValues.forEach { (label, value) ->
+            fpsValues.forEachIndexed { index, (label, value) ->
                 val selected = value == cur
                 val isDefault = value == fpsDef && !selected
                 val chipBgColor: Int? = when {
@@ -1630,9 +1686,9 @@ class ChatSettingsSheetManager(
                         LinearLayout.LayoutParams.WRAP_CONTENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT
                     )
-                    lp.marginStart = (6 * density).toInt()
+                    lp.marginStart = if (index == 0) 0 else (6 * density).toInt()
                     layoutParams = lp
-                    background = makeChipBg(fillColor = chipBgColor, strokeColor = chipStroke)
+                    background = makeChipBg(density, fillColor = chipBgColor, strokeColor = chipStroke)
                     setOnClickListener {
                         prefs.chatEmoteFps = value
                         dev.xacnio.kciktv.shared.ui.utils.EmoteManager.setChatEmoteFps(value)
@@ -1645,64 +1701,8 @@ class ChatSettingsSheetManager(
         renderFpsChips()
 
         // Chat refresh rate — independent of the master; applied live to the flush loop.
-        // Default is 1500 ms. When slow timers (batterySaverSlowTimers) is ON,
-        // the 1500 ms option is highlighted red and locked (cannot be selected).
-        val refreshDef = 1500L
-        val refreshValues = listOf("100" to 100L, "200" to 200L, "500" to 500L, "1000" to 1000L, "1500" to 1500L)
-        fun renderRefreshChips() {
-            refreshOptions.removeAllViews()
-            val cur = prefs.chatRefreshRate
-            val slowOn = prefs.lowBatteryModeEnabled && prefs.batterySaverSlowTimers
-            refreshValues.forEach { (label, value) ->
-                val isLocked1500 = value == 1500L && slowOn
-                val selected = value == cur && !isLocked1500
-                val isDefault = value == refreshDef && !selected && !isLocked1500
-                val chipBgColor: Int? = when {
-                    isLocked1500 -> Color.parseColor("#E53935") // red — locked by slow timers
-                    selected     -> kickGreen
-                    else         -> null
-                }
-                val chipStroke: Int? = when {
-                    isDefault -> defaultYellow
-                    else      -> null
-                }
-                val textColor = when {
-                    isLocked1500 -> Color.WHITE    // red solid chip — white text
-                    selected     -> Color.BLACK    // green solid chip — dark text
-                    isDefault    -> defaultYellow  // yellow border chip — yellow text
-                    else         -> chipNormal
-                }
-                val chip = TextView(activity).apply {
-                    text = label
-                    textSize = 13f
-                    setTextColor(textColor)
-                    setPadding((14 * density).toInt(), (6 * density).toInt(), (14 * density).toInt(), (6 * density).toInt())
-                    val lp = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    )
-                    lp.marginStart = (6 * density).toInt()
-                    layoutParams = lp
-                    background = makeChipBg(fillColor = chipBgColor, strokeColor = chipStroke)
-                    setOnClickListener {
-                        if (isLocked1500) {
-                            android.widget.Toast.makeText(
-                                activity,
-                                activity.getString(R.string.battery_refresh_locked_by_slow_timers),
-                                android.widget.Toast.LENGTH_SHORT
-                            ).show()
-                            return@setOnClickListener
-                        }
-                        prefs.chatRefreshRate = value
-                        chatUiManager.stopFlushing()
-                        chatUiManager.startFlushing()
-                        renderRefreshChips()
-                    }
-                }
-                refreshOptions.addView(chip)
-            }
-        }
-        renderRefreshChips()
+        renderBatteryRefreshChipsAction = { renderRefreshRateChips(refreshOptions) }
+        renderRefreshRateChips(refreshOptions)
 
         switchBadges.setOnCheckedChangeListener { _, isChecked ->
             prefs.subscriberBadgesAnimated = isChecked
@@ -1737,6 +1737,8 @@ class ChatSettingsSheetManager(
             prefs.batterySaverSlowTimers = isChecked
             chatUiManager.stopFlushing()
             chatUiManager.startFlushing()
+            renderAppearanceRefreshChipsAction?.invoke()
+            renderBatteryRefreshChipsAction?.invoke()
         }
 
         switchShimmer.setOnCheckedChangeListener { _, isChecked ->
@@ -1767,6 +1769,97 @@ class ChatSettingsSheetManager(
                 isChecked && prefs.batterySaverDisableShimmer
             updateSubTogglesEnabled()
             activity.quickEmoteBarManager.updateQuickEmoteBar()
+            renderAppearanceRefreshChipsAction?.invoke()
+            renderBatteryRefreshChipsAction?.invoke()
+        }
+    }
+
+    private fun makeChipBg(
+        density: Float,
+        fillColor: Int? = null,
+        strokeColor: Int? = null
+    ): android.graphics.drawable.Drawable {
+        return if (fillColor != null || strokeColor != null) {
+            android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                cornerRadius = (20 * density)
+                if (fillColor != null) setColor(fillColor)
+                else setColor(Color.TRANSPARENT)
+                if (strokeColor != null) setStroke((2 * density).toInt(), strokeColor)
+            }
+        } else {
+            activity.getDrawable(R.drawable.bg_ripple_rounded)!!
+        }
+    }
+
+    private fun renderRefreshRateChips(container: LinearLayout) {
+        container.removeAllViews()
+        val density = activity.resources.displayMetrics.density
+        val kickGreen = Color.parseColor("#53FC18")
+        val defaultYellow = Color.parseColor("#FFD700")
+        val chipNormal = Color.parseColor("#AAAAAA")
+        val refreshDef = AppPreferences.CHAT_REFRESH_RATE_DEFAULT
+        val refreshValues = listOf(
+            activity.getString(R.string.chat_refresh_rate_instant) to ChatFlushPolicy.REFRESH_RATE_REALTIME_MS,
+            "50" to 50L,
+            "100" to 100L,
+            "200" to 200L,
+            "500" to 500L,
+            "1000" to 1000L,
+            "1500" to 1500L
+        )
+        val cur = prefs.chatRefreshRate
+        val slowOn = prefs.lowBatteryModeEnabled && prefs.batterySaverSlowTimers
+        refreshValues.forEachIndexed { index, (label, value) ->
+            val isLocked1500 = value == 1500L && slowOn
+            val selected = value == cur && !isLocked1500
+            val isDefault = value == refreshDef && !selected && !isLocked1500
+            val chipBgColor: Int? = when {
+                isLocked1500 -> Color.parseColor("#E53935")
+                selected -> kickGreen
+                else -> null
+            }
+            val chipStroke: Int? = if (isDefault) defaultYellow else null
+            val textColor = when {
+                isLocked1500 -> Color.WHITE
+                selected -> Color.BLACK
+                isDefault -> defaultYellow
+                else -> chipNormal
+            }
+            val chip = TextView(activity).apply {
+                text = label
+                textSize = 13f
+                setTextColor(textColor)
+                setPadding(
+                    (14 * density).toInt(),
+                    (6 * density).toInt(),
+                    (14 * density).toInt(),
+                    (6 * density).toInt()
+                )
+                val lp = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                lp.marginStart = if (index == 0) 0 else (6 * density).toInt()
+                layoutParams = lp
+                background = makeChipBg(density, fillColor = chipBgColor, strokeColor = chipStroke)
+                setOnClickListener {
+                    if (isLocked1500) {
+                        android.widget.Toast.makeText(
+                            activity,
+                            activity.getString(R.string.battery_refresh_locked_by_slow_timers),
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                        return@setOnClickListener
+                    }
+                    prefs.chatRefreshRate = value
+                    chatUiManager.stopFlushing()
+                    chatUiManager.startFlushing()
+                    renderAppearanceRefreshChipsAction?.invoke()
+                    renderBatteryRefreshChipsAction?.invoke()
+                }
+            }
+            container.addView(chip)
         }
     }
 

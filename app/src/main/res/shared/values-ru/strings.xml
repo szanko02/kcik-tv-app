@@ -1444,6 +1444,11 @@
     <string name="chat_message_scale">Масштаб сообщений</string>
     <string name="chat_message_spacing">Расстояние между сообщениями</string>
     <string name="chat_horizontal_padding">Боковые отступы чата</string>
+    <string name="chat_quick_emote_bar">Быстрая панель смайлов</string>
+    <string name="chat_quick_emote_bar_subtitle">Показывать полосу смайлов над полем ввода</string>
+    <string name="chat_quick_emote_bar_size">Размер быстрой панели смайлов</string>
+    <string name="chat_refresh_rate_instant">Мгновенно</string>
+    <string name="chat_refresh_rate_subtitle">Как часто обновляются сообщения в чате (меньше — быстрее)</string>
     <string name="chat_pinch_to_resize">Жест масштабирования чата</string>
     <string name="chat_pinch_to_resize_subtitle">Масштабировать чат сведением и разведением двух пальцев</string>
     <string name="chat_pinch_scale_toast">Масштаб чата: %d%%</string>

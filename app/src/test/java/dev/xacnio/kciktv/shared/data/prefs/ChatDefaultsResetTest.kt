@@ -36,6 +36,8 @@ class ChatDefaultsResetTest {
         assertEquals(true, d["show_pinned_gifts"])
         assertEquals(false, d["emote_combo_enabled"])
         assertEquals(false, d["floating_emotes_enabled"])
+        assertEquals(true, d["quick_emote_bar_enabled"])
+        assertEquals(100, d["quick_emote_bar_scale"])
         assertEquals(true, d["chat_pinch_to_resize_enabled"])
         assertEquals(true, d["side_chat_resize_handle_enabled"])
 
@@ -53,7 +55,7 @@ class ChatDefaultsResetTest {
         assertEquals(false, d["notify_on_mentions"])
         assertEquals(false, d["nick_detection_enabled"])
         assertEquals(false, d["chat_randomize_name_color_on_send"])
-        assertEquals(1500L, d["chat_refresh_rate"])
+        assertEquals(100L, d["chat_refresh_rate"])
     }
 
     @Test
@@ -104,6 +106,7 @@ class ChatDefaultsResetTest {
             "battery_saver_disable_shimmer",
             "battery_saver_pause_chat_pip",
             "recent_emote_ids",
+            "chat_refresh_rate_migrated_v259",
             "vod_watch_history",
             "search_history"
         )
@@ -128,6 +131,8 @@ class ChatDefaultsResetTest {
             "chat_overlay_edge_margin_percent" to 25,
             "chat_message_animation" to "flip",
             "chat_refresh_rate" to 200L,
+            "quick_emote_bar_enabled" to false,
+            "quick_emote_bar_scale" to 140,
             "highlight_own_messages" to false,
             "chat_randomize_name_color_on_send" to true,
             // Protected entries

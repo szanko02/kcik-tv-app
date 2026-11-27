@@ -253,6 +253,7 @@ class ChatAdapter(
     
     // Internal cache to maintain state reliability
     private val messageCache = java.util.Collections.synchronizedList(java.util.ArrayList<ChatMessage>())
+    private val messageIdSet = HashSet<String>()
     
     private val clipCache = java.util.Collections.synchronizedMap(mutableMapOf<String, CachedClipInfo>())
     private val activeClipFetches = java.util.Collections.synchronizedSet(mutableSetOf<String>())
@@ -2691,16 +2692,9 @@ class ChatAdapter(
      */
     fun addMessages(newMessages: List<ChatMessage>, deduplicate: Boolean = false, animate: Boolean = true, onCommit: (() -> Unit)? = null) {
         if (newMessages.isEmpty()) return
-        
-        // Mark new messages for animation (only non-deduplicated, i.e. truly new messages)
-        if (!deduplicate && animate && animationsActive()) {
-            for (msg in newMessages) {
-                pendingAnimationIds.add(msg.id)
-            }
-        }
-        
+
         val finalList: List<ChatMessage>
-        
+
         synchronized(messageCache) {
             // Hard cap when user is at bottom; 2x soft cap when scrolled up
             // to preserve reading context without allowing unbounded growth.
@@ -2710,47 +2704,43 @@ class ChatAdapter(
                 Constants.Chat.MESSAGE_LIMIT * 2
             }
 
-            // Fast path for single message append (most common case)
-            if (newMessages.size == 1) {
-                val newMsg = newMessages[0]
-                val alreadyExists = messageCache.any { it.id == newMsg.id }
-                if (!alreadyExists) {
-                    // Insert maintaining sort order
-                    val insertIndex = messageCache.indexOfLast { it.createdAt <= newMsg.createdAt } + 1
-                    messageCache.add(insertIndex, newMsg)
-
-                    while (messageCache.size > effectiveLimit) {
-                        messageCache.removeAt(0)
+            if (!deduplicate) {
+                // Mark new messages for animation (only truly new, non-deduplicated messages)
+                if (animate && animationsActive()) {
+                    for (msg in newMessages) {
+                        if (msg.id !in messageIdSet) {
+                            pendingAnimationIds.add(msg.id)
+                        }
                     }
                 }
-                finalList = ArrayList(messageCache)
-            } else {
-                // Batch path for multiple messages or history loading
-                messageCache.addAll(newMessages)
-
-                // Always deduplicate by message ID to prevent clone/duplicate messages
-                val seen = HashSet<String>(messageCache.size)
-                val workingList = messageCache.filter { seen.add(it.id) }
-
-                // Sort by createdAt
-                val sortedList = workingList.sortedBy { it.createdAt }
-
-                val trimmedList = if (sortedList.size > effectiveLimit) {
-                    sortedList.subList(sortedList.size - effectiveLimit, sortedList.size)
-                } else {
-                    sortedList
+                val added = ChatMessageListOps.mergeLiveBatch(
+                    messageCache,
+                    messageIdSet,
+                    newMessages,
+                    effectiveLimit
+                )
+                if (!added) {
+                    onCommit?.invoke()
+                    return
                 }
-
-                messageCache.clear()
-                messageCache.addAll(trimmedList)
-                finalList = ArrayList(messageCache)
+            } else {
+                ChatMessageListOps.mergeDeduplicated(
+                    messageCache,
+                    messageIdSet,
+                    newMessages,
+                    effectiveLimit
+                )
             }
+            finalList = ArrayList(messageCache)
         }
-        
+
         // Submit outside synchronized block to avoid blocking
         submitList(finalList) {
-            onCommit?.invoke()
-            onMessageAdded?.invoke()
+            if (onCommit != null) {
+                onCommit.invoke()
+            } else if (!deduplicate) {
+                onMessageAdded?.invoke()
+            }
         }
     }
 
@@ -2758,6 +2748,7 @@ class ChatAdapter(
         pendingAnimationIds.clear()
         synchronized(messageCache) {
             messageCache.clear()
+            messageIdSet.clear()
             submitList(emptyList())
         }
     }
@@ -2770,6 +2761,7 @@ class ChatAdapter(
         synchronized(messageCache) {
             val removed = messageCache.removeIf { it.id == messageId }
             if (removed) {
+                messageIdSet.remove(messageId)
                 submitList(ArrayList(messageCache))
             }
         }
@@ -2830,10 +2822,12 @@ class ChatAdapter(
         synchronized(messageCache) {
             val index = messageCache.indexOfFirst { it.messageRef == messageRef && (it.status == dev.xacnio.kciktv.shared.data.model.MessageStatus.SENDING || it.status == dev.xacnio.kciktv.shared.data.model.MessageStatus.SENT) }
             if (index != -1) {
-                val oldMsg = messageCache[index]
-                // Replace local draft with server message but PRESERVE original timestamp
-                // to prevent the message from jumping down in the list.
-                messageCache[index] = serverMessage.copy(createdAt = oldMsg.createdAt)
+                ChatMessageListOps.replaceConfirmedMessageAt(
+                    messageCache,
+                    messageIdSet,
+                    index,
+                    serverMessage
+                )
                 submitList(ArrayList(messageCache))
             } else {
                 // If not found (maybe cleared or already updated), just add it
@@ -2857,10 +2851,12 @@ class ChatAdapter(
             }
             
             if (index != -1) {
-                val oldMsg = messageCache[index]
-                // Replace local draft with server message but PRESERVE original timestamp
-                // to prevent the message from jumping down in the list.
-                messageCache[index] = serverMessage.copy(createdAt = oldMsg.createdAt)
+                ChatMessageListOps.replaceConfirmedMessageAt(
+                    messageCache,
+                    messageIdSet,
+                    index,
+                    serverMessage
+                )
                 submitList(ArrayList(messageCache))
                 return true
             }
@@ -3054,13 +3050,6 @@ class ChatAdapter(
     }
     
     override fun submitList(list: List<ChatMessage>?, commitCallback: Runnable?) {
-        val oldSize = itemCount
-        super.submitList(list) {
-            commitCallback?.run()
-            // If new messages were added, trigger callback
-            if (list != null && list.size > oldSize) {
-                onMessageAdded?.invoke()
-            }
-        }
+        super.submitList(list, commitCallback)
     }
 }
