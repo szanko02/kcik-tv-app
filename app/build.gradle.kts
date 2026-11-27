@@ -43,7 +43,7 @@ android {
         targetSdk = 34
         // Offset 270 keeps versionCode strictly monotonic above v2.5.2 (279) after history squash.
         versionCode = 270 + getGitCommitCount()
-        val baseVersion = "2.5.8"
+        val baseVersion = "2.5.9"
         versionName = providers.gradleProperty("appVersionName").orNull
             ?: System.getenv("VERSION")?.takeIf { it.isNotBlank() }
             ?: "$baseVersion-${getGitHash()}"
